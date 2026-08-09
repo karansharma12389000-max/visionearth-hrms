@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    
+    <!-- Use your logo as favicon -->
+    <link rel="icon" type="image/png" href="/icon-base.png" />
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="HRMS" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#3B82F6" />
+    
+    <!-- PWA Icons - Use your logo -->
+    <link rel="apple-touch-icon" href="/icon-base.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-base.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-base.png" />
+    
+    <link rel="manifest" href="/manifest.webmanifest" />
+    
+    <title>HRMS - Human Resource Management</title>
+    
+    <!-- PWA Installation Banner -->
+    <style>
+      .pwa-install-banner {
+        position: fixed;
+        bottom: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #3B82F6;
+        color: white;
+        padding: 12px 24px;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(59,130,246,0.4);
+        z-index: 9999;
+        display: none;
+        align-items: center;
+        gap: 12px;
+        font-family: system-ui, -apple-system, sans-serif;
+        cursor: pointer;
+        animation: slideUp 0.3s ease-out;
+      }
+      .pwa-install-banner.show {
+        display: flex;
+      }
+      .pwa-install-banner button {
+        background: white;
+        border: none;
+        color: #3B82F6;
+        padding: 6px 16px;
+        border-radius: 8px;
+        font-weight: 700;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .pwa-install-banner img {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+      }
+      @keyframes slideUp {
+        from { transform: translateX(-50%) translateY(20px); opacity: 0; }
+        to { transform: translateX(-50%) translateY(0); opacity: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="pwa-install-banner" class="pwa-install-banner">
+      <img src="/icon-base.png" alt="HRMS Logo" />
+      <span>Install HRMS App</span>
+      <button id="pwa-install-btn">Install</button>
+      <button id="pwa-close-btn" style="background:transparent;color:white;padding:4px;">✕</button>
+    </div>
+    <script type="module" src="/src/main.jsx"></script>
+    
+    <script>
+      let deferredPrompt = null;
+      const banner = document.getElementById('pwa-install-banner');
+      const installBtn = document.getElementById('pwa-install-btn');
+      const closeBtn = document.getElementById('pwa-close-btn');
+
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        banner.classList.add('show');
+      });
+
+      installBtn?.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const result = await deferredPrompt.userChoice;
+          if (result.outcome === 'accepted') {
+            banner.classList.remove('show');
+          }
+          deferredPrompt = null;
+        }
+      });
+
+      closeBtn?.addEventListener('click', () => {
+        banner.classList.remove('show');
+      });
+
+      window.addEventListener('appinstalled', () => {
+        banner.classList.remove('show');
+        console.log('🎉 HRMS App installed successfully!');
+      });
+    </script>
+  </body>
+</html>

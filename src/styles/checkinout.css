@@ -1,0 +1,455 @@
+/* src/styles/checkinout.css */
+.checkinout-page {
+  min-height: 100vh;
+  background: var(--bg-primary);
+  padding-bottom: 80px;
+}
+
+.checkinout-header {
+  background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%);
+  padding: 20px 24px 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.checkinout-header h2 {
+  color: #FFFFFF;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.checkinout-header p {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* Map Container */
+.map-container {
+  margin: 16px 20px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  height: 250px;
+  position: relative;
+  background: var(--bg-input);
+}
+
+.map-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.map-placeholder span {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.map-placeholder p {
+  font-size: 14px;
+}
+
+/* Status Banner */
+.checkinout-status {
+  margin: 0 20px 16px;
+  padding: 18px 20px;
+  border-radius: var(--radius);
+  border: 2px solid var(--border-color);
+  background: var(--bg-card);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.checkinout-status.checked-in {
+  border-color: #10B981;
+  background: #ECFDF5;
+}
+
+.dark .checkinout-status.checked-in {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.checkinout-status .status-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.checkinout-status .status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.checkinout-status .status-dot.checked-in {
+  background: #10B981;
+  animation: pulse 2s infinite;
+}
+
+.checkinout-status .status-dot.not-checked {
+  background: #EF4444;
+}
+
+.checkinout-status .status-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.checkinout-status .status-subtext {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* Location Info */
+.location-info {
+  margin: 0 20px 16px;
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+}
+
+.location-info .label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 4px;
+}
+
+.location-info .address {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.location-info .coords {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Main Action Buttons */
+.checkinout-actions {
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.checkinout-actions .main-btn {
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  border: none;
+  font-weight: 700;
+  font-size: 16px;
+  color: #FFFFFF;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow);
+}
+
+.checkinout-actions .main-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.checkinout-actions .main-btn:active {
+  transform: translateY(0);
+}
+
+.checkinout-actions .main-btn.checkin {
+  background: linear-gradient(135deg, #059669, #10B981);
+}
+
+.checkinout-actions .main-btn.checkout {
+  background: linear-gradient(135deg, #DC2626, #EF4444);
+}
+
+/* Today's Records */
+.today-records {
+  padding: 16px 20px 0;
+}
+
+.today-records-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+
+.record-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
+}
+
+.record-item:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.record-item .record-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.record-item .record-number {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.record-item .record-times {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.record-item .record-times .time-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.record-item .record-times .time-group label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.record-item .record-times .time-group span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.record-item .record-times .arrow {
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.record-item .record-location {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+}
+
+/* Modal */
+.checkinout-modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.checkinout-modal {
+  background: var(--bg-card);
+  border-radius: var(--radius) var(--radius) 0 0;
+  width: 100%;
+  max-width: 600px;
+  max-height: 80vh;
+  padding: 24px;
+  animation: slideUp 0.3s ease-out;
+  overflow-y: auto;
+}
+
+.checkinout-modal .modal-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-color);
+  margin: 0 auto 20px;
+}
+
+.checkinout-modal h3 {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.checkinout-modal .modal-date {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.checkinout-modal .modal-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 16px 0;
+}
+
+.checkinout-modal .location-section {
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.checkinout-modal .location-section .loc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.checkinout-modal .location-section .loc-header span {
+  font-size: 18px;
+}
+
+.checkinout-modal .location-section .loc-header label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.checkinout-modal .location-section .loc-address {
+  font-size: 13px;
+  color: var(--text-primary);
+  padding: 8px 12px;
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.checkinout-modal .location-section .loc-coords {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.checkinout-modal .location-section .loc-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.checkinout-modal .location-section .loc-status.found {
+  background: #DCFCE7;
+  color: #166534;
+}
+
+.checkinout-modal .location-section .loc-status.loading {
+  background: #EFF6FF;
+  color: #1E40AF;
+}
+
+.checkinout-modal .location-section .loc-status.error {
+  background: #FEE2E2;
+  color: #991B1B;
+}
+
+.checkinout-modal .checkin-info {
+  background: #DCFCE7;
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.checkinout-modal .checkin-info p {
+  color: #166534;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.checkinout-modal .checkin-info .sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: #166534AA;
+  margin-top: 2px;
+}
+
+.checkinout-modal .modal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.checkinout-modal .modal-actions .cancel-btn {
+  flex: 1;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.checkinout-modal .modal-actions .cancel-btn:hover {
+  background: var(--bg-input);
+}
+
+.checkinout-modal .modal-actions .confirm-btn {
+  flex: 1;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: none;
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.checkinout-modal .modal-actions .confirm-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.checkinout-modal .modal-actions .confirm-btn.checkin {
+  background: linear-gradient(135deg, #059669, #10B981);
+}
+
+.checkinout-modal .modal-actions .confirm-btn.checkout {
+  background: linear-gradient(135deg, #DC2626, #EF4444);
+}
+
+.checkinout-modal .modal-actions .confirm-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (min-width: 768px) {
+  .checkinout-page {
+    max-width: 600px;
+    margin: 0 auto;
+    border-left: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
+  }
+}
