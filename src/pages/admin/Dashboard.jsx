@@ -9,7 +9,7 @@ import BottomNavigation from '../../components/BottomNavigation';
 
 export const AdminDashboard = () => {
   const navigate = useNavigate();
-  const { theme } = useTheme();
+  const { theme, toggleDark } = useTheme();
   const { user } = useAuth();
   
   const [loading, setLoading] = useState(true);
@@ -86,7 +86,7 @@ export const AdminDashboard = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: theme.colors.background,
+        backgroundColor: theme.dark ? '#0F172A' : '#F8FAFC',
       }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
@@ -106,61 +106,268 @@ export const AdminDashboard = () => {
     );
   }
 
+  const todayDate = new Date().toLocaleDateString('en-IN', { 
+    day: '2-digit', 
+    month: 'short', 
+    year: 'numeric' 
+  });
+
   return (
     <div style={{
       maxWidth: '480px',
       margin: '0 auto',
       minHeight: '100vh',
-      backgroundColor: theme.colors.background,
-      paddingBottom: '80px',
+      backgroundColor: theme.dark ? '#0F172A' : '#F8FAFC',
+      padding: '16px 16px 100px',
     }}>
-      {/* Header */}
-      <div className="page-header">
-        <h1>🛠️ Admin Dashboard</h1>
-        <p>Welcome back, {user?.name}</p>
+      
+      {/* ============================================ */}
+      {/* ✅ BLUE HEADER - Same as Employee Dashboard */}
+      {/* ============================================ */}
+      <div style={{
+        background: 'linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%)',
+        borderRadius: '20px',
+        padding: '24px 20px 20px',
+        marginBottom: '16px',
+        border: 'none',
+        boxShadow: '0 4px 24px rgba(59,130,246,0.25)',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* Decorative circles */}
+        <div style={{
+          position: 'absolute',
+          top: -40,
+          right: -30,
+          width: '120px',
+          height: '120px',
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.06)',
+        }} />
+        <div style={{
+          position: 'absolute',
+          bottom: -60,
+          left: -40,
+          width: '100px',
+          height: '100px',
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.04)',
+        }} />
+
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          {/* Top Row: Welcome + Theme Toggle */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            marginBottom: '10px',
+          }}>
+            <div>
+              <p style={{ 
+                color: 'rgba(255,255,255,0.7)', 
+                fontSize: '13px', 
+                fontWeight: 500,
+                marginBottom: '2px',
+              }}>
+                Welcome back,
+              </p>
+              <h2 style={{ 
+                color: '#FFFFFF', 
+                fontSize: '22px', 
+                fontWeight: 700, 
+                margin: 0,
+                lineHeight: 1.2,
+              }}>
+                {user?.name || 'Admin'}
+              </h2>
+            </div>
+            
+            {/* Theme Toggle - White style */}
+            <button
+              onClick={toggleDark}
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '12px',
+                border: '1px solid rgba(255,255,255,0.2)',
+                background: 'rgba(255,255,255,0.1)',
+                color: '#FFFFFF',
+                fontSize: '18px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backdropFilter: 'blur(4px)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                e.currentTarget.style.transform = 'scale(1.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                e.currentTarget.style.transform = 'scale(1)';
+              }}
+            >
+              {theme.dark ? '☀️' : '🌙'}
+            </button>
+          </div>
+
+          {/* User Info - White text */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '4px',
+          }}>
+            <span style={{
+              color: 'rgba(255,255,255,0.7)',
+              fontSize: '14px',
+              fontWeight: 500,
+            }}>
+              {user?.department || 'N/A'}
+            </span>
+            <span style={{
+              color: 'rgba(255,255,255,0.3)',
+              fontSize: '14px',
+            }}>
+              •
+            </span>
+            <span style={{
+              color: 'rgba(255,255,255,0.7)',
+              fontSize: '14px',
+              fontWeight: 500,
+            }}>
+              {user?.role || 'Admin'}
+            </span>
+          </div>
+
+          {/* Date - White */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            marginTop: '6px',
+          }}>
+            <span style={{
+              color: 'rgba(255,255,255,0.5)',
+              fontSize: '13px',
+            }}>
+              📅
+            </span>
+            <span style={{
+              color: 'rgba(255,255,255,0.6)',
+              fontSize: '13px',
+              fontWeight: 400,
+            }}>
+              {todayDate}
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="stats-row" style={{ padding: '12px 16px' }}>
-        <div className="stat-box">
-          <div className="label">Employees</div>
-          <div className="value" style={{ color: '#3B82F6' }}>{stats.totalEmployees}</div>
+      {/* Stats Cards - Grid style */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: '8px',
+        marginBottom: '20px',
+      }}>
+        <div style={{
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.6)' 
+            : '#FFFFFF',
+          borderRadius: '12px',
+          padding: '14px 8px',
+          textAlign: 'center',
+          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#3B82F6' }}>
+            {stats.totalEmployees}
+          </div>
+          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
+            Employees
+          </div>
         </div>
-        <div className="stat-box">
-          <div className="label">Present Today</div>
-          <div className="value" style={{ color: '#10B981' }}>{stats.todayPresent}</div>
+
+        <div style={{
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.6)' 
+            : '#FFFFFF',
+          borderRadius: '12px',
+          padding: '14px 8px',
+          textAlign: 'center',
+          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#10B981' }}>
+            {stats.todayPresent}
+          </div>
+          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
+            Present Today
+          </div>
         </div>
-        <div className="stat-box">
-          <div className="label">Absent Today</div>
-          <div className="value" style={{ color: '#EF4444' }}>{stats.todayAbsent}</div>
+
+        <div style={{
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.6)' 
+            : '#FFFFFF',
+          borderRadius: '12px',
+          padding: '14px 8px',
+          textAlign: 'center',
+          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#EF4444' }}>
+            {stats.todayAbsent}
+          </div>
+          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
+            Absent Today
+          </div>
         </div>
-        <div className="stat-box">
-          <div className="label">Pending Leaves</div>
-          <div className="value" style={{ color: '#F59E0B' }}>{stats.pendingLeaves}</div>
+
+        <div style={{
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.6)' 
+            : '#FFFFFF',
+          borderRadius: '12px',
+          padding: '14px 8px',
+          textAlign: 'center',
+          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#F59E0B' }}>
+            {stats.pendingLeaves}
+          </div>
+          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
+            Pending Leaves
+          </div>
         </div>
       </div>
 
       {/* Admin Tools */}
-      <div style={{ padding: '16px 20px' }}>
+      <div>
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: '16px'
+          marginBottom: '14px',
         }}>
-          <h3 style={{
-            fontSize: '17px',
-            fontWeight: 700,
-            color: theme.colors.textPrimary,
+          <h3 style={{ 
+            fontSize: '15px', 
+            fontWeight: 600, 
+            color: theme.dark ? '#F1F5F9' : '#0F172A',
           }}>
             🛠️ Admin Tools
           </h3>
           <span style={{
             fontSize: '11px',
-            color: theme.colors.textSecondary,
-            background: theme.colors.inputBg,
+            color: theme.dark ? '#94A3B8' : '#94A3B8',
+            background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F1F5F9',
             padding: '4px 12px',
             borderRadius: '12px',
+            fontWeight: 500,
           }}>
             {adminTools.length} tools
           </span>
@@ -172,8 +379,10 @@ export const AdminDashboard = () => {
               key={tool.path}
               onClick={() => navigate(tool.path)}
               style={{
-                background: theme.colors.card,
-                border: `1px solid ${theme.colors.border}`,
+                background: theme.dark 
+                  ? 'rgba(30, 41, 59, 0.6)' 
+                  : '#FFFFFF',
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                 borderRadius: '14px',
                 padding: '16px 18px',
                 display: 'flex',
@@ -181,19 +390,25 @@ export const AdminDashboard = () => {
                 gap: '14px',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                boxShadow: theme.dark 
+                  ? '0 2px 12px rgba(0,0,0,0.2)' 
+                  : '0 2px 12px rgba(0,0,0,0.04)',
                 width: '100%',
                 textAlign: 'left',
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = 'translateX(6px)';
-                e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.1)';
+                e.currentTarget.style.boxShadow = theme.dark 
+                  ? '0 4px 20px rgba(0,0,0,0.3)' 
+                  : '0 4px 16px rgba(0,0,0,0.08)';
                 e.currentTarget.style.borderColor = tool.color;
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'translateX(0)';
-                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)';
-                e.currentTarget.style.borderColor = theme.colors.border;
+                e.currentTarget.style.boxShadow = theme.dark 
+                  ? '0 2px 12px rgba(0,0,0,0.2)' 
+                  : '0 2px 12px rgba(0,0,0,0.04)';
+                e.currentTarget.style.borderColor = theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
               }}
             >
               <div style={{
@@ -213,13 +428,13 @@ export const AdminDashboard = () => {
                 <div style={{
                   fontSize: '15px',
                   fontWeight: 700,
-                  color: theme.colors.textPrimary,
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                 }}>
                   {tool.label}
                 </div>
                 <div style={{
                   fontSize: '12px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   marginTop: '2px',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -229,9 +444,10 @@ export const AdminDashboard = () => {
                 </div>
               </div>
               <div style={{
-                color: theme.colors.textMuted,
+                color: theme.dark ? '#64748B' : '#94A3B8',
                 fontSize: '18px',
                 transition: 'transform 0.2s ease',
+                flexShrink: 0,
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = 'translateX(4px)';
@@ -239,7 +455,7 @@ export const AdminDashboard = () => {
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'translateX(0)';
-                e.currentTarget.style.color = theme.colors.textMuted;
+                e.currentTarget.style.color = theme.dark ? '#64748B' : '#94A3B8';
               }}
               >
                 →
