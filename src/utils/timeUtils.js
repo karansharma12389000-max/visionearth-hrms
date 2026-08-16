@@ -2,61 +2,84 @@
 
 /**
  * IST Timezone utilities for HRMS application
- * All times are stored in UTC in database, displayed in IST
+ * Database is set to IST (Asia/Kolkata)
+ * All times stored and displayed in IST
  */
 
-const IST_OFFSET = 5.5 * 60 * 60 * 1000; // UTC+5:30
+// ============================================================
+// 1. GET CURRENT IST TIME
+// ============================================================
 
 /**
- * Get current time in IST as ISO string with +05:30 offset
- * Use this when storing times in the database
+ * Get current IST time as Date object
  */
-export const getISTTimeForDB = () => {
-  const now = new Date();
-  const istTime = new Date(now.getTime() + IST_OFFSET);
-  return istTime.toISOString().replace('Z', '+05:30');
+export const getISTNow = () => {
+  return new Date();
 };
 
 /**
- * Get current time in IST as UTC string
- * Use this for database storage (Supabase expects ISO format)
+ * Get current time in IST as ISO string for database storage
+ */
+export const getISTTimeForDB = () => {
+  return new Date().toISOString();
+};
+
+/**
+ * Get current time in IST as ISO string
  */
 export const getISTTimeISO = () => {
-  const now = new Date();
-  const istTime = new Date(now.getTime() + IST_OFFSET);
-  return istTime.toISOString();
+  return new Date().toISOString();
 };
 
 /**
  * Get today's date in IST (YYYY-MM-DD)
- * Use this for filtering and date comparisons
+ * Use for filtering and date comparisons
  */
 export const getTodayIST = () => {
-  const now = new Date();
-  const istTime = new Date(now.getTime() + IST_OFFSET);
-  return istTime.toISOString().split('T')[0];
+  return new Date().toISOString().split('T')[0];
+};
+
+// ============================================================
+// 2. FORMAT DATES IN IST
+// ============================================================
+
+/**
+ * Format date to IST date display (DD MMM YYYY)
+ */
+export const formatISTDate = (dateString) => {
+  if (!dateString) return '—';
+  
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '—';
+    
+    return date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  } catch (error) {
+    console.error('Error formatting date to IST:', error);
+    return '—';
+  }
 };
 
 /**
- * Format UTC date to IST time display (HH:MM:SS AM/PM)
- * Use this to display times in IST format
+ * Format date to IST time display (HH:MM:SS AM/PM)
  */
-export const formatUTCToIST = (utcDateString) => {
-  if (!utcDateString) return '—';
+export const formatISTTime = (timeString) => {
+  if (!timeString) return '—';
   
   try {
-    const date = new Date(utcDateString);
+    const date = new Date(timeString);
     if (isNaN(date.getTime())) return '—';
     
-    const istDate = new Date(date.getTime() + IST_OFFSET);
-    
-    let hours = istDate.getUTCHours();
-    const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12;
-    
-    return `${String(hours).padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
+    return date.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
   } catch (error) {
     console.error('Error formatting time to IST:', error);
     return '—';
@@ -64,53 +87,24 @@ export const formatUTCToIST = (utcDateString) => {
 };
 
 /**
- * Format UTC date to IST date display (DD MMM YYYY)
- * Use this to display dates in IST format
+ * Format date to IST date and time (DD MMM YYYY, HH:MM:SS AM/PM)
  */
-export const formatUTCDateToIST = (utcDateString) => {
-  if (!utcDateString) return '—';
+export const formatISTDateTime = (dateString) => {
+  if (!dateString) return '—';
   
   try {
-    const date = new Date(utcDateString);
+    const date = new Date(dateString);
     if (isNaN(date.getTime())) return '—';
     
-    const istDate = new Date(date.getTime() + IST_OFFSET);
-    
-    const day = String(istDate.getUTCDate()).padStart(2, '0');
-    const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][istDate.getUTCMonth()];
-    const year = istDate.getUTCFullYear();
-    
-    return `${day} ${month} ${year}`;
-  } catch (error) {
-    console.error('Error formatting date to IST:', error);
-    return '—';
-  }
-};
-
-/**
- * Format UTC date to IST date and time (DD MMM YYYY, HH:MM:SS AM/PM)
- * Use this for full datetime display
- */
-export const formatUTCDateTimeToIST = (utcDateString) => {
-  if (!utcDateString) return '—';
-  
-  try {
-    const date = new Date(utcDateString);
-    if (isNaN(date.getTime())) return '—';
-    
-    const istDate = new Date(date.getTime() + IST_OFFSET);
-    
-    const day = String(istDate.getUTCDate()).padStart(2, '0');
-    const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][istDate.getUTCMonth()];
-    const year = istDate.getUTCFullYear();
-    
-    let hours = istDate.getUTCHours();
-    const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12;
-    
-    return `${day} ${month} ${year}, ${String(hours).padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
+    return date.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
   } catch (error) {
     console.error('Error formatting datetime to IST:', error);
     return '—';
@@ -118,198 +112,108 @@ export const formatUTCDateTimeToIST = (utcDateString) => {
 };
 
 /**
+ * Format IST date for display (alias)
+ */
+export const formatIST = (dateString, format = 'date') => {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return 'N/A';
+  
+  const options = {};
+  switch (format) {
+    case 'date':
+      options.day = '2-digit';
+      options.month = 'short';
+      options.year = 'numeric';
+      break;
+    case 'time':
+      options.hour = '2-digit';
+      options.minute = '2-digit';
+      options.second = '2-digit';
+      options.hour12 = true;
+      break;
+    case 'datetime':
+      options.day = '2-digit';
+      options.month = 'short';
+      options.year = 'numeric';
+      options.hour = '2-digit';
+      options.minute = '2-digit';
+      options.second = '2-digit';
+      options.hour12 = true;
+      break;
+    default:
+      options.day = '2-digit';
+      options.month = 'short';
+      options.year = 'numeric';
+  }
+  
+  return date.toLocaleString('en-IN', options);
+};
+
+// ============================================================
+// 3. GET CURRENT DISPLAY VALUES
+// ============================================================
+
+/**
  * Get current IST time as string (HH:MM:SS AM/PM)
- * Use this for real-time clock display
  */
 export const getCurrentISTTime = () => {
-  const now = new Date();
-  const istDate = new Date(now.getTime() + IST_OFFSET);
-  
-  let hours = istDate.getUTCHours();
-  const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
-  const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12 || 12;
-  
-  return `${String(hours).padStart(2, '0')}:${minutes}:${seconds} ${ampm}`;
+  return new Date().toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
 };
 
 /**
  * Get current IST date as string (DD MMM YYYY)
- * Use this for date display
  */
 export const getCurrentISTDate = () => {
-  const now = new Date();
-  const istDate = new Date(now.getTime() + IST_OFFSET);
-  
-  const day = String(istDate.getUTCDate()).padStart(2, '0');
-  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][istDate.getUTCMonth()];
-  const year = istDate.getUTCFullYear();
-  
-  return `${day} ${month} ${year}`;
+  return new Date().toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
 };
 
 /**
  * Get current IST time as 24-hour format (HH:MM:SS)
- * Use this for database queries or comparisons
  */
 export const getISTTimeString = () => {
-  const now = new Date();
-  const istDate = new Date(now.getTime() + IST_OFFSET);
-  
-  const hours = String(istDate.getUTCHours()).padStart(2, '0');
-  const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
-  const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
-  
-  return `${hours}:${minutes}:${seconds}`;
+  return new Date().toTimeString().split(' ')[0];
 };
 
-/**
- * Format date to IST date string for database (YYYY-MM-DD)
- * Use this when formatting dates for database queries
- */
-export const formatDateToIST = (date) => {
-  if (!date) return null;
-  
-  try {
-    const d = new Date(date);
-    if (isNaN(d.getTime())) return null;
-    
-    const istDate = new Date(d.getTime() + IST_OFFSET);
-    return istDate.toISOString().split('T')[0];
-  } catch (error) {
-    console.error('Error formatting date to IST:', error);
-    return null;
-  }
-};
+// ============================================================
+// 4. DATE RANGE HELPERS
+// ============================================================
 
 /**
- * Convert UTC time to IST time object
- * Use this when you need to work with IST time objects
- */
-export const convertUTCToIST = (utcDate) => {
-  if (!utcDate) return null;
-  
-  try {
-    const date = new Date(utcDate);
-    if (isNaN(date.getTime())) return null;
-    
-    return new Date(date.getTime() + IST_OFFSET);
-  } catch (error) {
-    console.error('Error converting to IST:', error);
-    return null;
-  }
-};
-
-/**
- * Check if a time is within IST business hours (9 AM - 6 PM)
- * Use this for validation
- */
-export const isWithinBusinessHours = (utcDateString) => {
-  if (!utcDateString) return false;
-  
-  try {
-    const date = new Date(utcDateString);
-    if (isNaN(date.getTime())) return false;
-    
-    const istDate = new Date(date.getTime() + IST_OFFSET);
-    const hours = istDate.getUTCHours();
-    
-    return hours >= 9 && hours < 18;
-  } catch (error) {
-    console.error('Error checking business hours:', error);
-    return false;
-  }
-};
-
-/**
- * Get IST time for a specific date and time components
- * Use this to construct specific IST times
- */
-export const createISTDateTime = (year, month, day, hours = 0, minutes = 0, seconds = 0) => {
-  // Create date in UTC
-  const utcDate = new Date(Date.UTC(year, month - 1, day, hours - 5, minutes - 30, seconds));
-  return utcDate.toISOString();
-};
-
-/**
- * Get the start of day in IST (00:00:00)
- * Use this for daily report generation
- */
-export const getStartOfDayIST = (date) => {
-  if (!date) {
-    date = new Date();
-  }
-  
-  const d = new Date(date);
-  const istDate = new Date(d.getTime() + IST_OFFSET);
-  istDate.setUTCHours(0, 0, 0, 0);
-  
-  return new Date(istDate.getTime() - IST_OFFSET).toISOString();
-};
-
-/**
- * Get the end of day in IST (23:59:59)
- * Use this for daily report generation
- */
-export const getEndOfDayIST = (date) => {
-  if (!date) {
-    date = new Date();
-  }
-  
-  const d = new Date(date);
-  const istDate = new Date(d.getTime() + IST_OFFSET);
-  istDate.setUTCHours(23, 59, 59, 999);
-  
-  return new Date(istDate.getTime() - IST_OFFSET).toISOString();
-};
-
-/**
- * Get month range in IST
- * Use this for monthly reports
+ * Get IST date range for a month
  */
 export const getMonthRangeIST = (month, year) => {
   const startDate = new Date(year, month - 1, 1);
   const endDate = new Date(year, month, 0);
   
-  const startIST = new Date(startDate.getTime() + IST_OFFSET);
-  const endIST = new Date(endDate.getTime() + IST_OFFSET);
-  
   return {
-    startDate: startIST.toISOString().split('T')[0],
-    endDate: endIST.toISOString().split('T')[0],
+    startDate: startDate.toISOString().split('T')[0],
+    endDate: endDate.toISOString().split('T')[0],
     startUTC: startDate.toISOString(),
     endUTC: endDate.toISOString()
   };
 };
 
 /**
- * Convert IST date string to UTC for database queries
+ * Get IST date range for today
  */
-export const istDateToUTC = (istDateStr) => {
-  if (!istDateStr) return null;
-  const date = new Date(istDateStr + 'T00:00:00.000Z');
-  return new Date(date.getTime() - IST_OFFSET).toISOString();
-};
-
-/**
- * Get IST date from UTC timestamp
- */
-export const getISTDateFromUTC = (utcDateStr) => {
-  if (!utcDateStr) return null;
-  const date = new Date(utcDateStr);
-  const istDate = new Date(date.getTime() + IST_OFFSET);
-  return istDate.toISOString().split('T')[0];
-};
-
-/**
- * Get IST time from UTC timestamp
- */
-export const getISTTimeFromUTC = (utcDateStr) => {
-  if (!utcDateStr) return null;
-  const date = new Date(utcDateStr);
-  const istDate = new Date(date.getTime() + IST_OFFSET);
-  return istDate.toTimeString().split(' ')[0];
+export const getTodayRangeIST = () => {
+  const today = getTodayIST();
+  return {
+    start: today,
+    end: today,
+    startUTC: today + 'T00:00:00.000Z',
+    endUTC: today + 'T23:59:59.999Z'
+  };
 };
 
 /**
@@ -319,4 +223,57 @@ export const isTodayIST = (dateStr) => {
   if (!dateStr) return false;
   const today = getTodayIST();
   return dateStr === today;
+};
+
+/**
+ * Check if a time is within IST business hours (9 AM - 6 PM)
+ */
+export const isWithinBusinessHours = (dateString) => {
+  if (!dateString) return false;
+  
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return false;
+    
+    const hours = date.getHours();
+    return hours >= 9 && hours < 18;
+  } catch (error) {
+    console.error('Error checking business hours:', error);
+    return false;
+  }
+};
+
+// ============================================================
+// 5. LEGACY COMPATIBILITY (For existing code)
+// ============================================================
+
+// These are aliases for backward compatibility
+export const formatUTCDateToIST = formatISTDate;
+export const formatUTCToIST = formatISTTime;
+export const formatUTCDateTimeToIST = formatISTDateTime;
+export const getISTDateFromUTC = (utcDateStr) => {
+  if (!utcDateStr) return null;
+  return new Date(utcDateStr).toISOString().split('T')[0];
+};
+export const getISTTimeFromUTC = (utcDateStr) => {
+  if (!utcDateStr) return null;
+  return new Date(utcDateStr).toTimeString().split(' ')[0];
+};
+
+export default {
+  getISTNow,
+  getISTTimeForDB,
+  getISTTimeISO,
+  getTodayIST,
+  formatISTDate,
+  formatISTTime,
+  formatISTDateTime,
+  formatIST,
+  getCurrentISTTime,
+  getCurrentISTDate,
+  getISTTimeString,
+  getMonthRangeIST,
+  getTodayRangeIST,
+  isTodayIST,
+  isWithinBusinessHours
 };

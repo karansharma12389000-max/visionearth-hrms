@@ -23,8 +23,8 @@ import {
 
 export const Report = () => {
   const navigate = useNavigate();
-  const { theme } = useTheme();
-  const { user } = useAuth(); // Get logged-in user
+  const { theme, toggleDark } = useTheme();
+  const { user } = useAuth();
   
   const [reportData, setReportData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -93,32 +93,28 @@ export const Report = () => {
       const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
       const endDate = `${year}-${String(month).padStart(2, '0')}-${new Date(year, month, 0).getDate()}`;
       
-      // ✅ IMPORTANT: Get the logged-in employee's data
       const { data: empData, error: empError } = await supabase
         .from('employees')
         .select('id, name, employee_id, department')
-        .eq('id', user?.id); // Filter by logged-in user ID
+        .eq('id', user?.id);
       
       if (empError) throw empError;
       
-      // If no employee found, return empty
       if (!empData || empData.length === 0) {
         setReportData([]);
         setLoading(false);
         return;
       }
       
-      // Get attendance for the logged-in employee
       const { data: attData, error: attError } = await supabase
         .from('attendance')
         .select('*')
-        .eq('employee_id', user?.id) // Filter by logged-in user ID
+        .eq('employee_id', user?.id)
         .gte('attendance_date', startDate)
         .lte('attendance_date', endDate);
       
       if (attError) throw attError;
       
-      // Build report for the logged-in employee
       const report = empData.map(emp => {
         const empAttendance = attData?.filter(a => a.employee_id === emp.id) || [];
         const present = empAttendance.filter(a => a.status === 'P' || a.status === 'Present').length;
@@ -130,7 +126,6 @@ export const Report = () => {
         const total = empAttendance.length;
         const daysInMonth = new Date(year, month, 0).getDate();
         
-        // Build days object for day-wise status
         const days = {};
         empAttendance.forEach(a => {
           const day = new Date(a.attendance_date).getDate();
@@ -193,7 +188,6 @@ export const Report = () => {
   const stats = getStats();
   const daysInMonth = new Date(year, month, 0).getDate();
 
-  // Chart data - include all categories even with 0 values
   const barChartData = ALL_STATUSES.map(s => ({
     name: s.name,
     count: stats[s.key] || 0,
@@ -244,7 +238,7 @@ export const Report = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: theme.colors.background,
+        backgroundColor: theme.dark ? '#0F172A' : '#F8FAFC',
       }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
@@ -269,23 +263,114 @@ export const Report = () => {
       maxWidth: '480px',
       margin: '0 auto',
       minHeight: '100vh',
-      backgroundColor: theme.colors.background,
-      paddingBottom: '80px',
+      backgroundColor: theme.dark ? '#0F172A' : '#F8FAFC',
+      padding: '16px 16px 100px',
     }}>
-      {/* Header */}
-      <div className="page-header">
-        <h1>📊 Attendance Report</h1>
-        <p>{getMonthName(month)} {year}</p>
+      
+      {/* ✅ UBER-STYLE HEADER - Same as all other pages */}
+      <div style={{
+        background: 'linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%)',
+        borderRadius: '20px',
+        padding: '24px 20px 20px',
+        marginBottom: '16px',
+        border: 'none',
+        boxShadow: '0 4px 24px rgba(59,130,246,0.25)',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* Decorative circles */}
+        <div style={{
+          position: 'absolute',
+          top: -40,
+          right: -30,
+          width: '120px',
+          height: '120px',
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.06)',
+        }} />
+        <div style={{
+          position: 'absolute',
+          bottom: -60,
+          left: -40,
+          width: '100px',
+          height: '100px',
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.04)',
+        }} />
+
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          {/* Top Row: Title + Theme Toggle */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            marginBottom: '6px',
+          }}>
+            <div>
+              <h1 style={{ 
+                color: '#FFFFFF', 
+                fontSize: '22px', 
+                fontWeight: 700, 
+                margin: 0,
+                lineHeight: 1.2,
+              }}>
+                📊 Attendance Report
+              </h1>
+              <p style={{ 
+                color: 'rgba(255,255,255,0.7)', 
+                fontSize: '13px', 
+                fontWeight: 500,
+                marginTop: '2px',
+              }}>
+                {getMonthName(month)} {year}
+              </p>
+            </div>
+            
+            {/* Theme Toggle - White style */}
+            <button
+              onClick={toggleDark}
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '12px',
+                border: '1px solid rgba(255,255,255,0.2)',
+                background: 'rgba(255,255,255,0.1)',
+                color: '#FFFFFF',
+                fontSize: '18px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backdropFilter: 'blur(4px)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                e.currentTarget.style.transform = 'scale(1.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                e.currentTarget.style.transform = 'scale(1)';
+              }}
+            >
+              {theme.dark ? '☀️' : '🌙'}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Filters Card */}
+      {/* Filters Card - Uber Style */}
       <div style={{
-        margin: '12px 16px',
         padding: '16px',
-        background: theme.colors.card,
-        borderRadius: '12px',
-        border: `1px solid ${theme.colors.border}`,
-        boxShadow: theme.dark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 2px 8px rgba(0,0,0,0.04)',
+        background: theme.dark 
+          ? 'rgba(30, 41, 59, 0.6)' 
+          : '#FFFFFF',
+        borderRadius: '14px',
+        marginBottom: '16px',
+        border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+        boxShadow: theme.dark 
+          ? '0 4px 20px rgba(0,0,0,0.2)' 
+          : '0 4px 20px rgba(0,0,0,0.04)',
       }}>
         <div style={{
           display: 'flex',
@@ -296,16 +381,15 @@ export const Report = () => {
           <select 
             value={month} 
             onChange={(e) => setMonth(parseInt(e.target.value))}
-            className="form-control"
             style={{ 
               flex: 1, 
               minWidth: '80px', 
               padding: '10px 14px', 
               fontSize: '13px',
               borderRadius: '10px',
-              border: `1px solid ${theme.colors.border}`,
-              background: theme.colors.inputBg,
-              color: theme.colors.textPrimary,
+              border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+              background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+              color: theme.dark ? '#F1F5F9' : '#0F172A',
               outline: 'none',
               fontFamily: 'Inter, sans-serif',
               cursor: 'pointer',
@@ -319,16 +403,15 @@ export const Report = () => {
           <select 
             value={year} 
             onChange={(e) => setYear(parseInt(e.target.value))}
-            className="form-control"
             style={{ 
               flex: 1, 
               minWidth: '70px', 
               padding: '10px 14px', 
               fontSize: '13px',
               borderRadius: '10px',
-              border: `1px solid ${theme.colors.border}`,
-              background: theme.colors.inputBg,
-              color: theme.colors.textPrimary,
+              border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+              background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+              color: theme.dark ? '#F1F5F9' : '#0F172A',
               outline: 'none',
               fontFamily: 'Inter, sans-serif',
               cursor: 'pointer',
@@ -346,8 +429,7 @@ export const Report = () => {
         display: 'grid',
         gridTemplateColumns: 'repeat(3, 1fr)',
         gap: '8px',
-        padding: '0 16px',
-        marginBottom: '12px',
+        marginBottom: '16px',
       }}>
         {STATUS_CARDS.map((card) => (
           <div
@@ -387,15 +469,16 @@ export const Report = () => {
         ))}
       </div>
 
-      {/* View Toggle */}
-      <div style={{ padding: '0 16px', marginBottom: '12px' }}>
+      {/* View Toggle - Uber Style */}
+      <div style={{ marginBottom: '16px' }}>
         <div style={{
           display: 'flex',
           gap: '8px',
-          background: theme.colors.card,
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.4)' 
+            : '#F1F5F9',
           padding: '4px',
           borderRadius: '12px',
-          border: `1px solid ${theme.colors.border}`,
         }}>
           <button
             onClick={() => setView('table')}
@@ -404,14 +487,22 @@ export const Report = () => {
               padding: '10px',
               borderRadius: '10px',
               border: 'none',
-              background: view === 'table' ? `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.primary}DD)` : 'transparent',
-              color: view === 'table' ? '#FFFFFF' : theme.colors.textSecondary,
+              background: view === 'table' 
+                ? 'linear-gradient(135deg, #3B82F6, #6366F1)' 
+                : 'transparent',
+              color: view === 'table' 
+                ? '#FFFFFF' 
+                : theme.dark 
+                  ? '#94A3B8' 
+                  : '#64748B',
               fontWeight: 700,
               fontSize: '13px',
               cursor: 'pointer',
               transition: 'all 0.3s ease',
               fontFamily: 'Inter, sans-serif',
-              boxShadow: view === 'table' ? '0 4px 14px rgba(59,130,246,0.3)' : 'none',
+              boxShadow: view === 'table' 
+                ? '0 4px 14px rgba(59,130,246,0.3)' 
+                : 'none',
             }}
           >
             📋 Table
@@ -423,14 +514,22 @@ export const Report = () => {
               padding: '10px',
               borderRadius: '10px',
               border: 'none',
-              background: view === 'chart' ? `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.primary}DD)` : 'transparent',
-              color: view === 'chart' ? '#FFFFFF' : theme.colors.textSecondary,
+              background: view === 'chart' 
+                ? 'linear-gradient(135deg, #3B82F6, #6366F1)' 
+                : 'transparent',
+              color: view === 'chart' 
+                ? '#FFFFFF' 
+                : theme.dark 
+                  ? '#94A3B8' 
+                  : '#64748B',
               fontWeight: 700,
               fontSize: '13px',
               cursor: 'pointer',
               transition: 'all 0.3s ease',
               fontFamily: 'Inter, sans-serif',
-              boxShadow: view === 'chart' ? '0 4px 14px rgba(59,130,246,0.3)' : 'none',
+              boxShadow: view === 'chart' 
+                ? '0 4px 14px rgba(59,130,246,0.3)' 
+                : 'none',
             }}
           >
             📊 Chart
@@ -440,13 +539,17 @@ export const Report = () => {
 
       {/* Table View */}
       {view === 'table' && (
-        <div style={{ padding: '0 16px 16px' }}>
+        <div>
           <div style={{
-            background: theme.colors.card,
-            borderRadius: '12px',
-            border: `1px solid ${theme.colors.border}`,
+            background: theme.dark 
+              ? 'rgba(30, 41, 59, 0.6)' 
+              : '#FFFFFF',
+            borderRadius: '14px',
+            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
             overflow: 'hidden',
-            boxShadow: theme.dark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 2px 8px rgba(0,0,0,0.04)',
+            boxShadow: theme.dark 
+              ? '0 4px 20px rgba(0,0,0,0.2)' 
+              : '0 4px 20px rgba(0,0,0,0.04)',
           }}>
             <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
               <table style={{
@@ -457,23 +560,23 @@ export const Report = () => {
               }}>
                 <thead>
                   <tr style={{
-                    background: theme.colors.inputBg,
-                    borderBottom: `2px solid ${theme.colors.border}`,
+                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                    borderBottom: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                   }}>
                     <th style={{
                       padding: '12px 10px',
                       textAlign: 'left',
                       fontWeight: 700,
-                      color: theme.colors.textPrimary,
-                      fontSize: '11px',
+                      color: theme.dark ? '#94A3B8' : '#64748B',
+                      fontSize: '10px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.3px',
                       position: 'sticky',
                       left: 0,
-                      background: theme.colors.inputBg,
+                      background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
                       minWidth: '120px',
                       zIndex: 2,
-                      borderRight: `1px solid ${theme.colors.border}`,
+                      borderRight: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                     }}>
                       👤 Employee
                     </th>
@@ -481,8 +584,8 @@ export const Report = () => {
                       padding: '12px 6px',
                       textAlign: 'center',
                       fontWeight: 700,
-                      color: theme.colors.textPrimary,
-                      fontSize: '11px',
+                      color: theme.dark ? '#94A3B8' : '#64748B',
+                      fontSize: '10px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.3px',
                       minWidth: '40px',
@@ -494,7 +597,7 @@ export const Report = () => {
                       textAlign: 'center',
                       fontWeight: 700,
                       color: '#10B981',
-                      fontSize: '11px',
+                      fontSize: '10px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.3px',
                       minWidth: '30px',
@@ -506,7 +609,7 @@ export const Report = () => {
                       textAlign: 'center',
                       fontWeight: 700,
                       color: '#EF4444',
-                      fontSize: '11px',
+                      fontSize: '10px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.3px',
                       minWidth: '30px',
@@ -518,7 +621,7 @@ export const Report = () => {
                       textAlign: 'center',
                       fontWeight: 700,
                       color: '#8B5CF6',
-                      fontSize: '11px',
+                      fontSize: '10px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.3px',
                       minWidth: '35px',
@@ -530,7 +633,7 @@ export const Report = () => {
                       textAlign: 'center',
                       fontWeight: 700,
                       color: '#F59E0B',
-                      fontSize: '11px',
+                      fontSize: '10px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.3px',
                       minWidth: '30px',
@@ -542,7 +645,7 @@ export const Report = () => {
                       textAlign: 'center',
                       fontWeight: 700,
                       color: '#DC2626',
-                      fontSize: '11px',
+                      fontSize: '10px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.3px',
                       minWidth: '30px',
@@ -554,7 +657,7 @@ export const Report = () => {
                       textAlign: 'center',
                       fontWeight: 700,
                       color: '#3B82F6',
-                      fontSize: '11px',
+                      fontSize: '10px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.3px',
                       minWidth: '30px',
@@ -566,10 +669,10 @@ export const Report = () => {
                         padding: '12px 4px',
                         textAlign: 'center',
                         fontWeight: 600,
-                        color: theme.colors.textMuted,
-                        fontSize: '10px',
+                        color: theme.dark ? '#64748B' : '#94A3B8',
+                        fontSize: '9px',
                         minWidth: '28px',
-                        background: theme.colors.inputBg,
+                        background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
                       }}>
                         {day}
                       </th>
@@ -582,7 +685,7 @@ export const Report = () => {
                       <td colSpan={8 + daysInMonth} style={{
                         padding: '40px',
                         textAlign: 'center',
-                        color: theme.colors.textSecondary,
+                        color: theme.dark ? '#94A3B8' : '#94A3B8',
                       }}>
                         <div style={{ fontSize: '40px', marginBottom: '8px' }}>📊</div>
                         <p style={{ fontWeight: 600 }}>No data available</p>
@@ -593,36 +696,33 @@ export const Report = () => {
                       <tr 
                         key={emp.id || idx}
                         style={{
-                          borderBottom: idx < reportData.length - 1 ? `1px solid ${theme.colors.border}` : 'none',
-                          transition: 'background 0.2s ease',
-                          background: idx % 2 === 0 ? theme.colors.background : 'transparent',
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = theme.colors.inputBg;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = idx % 2 === 0 ? theme.colors.background : 'transparent';
+                          borderBottom: idx < reportData.length - 1 ? `1px solid ${theme.dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'}` : 'none',
+                          background: idx % 2 === 0 
+                            ? (theme.dark ? 'rgba(255,255,255,0.02)' : '#FAFAFA') 
+                            : 'transparent',
                         }}
                       >
                         <td style={{
                           padding: '10px 10px',
                           position: 'sticky',
                           left: 0,
-                          background: idx % 2 === 0 ? theme.colors.background : 'transparent',
+                          background: idx % 2 === 0 
+                            ? (theme.dark ? 'rgba(255,255,255,0.02)' : '#FAFAFA') 
+                            : 'transparent',
                           minWidth: '120px',
                           zIndex: 1,
-                          borderRight: `1px solid ${theme.colors.border}`,
+                          borderRight: `1px solid ${theme.dark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'}`,
                         }}>
                           <div style={{
                             fontWeight: 700,
-                            color: theme.colors.textPrimary,
+                            color: theme.dark ? '#F1F5F9' : '#0F172A',
                             fontSize: '13px',
                           }}>
                             {emp.name}
                           </div>
                           <div style={{
                             fontSize: '10px',
-                            color: theme.colors.textMuted,
+                            color: theme.dark ? '#94A3B8' : '#94A3B8',
                             fontWeight: 400,
                           }}>
                             {emp.employee_id}
@@ -632,7 +732,7 @@ export const Report = () => {
                           padding: '10px 6px',
                           textAlign: 'center',
                           fontWeight: 700,
-                          color: theme.colors.textPrimary,
+                          color: theme.dark ? '#F1F5F9' : '#0F172A',
                           fontSize: '13px',
                         }}>
                           {emp.total}
@@ -708,42 +808,44 @@ export const Report = () => {
             </div>
           </div>
 
-          {/* Legend */}
+          {/* Legend - Uber Style */}
           <div style={{
             display: 'flex',
             flexWrap: 'wrap',
             gap: '10px',
             padding: '14px 16px',
             marginTop: '12px',
-            background: theme.colors.card,
+            background: theme.dark 
+              ? 'rgba(30, 41, 59, 0.6)' 
+              : '#FFFFFF',
             borderRadius: '12px',
-            border: `1px solid ${theme.colors.border}`,
+            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
             justifyContent: 'center',
             alignItems: 'center',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '4px', background: '#10B981' }}></span>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.colors.textSecondary }}>P - Present</span>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#94A3B8' }}>P - Present</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '4px', background: '#EF4444' }}></span>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.colors.textSecondary }}>A - Absent</span>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#94A3B8' }}>A - Absent</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '4px', background: '#8B5CF6' }}></span>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.colors.textSecondary }}>ACO - Auto Check-Out</span>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#94A3B8' }}>ACO - Auto Check-Out</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '4px', background: '#F59E0B' }}></span>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.colors.textSecondary }}>D - Delayed</span>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#94A3B8' }}>D - Delayed</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '4px', background: '#DC2626' }}></span>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.colors.textSecondary }}>B - Beyond Delay</span>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#94A3B8' }}>B - Beyond Delay</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ display: 'inline-block', width: '14px', height: '14px', borderRadius: '4px', background: '#3B82F6' }}></span>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.colors.textSecondary }}>L - Leave</span>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#94A3B8' }}>L - Leave</span>
             </div>
           </div>
         </div>
@@ -751,14 +853,18 @@ export const Report = () => {
 
       {/* Chart View */}
       {view === 'chart' && (
-        <div style={{ padding: '0 16px 16px' }}>
-          {/* Bar Chart Card */}
+        <div>
+          {/* Bar Chart Card - Uber Style */}
           <div style={{
-            background: theme.colors.card,
-            borderRadius: '12px',
+            background: theme.dark 
+              ? 'rgba(30, 41, 59, 0.6)' 
+              : '#FFFFFF',
+            borderRadius: '14px',
             padding: '20px',
-            border: `1px solid ${theme.colors.border}`,
-            boxShadow: theme.dark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 2px 8px rgba(0,0,0,0.04)',
+            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+            boxShadow: theme.dark 
+              ? '0 4px 20px rgba(0,0,0,0.2)' 
+              : '0 4px 20px rgba(0,0,0,0.04)',
             marginBottom: '12px',
           }}>
             <div style={{
@@ -770,14 +876,14 @@ export const Report = () => {
               <h4 style={{
                 fontSize: '15px',
                 fontWeight: 700,
-                color: theme.colors.textPrimary,
+                color: theme.dark ? '#F1F5F9' : '#0F172A',
                 margin: 0,
               }}>
                 📊 Attendance Summary
               </h4>
               <span style={{
                 fontSize: '11px',
-                color: theme.colors.textMuted,
+                color: theme.dark ? '#94A3B8' : '#94A3B8',
                 fontWeight: 500,
               }}>
                 {getMonthName(month)} {year}
@@ -786,32 +892,32 @@ export const Report = () => {
             
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={barChartData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={theme.colors.border} vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke={theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'} vertical={false} />
                 <XAxis 
                   dataKey="name" 
-                  stroke={theme.colors.textSecondary} 
+                  stroke={theme.dark ? '#94A3B8' : '#94A3B8'} 
                   fontSize={10} 
-                  axisLine={{ stroke: theme.colors.border }}
-                  tickLine={{ stroke: theme.colors.border }}
+                  axisLine={{ stroke: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
+                  tickLine={{ stroke: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
                   interval={0}
                   angle={-15}
                   textAnchor="end"
                   height={50}
                 />
                 <YAxis 
-                  stroke={theme.colors.textSecondary} 
+                  stroke={theme.dark ? '#94A3B8' : '#94A3B8'} 
                   fontSize={10}
-                  axisLine={{ stroke: theme.colors.border }}
-                  tickLine={{ stroke: theme.colors.border }}
+                  axisLine={{ stroke: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
+                  tickLine={{ stroke: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
                   allowDecimals={false}
                   domain={[0, Math.max(...barChartData.map(d => d.count)) + 1 || 5]}
                 />
                 <Tooltip 
                   contentStyle={{ 
-                    background: theme.colors.card, 
-                    border: `1px solid ${theme.colors.border}`,
+                    background: theme.dark ? '#1E293B' : '#FFFFFF', 
+                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
                     borderRadius: '10px',
-                    color: theme.colors.textPrimary,
+                    color: theme.dark ? '#F1F5F9' : '#0F172A',
                     fontSize: '12px',
                     boxShadow: '0 4px 14px rgba(0,0,0,0.1)',
                   }}
@@ -838,7 +944,7 @@ export const Report = () => {
                   alignItems: 'center',
                   gap: '4px',
                   fontSize: '10px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#94A3B8',
                 }}>
                   <span style={{
                     display: 'inline-block',
@@ -853,14 +959,18 @@ export const Report = () => {
             </div>
           </div>
 
-          {/* Pie Chart Card */}
+          {/* Pie Chart Card - Uber Style */}
           {pieChartData.length > 0 && (
             <div style={{
-              background: theme.colors.card,
-              borderRadius: '12px',
+              background: theme.dark 
+                ? 'rgba(30, 41, 59, 0.6)' 
+                : '#FFFFFF',
+              borderRadius: '14px',
               padding: '20px',
-              border: `1px solid ${theme.colors.border}`,
-              boxShadow: theme.dark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 2px 8px rgba(0,0,0,0.04)',
+              border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+              boxShadow: theme.dark 
+                ? '0 4px 20px rgba(0,0,0,0.2)' 
+                : '0 4px 20px rgba(0,0,0,0.04)',
             }}>
               <div style={{
                 display: 'flex',
@@ -871,14 +981,14 @@ export const Report = () => {
                 <h4 style={{
                   fontSize: '15px',
                   fontWeight: 700,
-                  color: theme.colors.textPrimary,
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   margin: 0,
                 }}>
                   📊 Distribution
                 </h4>
                 <span style={{
                   fontSize: '11px',
-                  color: theme.colors.textMuted,
+                  color: theme.dark ? '#94A3B8' : '#94A3B8',
                   fontWeight: 500,
                 }}>
                   Total: {stats.total}
@@ -896,7 +1006,7 @@ export const Report = () => {
                     paddingAngle={3}
                     dataKey="value"
                     label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
-                    labelLine={{ stroke: theme.colors.border, strokeWidth: 1 }}
+                    labelLine={{ stroke: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', strokeWidth: 1 }}
                     fontSize={11}
                     fontWeight={600}
                   >
@@ -906,10 +1016,10 @@ export const Report = () => {
                   </Pie>
                   <Tooltip 
                     contentStyle={{ 
-                      background: theme.colors.card, 
-                      border: `1px solid ${theme.colors.border}`,
+                      background: theme.dark ? '#1E293B' : '#FFFFFF', 
+                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
                       borderRadius: '10px',
-                      color: theme.colors.textPrimary,
+                      color: theme.dark ? '#F1F5F9' : '#0F172A',
                       fontSize: '12px',
                       boxShadow: '0 4px 14px rgba(0,0,0,0.1)',
                     }}
@@ -919,7 +1029,7 @@ export const Report = () => {
                     wrapperStyle={{ 
                       fontSize: '11px', 
                       paddingTop: '8px',
-                      color: theme.colors.textSecondary,
+                      color: theme.dark ? '#94A3B8' : '#94A3B8',
                     }}
                     iconType="circle"
                     iconSize={8}
@@ -934,12 +1044,14 @@ export const Report = () => {
 
           {pieChartData.length === 0 && (
             <div style={{
-              background: theme.colors.card,
-              borderRadius: '12px',
+              background: theme.dark 
+                ? 'rgba(30, 41, 59, 0.6)' 
+                : '#FFFFFF',
+              borderRadius: '14px',
               padding: '40px 20px',
-              border: `1px solid ${theme.colors.border}`,
+              border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
               textAlign: 'center',
-              color: theme.colors.textMuted,
+              color: theme.dark ? '#94A3B8' : '#94A3B8',
             }}>
               <span style={{ fontSize: '32px' }}>📊</span>
               <p style={{ marginTop: '8px', fontSize: '13px' }}>No data available for pie chart</p>

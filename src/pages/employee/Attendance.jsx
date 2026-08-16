@@ -20,7 +20,7 @@ import BottomNavigation from '../../components/BottomNavigation';
 
 export const Attendance = () => {
   const navigate = useNavigate();
-  const { theme } = useTheme();
+  const { theme, toggleDark } = useTheme();
   const { user } = useAuth();
   
   const [attendance, setAttendance] = useState([]);
@@ -39,6 +39,7 @@ export const Attendance = () => {
   const [address, setAddress] = useState('');
   const [fetchingLocation, setFetchingLocation] = useState(false);
   const [locationError, setLocationError] = useState('');
+  const [locationFetched, setLocationFetched] = useState(false);
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [isComplete, setIsComplete] = useState(false);
   const [activeTab, setActiveTab] = useState('attendance');
@@ -65,6 +66,7 @@ export const Attendance = () => {
     reportingLocation: user?.reporting_location || '',
     remarks: '',
   });
+  const [acoLoading, setAcoLoading] = useState(false);
 
   const [projectFields, setProjectFields] = useState([
     { project: '', workDone: '' }
@@ -96,6 +98,28 @@ export const Attendance = () => {
     'Leave': '#3B82F6',
     'ACO': '#8B5CF6',
     'Auto Check-Out': '#8B5CF6',
+  };
+
+  // Helper function to format time from various formats
+  const formatTimeDisplay = (timeValue) => {
+    if (!timeValue) return 'N/A';
+    
+    // If it's already a time string (HH:MM:SS format)
+    if (typeof timeValue === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(timeValue)) {
+      return timeValue.slice(0, 5); // Return HH:MM
+    }
+    
+    // Try parsing as ISO date string
+    try {
+      const date = new Date(timeValue);
+      if (!isNaN(date.getTime())) {
+        return date.toTimeString().slice(0, 5); // HH:MM
+      }
+    } catch (e) {
+      // Fall through
+    }
+    
+    return 'N/A';
   };
 
   const fetchLocationsAndProjects = async () => {
@@ -132,8 +156,7 @@ export const Attendance = () => {
       
       const dates = data?.map(item => {
         const date = new Date(item.check_in_time);
-        const istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
-        return istDate.toISOString().split('T')[0];
+        return date.toISOString().split('T')[0];
       }) || [];
       
       setAcoDates(dates);
@@ -145,19 +168,21 @@ export const Attendance = () => {
   };
 
   const loadACODetails = async (date) => {
+    if (!date) {
+      setAcoDetails(null);
+      return;
+    }
+    
     try {
-      const utcDate = new Date(date + 'T00:00:00.000Z');
-      utcDate.setHours(utcDate.getHours() - 5);
-      utcDate.setMinutes(utcDate.getMinutes() - 30);
-      const utcDateStr = utcDate.toISOString().split('T')[0];
+      setAcoLoading(true);
       
       const { data, error } = await supabase
         .from('check_in_out')
         .select('*')
         .eq('employee_id', user?.id)
         .eq('status', 'Checked Out (Auto)')
-        .gte('check_in_time', utcDateStr + 'T00:00:00.000Z')
-        .lte('check_in_time', utcDateStr + 'T23:59:59.999Z')
+        .gte('check_in_time', date + 'T00:00:00.000Z')
+        .lte('check_in_time', date + 'T23:59:59.999Z')
         .maybeSingle();
       
       if (error) throw error;
@@ -171,13 +196,10 @@ export const Attendance = () => {
         nextDay10AM.setDate(checkInDate.getDate() + 1);
         nextDay10AM.setHours(10, 0, 0, 0);
         
-        const istNow = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-        const istNextDay10AM = new Date(nextDay10AM.getTime() + (5.5 * 60 * 60 * 1000));
-        
-        const hoursDiff = (istNow - checkInDate) / (1000 * 60 * 60);
+        const hoursDiff = (now - checkInDate) / (1000 * 60 * 60);
         
         let status = '';
-        if (istNow <= istNextDay10AM) {
+        if (now <= nextDay10AM) {
           status = 'P';
         } else if (hoursDiff <= 72) {
           status = 'D';
@@ -190,9 +212,17 @@ export const Attendance = () => {
           ...prev,
           reportingLocation: data.check_in_address?.split(',')[0] || user?.reporting_location || 'Head Office'
         }));
+        
+        setAcoProjectFields([{ project: '', workDone: '' }]);
+        
+      } else {
+        setAcoDetails(null);
       }
     } catch (error) {
       console.error('Error loading ACO details:', error);
+      setAcoDetails(null);
+    } finally {
+      setAcoLoading(false);
     }
   };
 
@@ -220,10 +250,10 @@ export const Attendance = () => {
         employee_name: user?.name,
         attendance_date: selectedACODate,
         reporting_location: acoFormData.reportingLocation,
-        check_in_time: acoDetails?.check_in_time ? formatTime(acoDetails.check_in_time) : null,
+        check_in_time: acoDetails?.check_in_time ? new Date(acoDetails.check_in_time).toTimeString().slice(0, 8) : null,
         check_in_location: acoDetails?.check_in_address || null,
         check_in_gps: acoDetails?.check_in_gps || null,
-        check_out_time: acoDetails?.check_out_time ? formatTime(acoDetails.check_out_time) : null,
+        check_out_time: acoDetails?.check_out_time ? new Date(acoDetails.check_out_time).toTimeString().slice(0, 8) : null,
         check_out_location: acoDetails?.check_out_address || null,
         check_out_gps: acoDetails?.check_out_gps || null,
         working_hours: acoDetails?.working_hours || 0,
@@ -276,8 +306,31 @@ export const Attendance = () => {
     }
   };
 
+  const openCheckInModal = () => {
+    setShowCheckInModal(true);
+    setLocationFetched(false);
+    setLocation(null);
+    setAddress('');
+    setLocationError('');
+    getCurrentLocation();
+  };
+
+  const openCheckOutModal = () => {
+    setShowCheckOutModal(true);
+    setLocationFetched(false);
+    setLocation(null);
+    setAddress('');
+    setLocationError('');
+    getCurrentLocation();
+  };
+
   const getCurrentLocation = () => {
     return new Promise((resolve) => {
+      if (locationFetched && location && !locationError) {
+        resolve(location);
+        return;
+      }
+
       setFetchingLocation(true);
       setLocationError('');
       
@@ -293,6 +346,7 @@ export const Attendance = () => {
           const { latitude, longitude } = position.coords;
           const loc = { lat: latitude, lng: longitude };
           setLocation(loc);
+          setLocationFetched(true);
           
           try {
             const response = await fetch(
@@ -329,6 +383,7 @@ export const Attendance = () => {
           }
           setLocationError(msg);
           setFetchingLocation(false);
+          setLocationFetched(false);
           resolve(null);
         },
         { enableHighAccuracy: true, timeout: 10000 }
@@ -348,15 +403,14 @@ export const Attendance = () => {
       setSubmitting(true);
       
       const now = new Date();
-      const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-      const nowISO = istTime.toISOString();
+      const checkInTime = now.toISOString();
       const gps = `${loc.lat},${loc.lng}`;
 
       const { data, error } = await supabase
         .from('check_in_out')
         .insert({
           employee_id: user?.id,
-          check_in_time: nowISO,
+          check_in_time: checkInTime,
           check_in_gps: gps,
           check_in_address: address || 'Location captured',
           status: 'Checked In'
@@ -366,9 +420,10 @@ export const Attendance = () => {
       
       if (error) throw error;
 
-      const istTimeDisplay = formatTime(nowISO);
-      toast.success(`✅ Checked in at ${istTimeDisplay}`);
+      const istTimeDisplay = formatTime(checkInTime);
+      toast.success(`✅ Checked in at ${istTimeDisplay} IST`);
       setShowCheckInModal(false);
+      setLocationFetched(false);
       await fetchTodayData();
       await fetchCheckinHistory();
       
@@ -392,10 +447,9 @@ export const Attendance = () => {
       setSubmitting(true);
       
       const now = new Date();
-      const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-      const checkOutTime = istTime.toISOString();
+      const checkOutTime = now.toISOString();
       const checkInTime = new Date(checkInStatus.check_in_time);
-      const diffMs = istTime.getTime() - checkInTime.getTime();
+      const diffMs = now.getTime() - checkInTime.getTime();
       const diffHrs = Math.round((diffMs / 3600000) * 100) / 100;
 
       const { error: updateError } = await supabase
@@ -411,8 +465,10 @@ export const Attendance = () => {
       
       if (updateError) throw updateError;
 
-      toast.success(`✅ Checked out - ${diffHrs} hrs`);
+      const istTimeDisplay = formatTime(checkOutTime);
+      toast.success(`✅ Checked out at ${istTimeDisplay} IST - ${diffHrs} hrs`);
       setShowCheckOutModal(false);
+      setLocationFetched(false);
       await fetchTodayData();
       await fetchCheckinHistory();
       
@@ -528,8 +584,7 @@ export const Attendance = () => {
       filteredCheck = filteredCheck.filter(c => {
         if (!c.check_in_time) return false;
         const checkDate = new Date(c.check_in_time);
-        const istDate = new Date(checkDate.getTime() + (5.5 * 60 * 60 * 1000));
-        const checkDateStr = istDate.toISOString().split('T')[0];
+        const checkDateStr = checkDate.toISOString().split('T')[0];
         return checkDateStr === today;
       });
     } else if (viewMode === 'month') {
@@ -538,8 +593,7 @@ export const Attendance = () => {
       filteredCheck = filteredCheck.filter(c => {
         if (!c.check_in_time) return false;
         const checkDate = new Date(c.check_in_time);
-        const istDate = new Date(checkDate.getTime() + (5.5 * 60 * 60 * 1000));
-        const checkDateStr = istDate.toISOString().split('T')[0];
+        const checkDateStr = checkDate.toISOString().split('T')[0];
         return checkDateStr?.startsWith(monthStr);
       });
     }
@@ -549,8 +603,7 @@ export const Attendance = () => {
       filteredCheck = filteredCheck.filter(c => {
         if (!c.check_in_time) return false;
         const checkDate = new Date(c.check_in_time);
-        const istDate = new Date(checkDate.getTime() + (5.5 * 60 * 60 * 1000));
-        const checkDateStr = istDate.toISOString().split('T')[0];
+        const checkDateStr = checkDate.toISOString().split('T')[0];
         return checkDateStr === filterDate;
       });
     }
@@ -639,10 +692,13 @@ export const Attendance = () => {
   const extractTimeFromISO = (isoString) => {
     if (!isoString) return null;
     if (/^\d{2}:\d{2}:\d{2}$/.test(isoString)) return isoString;
-    if (isoString.includes('T')) {
-      return isoString.split('T')[1]?.split('.')[0] || null;
+    try {
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) return null;
+      return date.toTimeString().slice(0, 8);
+    } catch (e) {
+      return null;
     }
-    return isoString;
   };
 
   const handleSubmit = async () => {
@@ -669,18 +725,40 @@ export const Attendance = () => {
     try {
       setSubmitting(true);
 
+      let checkInTime = null;
+      let checkOutTime = null;
+      let checkInLocation = null;
+      let checkInGps = null;
+      let checkOutLocation = null;
+      let checkOutGps = null;
+      let workingHours = 0;
+
+      if (checkInStatus) {
+        checkInTime = checkInStatus.check_in_time 
+          ? new Date(checkInStatus.check_in_time).toTimeString().slice(0, 8) 
+          : null;
+        checkOutTime = checkInStatus.check_out_time 
+          ? new Date(checkInStatus.check_out_time).toTimeString().slice(0, 8) 
+          : null;
+        checkInLocation = checkInStatus.check_in_address || null;
+        checkInGps = checkInStatus.check_in_gps || null;
+        checkOutLocation = checkInStatus.check_out_address || null;
+        checkOutGps = checkInStatus.check_out_gps || null;
+        workingHours = checkInStatus.working_hours || 0;
+      }
+
       const attendanceData = {
         employee_id: user?.id,
         employee_name: user?.name,
         attendance_date: formData.attendanceDate,
         reporting_location: formData.reportingLocation,
-        check_in_time: checkInStatus?.check_in_time ? extractTimeFromISO(checkInStatus.check_in_time) : null,
-        check_in_location: checkInStatus?.check_in_address || null,
-        check_in_gps: checkInStatus?.check_in_gps || null,
-        check_out_time: checkInStatus?.check_out_time ? extractTimeFromISO(checkInStatus.check_out_time) : null,
-        check_out_location: checkInStatus?.check_out_address || null,
-        check_out_gps: checkInStatus?.check_out_gps || null,
-        working_hours: checkInStatus?.working_hours || 0,
+        check_in_time: checkInTime,
+        check_in_location: checkInLocation,
+        check_in_gps: checkInGps,
+        check_out_time: checkOutTime,
+        check_out_location: checkOutLocation,
+        check_out_gps: checkOutGps,
+        working_hours: workingHours,
         status: 'P',
         remarks: formData.remarks || '',
         project1: projectFields[0]?.project || null,
@@ -768,7 +846,7 @@ export const Attendance = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: theme.colors.background,
+        backgroundColor: theme.dark ? '#0F172A' : '#F8FAFC',
       }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
@@ -793,76 +871,168 @@ export const Attendance = () => {
       maxWidth: '480px',
       margin: '0 auto',
       minHeight: '100vh',
-      backgroundColor: theme.colors.background,
-      paddingBottom: '80px',
+      backgroundColor: theme.dark ? '#0F172A' : '#F8FAFC',
+      padding: '16px 16px 100px',
     }}>
-      <div className="page-header">
-        <h1>📍 Check In / Out</h1>
-        <p>📅 {getViewLabel()}</p>
-        {isAttendanceComplete && (
-          <span style={{
-            background: 'rgba(16,185,129,0.2)',
-            color: '#10B981',
-            padding: '4px 12px',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontWeight: 600,
-            display: 'inline-block',
-            marginTop: '8px',
+      
+      {/* HEADER */}
+      <div style={{
+        background: 'linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%)',
+        borderRadius: '20px',
+        padding: '24px 20px 20px',
+        marginBottom: '16px',
+        border: 'none',
+        boxShadow: '0 4px 24px rgba(59,130,246,0.25)',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          position: 'absolute',
+          top: -40,
+          right: -30,
+          width: '120px',
+          height: '120px',
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.06)',
+        }} />
+        <div style={{
+          position: 'absolute',
+          bottom: -60,
+          left: -40,
+          width: '100px',
+          height: '100px',
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.04)',
+        }} />
+
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            marginBottom: '10px',
           }}>
-            ✅ Attendance Complete
-          </span>
-        )}
-        {!isAttendanceComplete && !isCheckedIn && !isCheckedOut && (
-          <span style={{
-            background: 'rgba(239,68,68,0.2)',
-            color: '#EF4444',
-            padding: '4px 12px',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontWeight: 600,
-            display: 'inline-block',
-            marginTop: '8px',
-          }}>
-            ⭕ Not Checked In
-          </span>
-        )}
-        {isCheckedIn && !isAttendanceComplete && (
-          <span style={{
-            background: 'rgba(16,185,129,0.2)',
-            color: '#10B981',
-            padding: '4px 12px',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontWeight: 600,
-            display: 'inline-block',
-            marginTop: '8px',
-          }}>
-            🟢 At Work
-          </span>
-        )}
-        {isCheckedOut && !isAttendanceComplete && (
-          <span style={{
-            background: 'rgba(139,92,246,0.2)',
-            color: '#8B5CF6',
-            padding: '4px 12px',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontWeight: 600,
-            display: 'inline-block',
-            marginTop: '8px',
-          }}>
-            ⏳ Checked Out - Fill Attendance
-          </span>
-        )}
+            <div>
+              <h1 style={{ 
+                color: '#FFFFFF', 
+                fontSize: '22px', 
+                fontWeight: 700, 
+                margin: 0,
+                lineHeight: 1.2,
+              }}>
+                📍 Check In / Out
+              </h1>
+              <p style={{ 
+                color: 'rgba(255,255,255,0.7)', 
+                fontSize: '13px', 
+                fontWeight: 500,
+                marginTop: '2px',
+              }}>
+                {getViewLabel()}
+              </p>
+            </div>
+            
+            <button
+              onClick={toggleDark}
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '12px',
+                border: '1px solid rgba(255,255,255,0.2)',
+                background: 'rgba(255,255,255,0.1)',
+                color: '#FFFFFF',
+                fontSize: '18px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backdropFilter: 'blur(4px)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                e.currentTarget.style.transform = 'scale(1.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                e.currentTarget.style.transform = 'scale(1)';
+              }}
+            >
+              {theme.dark ? '☀️' : '🌙'}
+            </button>
+          </div>
+
+          {isAttendanceComplete && (
+            <span style={{
+              background: 'rgba(16,185,129,0.2)',
+              color: '#10B981',
+              padding: '4px 12px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              display: 'inline-block',
+              marginTop: '4px',
+            }}>
+              ✅ Attendance Complete
+            </span>
+          )}
+          {!isAttendanceComplete && !isCheckedIn && !isCheckedOut && (
+            <span style={{
+              background: 'rgba(239,68,68,0.2)',
+              color: '#EF4444',
+              padding: '4px 12px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              display: 'inline-block',
+              marginTop: '4px',
+            }}>
+              ⭕ Not Checked In
+            </span>
+          )}
+          {isCheckedIn && !isAttendanceComplete && (
+            <span style={{
+              background: 'rgba(16,185,129,0.2)',
+              color: '#10B981',
+              padding: '4px 12px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              display: 'inline-block',
+              marginTop: '4px',
+            }}>
+              🟢 At Work
+            </span>
+          )}
+          {isCheckedOut && !isAttendanceComplete && (
+            <span style={{
+              background: 'rgba(139,92,246,0.2)',
+              color: '#8B5CF6',
+              padding: '4px 12px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              display: 'inline-block',
+              marginTop: '4px',
+            }}>
+              ⏳ Checked Out - Fill Attendance
+            </span>
+          )}
+        </div>
       </div>
 
+      {/* Status Card */}
       <div style={{
-        margin: '12px 16px',
-        padding: '12px 16px',
+        margin: '0 0 16px',
+        padding: '14px 16px',
+        background: theme.dark 
+          ? 'rgba(30, 41, 59, 0.8)' 
+          : '#FFFFFF',
         borderRadius: '12px',
-        background: isAttendanceComplete ? '#DCFCE7' : isCheckedIn ? '#DCFCE7' : isCheckedOut ? '#EDE9FE' : '#FEF3C7',
-        border: `1px solid ${isAttendanceComplete ? '#10B981' : isCheckedIn ? '#10B981' : isCheckedOut ? '#8B5CF6' : '#F59E0B'}`,
+        border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+        boxShadow: theme.dark 
+          ? '0 4px 20px rgba(0,0,0,0.2)' 
+          : '0 4px 20px rgba(0,0,0,0.04)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -883,7 +1053,8 @@ export const Attendance = () => {
           </div>
           <div style={{
             fontSize: '11px',
-            color: isAttendanceComplete ? '#166534AA' : isCheckedIn ? '#166534AA' : isCheckedOut ? '#5B21B6AA' : '#92400EAA',
+            color: theme.dark ? '#94A3B8' : '#64748B',
+            marginTop: '2px',
           }}>
             {isAttendanceComplete 
               ? `Completed on ${formatDate(getTodayIST())}` 
@@ -897,7 +1068,7 @@ export const Attendance = () => {
 
         {!isCheckedIn && !isCheckedOut && !isAttendanceComplete && (
           <button
-            onClick={() => setShowCheckInModal(true)}
+            onClick={openCheckInModal}
             style={{
               padding: '6px 16px',
               borderRadius: '8px',
@@ -925,7 +1096,7 @@ export const Attendance = () => {
 
         {isCheckedIn && !isAttendanceComplete && (
           <button
-            onClick={() => setShowCheckOutModal(true)}
+            onClick={openCheckOutModal}
             style={{
               padding: '6px 16px',
               borderRadius: '8px',
@@ -993,40 +1164,177 @@ export const Attendance = () => {
         )}
       </div>
 
+      {/* Stats Grid */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(4, 1fr)',
         gap: '8px',
-        padding: '12px 16px',
+        padding: '0 0 12px',
       }}>
-        <div className="stat-box">
-          <div className="label">Total</div>
-          <div className="value">{total}</div>
+        <div style={{
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.6)' 
+            : '#FFFFFF',
+          borderRadius: '12px',
+          padding: '12px 8px',
+          textAlign: 'center',
+          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
+          minHeight: '70px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
+            {total}
+          </div>
+          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
+            Total
+          </div>
         </div>
-        <div className="stat-box">
-          <div className="label">Present</div>
-          <div className="value" style={{ color: '#10B981' }}>{present}</div>
+
+        <div style={{
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.6)' 
+            : '#FFFFFF',
+          borderRadius: '12px',
+          padding: '12px 8px',
+          textAlign: 'center',
+          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
+          minHeight: '70px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#10B981' }}>
+            {present}
+          </div>
+          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
+            Present
+          </div>
         </div>
-        <div className="stat-box">
-          <div className="label">Delayed</div>
-          <div className="value" style={{ color: '#F59E0B' }}>{delayed}</div>
+
+        <div style={{
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.6)' 
+            : '#FFFFFF',
+          borderRadius: '12px',
+          padding: '12px 8px',
+          textAlign: 'center',
+          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
+          minHeight: '70px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#F59E0B' }}>
+            {delayed}
+          </div>
+          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
+            Delayed
+          </div>
         </div>
-        <div className="stat-box">
-          <div className="label">Beyond Delay</div>
-          <div className="value" style={{ color: '#DC2626' }}>{beyondDelay}</div>
+
+        <div style={{
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.6)' 
+            : '#FFFFFF',
+          borderRadius: '12px',
+          padding: '12px 8px',
+          textAlign: 'center',
+          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
+          minHeight: '70px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#DC2626' }}>
+            {beyondDelay}
+          </div>
+          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
+            Beyond Delay
+          </div>
         </div>
-        <div className="stat-box">
-          <div className="label">Absent</div>
-          <div className="value" style={{ color: '#EF4444' }}>{absent}</div>
+
+        <div style={{
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.6)' 
+            : '#FFFFFF',
+          borderRadius: '12px',
+          padding: '12px 8px',
+          textAlign: 'center',
+          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
+          minHeight: '70px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#EF4444' }}>
+            {absent}
+          </div>
+          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
+            Absent
+          </div>
         </div>
-        <div className="stat-box">
-          <div className="label">Leave</div>
-          <div className="value" style={{ color: '#3B82F6' }}>{leave}</div>
+
+        <div style={{
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.6)' 
+            : '#FFFFFF',
+          borderRadius: '12px',
+          padding: '12px 8px',
+          textAlign: 'center',
+          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
+          minHeight: '70px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#3B82F6' }}>
+            {leave}
+          </div>
+          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
+            Leave
+          </div>
         </div>
-        <div className="stat-box">
-          <div className="label">Auto Check-Out</div>
-          <div className="value" style={{ color: '#8B5CF6' }}>{autoCheckout}</div>
+
+        <div style={{
+          background: theme.dark 
+            ? 'rgba(30, 41, 59, 0.6)' 
+            : '#FFFFFF',
+          borderRadius: '12px',
+          padding: '12px 8px',
+          textAlign: 'center',
+          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
+          minHeight: '70px',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+        }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#8B5CF6' }}>
+            {acoPendingCount}
+          </div>
+          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
+            Auto Check-Out
+          </div>
+          {acoPendingCount > 0 && (
+            <div style={{
+              fontSize: '7px',
+              color: '#8B5CF6',
+              marginTop: '2px',
+              fontWeight: 500,
+            }}>
+              {acoPendingCount} pending
+            </div>
+          )}
         </div>
+
         <div 
           onClick={() => {
             if (acoPendingCount > 0) {
@@ -1049,6 +1357,7 @@ export const Attendance = () => {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
+            minHeight: '70px',
           }}
           onMouseEnter={(e) => {
             if (acoPendingCount > 0) {
@@ -1090,13 +1399,14 @@ export const Attendance = () => {
         </div>
       </div>
 
+      {/* View Mode Buttons */}
       <div style={{
         display: 'flex',
         gap: '8px',
-        padding: '8px 16px',
-        background: theme.colors.card,
-        borderBottom: `1px solid ${theme.colors.border}`,
+        padding: '8px 0',
+        borderBottom: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
         flexWrap: 'wrap',
+        marginBottom: '12px',
       }}>
         <button
           onClick={() => {
@@ -1106,9 +1416,9 @@ export const Attendance = () => {
           style={{
             padding: '6px 16px',
             borderRadius: '20px',
-            border: viewMode === 'today' ? `2px solid ${theme.colors.primary}` : `1px solid ${theme.colors.border}`,
-            background: viewMode === 'today' ? theme.colors.primary + '20' : 'transparent',
-            color: viewMode === 'today' ? theme.colors.primary : theme.colors.textSecondary,
+            border: viewMode === 'today' ? `2px solid #3B82F6` : `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
+            background: viewMode === 'today' ? 'rgba(59,130,246,0.15)' : 'transparent',
+            color: viewMode === 'today' ? '#3B82F6' : (theme.dark ? '#94A3B8' : '#64748B'),
             fontWeight: 600,
             fontSize: '12px',
             cursor: 'pointer',
@@ -1125,9 +1435,9 @@ export const Attendance = () => {
           style={{
             padding: '6px 16px',
             borderRadius: '20px',
-            border: viewMode === 'month' ? `2px solid ${theme.colors.primary}` : `1px solid ${theme.colors.border}`,
-            background: viewMode === 'month' ? theme.colors.primary + '20' : 'transparent',
-            color: viewMode === 'month' ? theme.colors.primary : theme.colors.textSecondary,
+            border: viewMode === 'month' ? `2px solid #3B82F6` : `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
+            background: viewMode === 'month' ? 'rgba(59,130,246,0.15)' : 'transparent',
+            color: viewMode === 'month' ? '#3B82F6' : (theme.dark ? '#94A3B8' : '#64748B'),
             fontWeight: 600,
             fontSize: '12px',
             cursor: 'pointer',
@@ -1144,9 +1454,9 @@ export const Attendance = () => {
           style={{
             padding: '6px 16px',
             borderRadius: '20px',
-            border: viewMode === 'all' ? `2px solid ${theme.colors.primary}` : `1px solid ${theme.colors.border}`,
-            background: viewMode === 'all' ? theme.colors.primary + '20' : 'transparent',
-            color: viewMode === 'all' ? theme.colors.primary : theme.colors.textSecondary,
+            border: viewMode === 'all' ? `2px solid #3B82F6` : `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
+            background: viewMode === 'all' ? 'rgba(59,130,246,0.15)' : 'transparent',
+            color: viewMode === 'all' ? '#3B82F6' : (theme.dark ? '#94A3B8' : '#64748B'),
             fontWeight: 600,
             fontSize: '12px',
             cursor: 'pointer',
@@ -1157,14 +1467,14 @@ export const Attendance = () => {
         </button>
       </div>
 
+      {/* Filter Controls */}
       <div style={{
         display: 'flex',
         gap: '8px',
-        padding: '10px 16px',
-        background: theme.colors.card,
-        borderBottom: `1px solid ${theme.colors.border}`,
+        padding: '10px 0',
         flexWrap: 'wrap',
         alignItems: 'center',
+        marginBottom: '12px',
       }}>
         <select
           value={month}
@@ -1172,15 +1482,14 @@ export const Attendance = () => {
             setMonth(parseInt(e.target.value));
             if (viewMode !== 'month') setViewMode('custom');
           }}
-          className="form-control"
           style={{ 
             flex: 1, 
             minWidth: '80px',
             padding: '8px 12px',
             borderRadius: '8px',
-            border: `1px solid ${theme.colors.border}`,
-            background: theme.colors.inputBg,
-            color: theme.colors.textPrimary,
+            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+            background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+            color: theme.dark ? '#F1F5F9' : '#0F172A',
             outline: 'none',
             fontFamily: 'Inter, sans-serif',
             cursor: 'pointer',
@@ -1188,7 +1497,7 @@ export const Attendance = () => {
           }}
         >
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <option key={m} value={m}>
+            <option key={m} value={m} style={{ color: '#000000', background: '#FFFFFF' }}>
               {new Date(2024, m - 1).toLocaleDateString('en-US', { month: 'short' })}
             </option>
           ))}
@@ -1200,15 +1509,14 @@ export const Attendance = () => {
             setYear(parseInt(e.target.value));
             if (viewMode !== 'month') setViewMode('custom');
           }}
-          className="form-control"
           style={{ 
             flex: 1, 
             minWidth: '70px',
             padding: '8px 12px',
             borderRadius: '8px',
-            border: `1px solid ${theme.colors.border}`,
-            background: theme.colors.inputBg,
-            color: theme.colors.textPrimary,
+            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+            background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+            color: theme.dark ? '#F1F5F9' : '#0F172A',
             outline: 'none',
             fontFamily: 'Inter, sans-serif',
             cursor: 'pointer',
@@ -1216,7 +1524,7 @@ export const Attendance = () => {
           }}
         >
           {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (
-            <option key={y} value={y}>{y}</option>
+            <option key={y} value={y} style={{ color: '#000000', background: '#FFFFFF' }}>{y}</option>
           ))}
         </select>
 
@@ -1224,15 +1532,14 @@ export const Attendance = () => {
           type="date"
           value={filterDate}
           onChange={(e) => setFilterDate(e.target.value)}
-          className="form-control"
           style={{ 
             flex: 1,
             minWidth: '120px',
             padding: '8px 12px',
             borderRadius: '8px',
-            border: `1px solid ${theme.colors.border}`,
-            background: theme.colors.inputBg,
-            color: theme.colors.textPrimary,
+            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+            background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+            color: theme.dark ? '#F1F5F9' : '#0F172A',
             outline: 'none',
             fontFamily: 'Inter, sans-serif',
             fontSize: '12px',
@@ -1270,9 +1577,9 @@ export const Attendance = () => {
             style={{
               padding: '8px 12px',
               borderRadius: '8px',
-              border: `1px solid ${theme.colors.border}`,
+              border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
               background: 'transparent',
-              color: theme.colors.textSecondary,
+              color: theme.dark ? '#94A3B8' : '#94A3B8',
               fontSize: '12px',
               fontWeight: 600,
               cursor: 'pointer',
@@ -1284,11 +1591,12 @@ export const Attendance = () => {
         )}
       </div>
 
+      {/* Tabs */}
       <div style={{ 
         display: 'flex', 
         gap: '8px', 
-        padding: '12px 16px 0',
-        borderBottom: `1px solid ${theme.colors.border}`,
+        padding: '0 0 12px',
+        borderBottom: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
       }}>
         <button
           onClick={() => setActiveTab('attendance')}
@@ -1300,9 +1608,9 @@ export const Attendance = () => {
             fontSize: '14px',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
-            background: activeTab === 'attendance' ? theme.colors.card : 'transparent',
-            color: activeTab === 'attendance' ? theme.colors.primary : theme.colors.textSecondary,
-            borderBottom: activeTab === 'attendance' ? `2px solid ${theme.colors.primary}` : 'none',
+            background: activeTab === 'attendance' ? (theme.dark ? 'rgba(30,41,59,0.6)' : '#FFFFFF') : 'transparent',
+            color: activeTab === 'attendance' ? '#3B82F6' : (theme.dark ? '#94A3B8' : '#94A3B8'),
+            borderBottom: activeTab === 'attendance' ? `2px solid #3B82F6` : 'none',
           }}
         >
           📋 Attendance History
@@ -1317,32 +1625,41 @@ export const Attendance = () => {
             fontSize: '14px',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
-            background: activeTab === 'checkinout' ? theme.colors.card : 'transparent',
-            color: activeTab === 'checkinout' ? theme.colors.primary : theme.colors.textSecondary,
-            borderBottom: activeTab === 'checkinout' ? `2px solid ${theme.colors.primary}` : 'none',
+            background: activeTab === 'checkinout' ? (theme.dark ? 'rgba(30,41,59,0.6)' : '#FFFFFF') : 'transparent',
+            color: activeTab === 'checkinout' ? '#3B82F6' : (theme.dark ? '#94A3B8' : '#94A3B8'),
+            borderBottom: activeTab === 'checkinout' ? `2px solid #3B82F6` : 'none',
           }}
         >
           📍 Check-In/Out History
         </button>
       </div>
 
+      {/* Results Count */}
       <div style={{
-        padding: '8px 16px',
+        padding: '8px 0',
         fontSize: '12px',
-        color: theme.colors.textMuted,
-        background: theme.colors.card,
-        borderBottom: `1px solid ${theme.colors.border}`,
+        color: theme.dark ? '#94A3B8' : '#94A3B8',
       }}>
         {activeTab === 'attendance' ? filteredAttendance.length : filteredCheckin.length} records found
       </div>
 
-      <div style={{ padding: '12px 16px 16px' }}>
+      {/* Attendance List */}
+      <div style={{ padding: '12px 0 16px' }}>
         {activeTab === 'attendance' ? (
           <>
             {filteredAttendance.length === 0 ? (
-              <div className="empty-state">
-                <span className="icon">📋</span>
-                <p>No attendance records found</p>
+              <div style={{
+                padding: '40px',
+                textAlign: 'center',
+                color: theme.dark ? '#94A3B8' : '#94A3B8',
+                background: theme.dark 
+                  ? 'rgba(30, 41, 59, 0.4)' 
+                  : '#FFFFFF',
+                borderRadius: '14px',
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+              }}>
+                <div style={{ fontSize: '40px', marginBottom: '8px' }}>📋</div>
+                <p style={{ fontWeight: 600 }}>No attendance records found</p>
               </div>
             ) : (
               filteredAttendance.map((att, idx) => {
@@ -1361,29 +1678,39 @@ export const Attendance = () => {
                   <div
                     key={idx}
                     onClick={() => handleCardClick(att)}
-                    className="card"
                     style={{ 
                       marginBottom: '8px',
+                      padding: '14px 16px',
+                      background: theme.dark 
+                        ? 'rgba(30, 41, 59, 0.6)' 
+                        : '#FFFFFF',
+                      borderRadius: '12px',
+                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+                      boxShadow: theme.dark 
+                        ? '0 2px 12px rgba(0,0,0,0.2)' 
+                        : '0 2px 12px rgba(0,0,0,0.04)',
                       cursor: 'pointer',
                       transition: 'all 0.2s ease',
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.transform = 'translateX(4px)';
                       e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)';
-                      e.currentTarget.style.borderColor = theme.colors.primary;
+                      e.currentTarget.style.borderColor = '#3B82F6';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.transform = 'translateX(0)';
-                      e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)';
-                      e.currentTarget.style.borderColor = theme.colors.border;
+                      e.currentTarget.style.boxShadow = theme.dark 
+                        ? '0 2px 12px rgba(0,0,0,0.2)' 
+                        : '0 2px 12px rgba(0,0,0,0.04)';
+                      e.currentTarget.style.borderColor = theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '15px', fontWeight: 700, color: theme.colors.textPrimary }}>
+                        <div style={{ fontSize: '15px', fontWeight: 700, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
                           📅 {formatDate(att.attendance_date)}
                         </div>
-                        <div style={{ fontSize: '13px', color: theme.colors.textSecondary, marginTop: '4px' }}>
+                        <div style={{ fontSize: '13px', color: theme.dark ? '#94A3B8' : '#64748B', marginTop: '4px' }}>
                           📍 {att.reporting_location || 'N/A'}
                         </div>
                         {projects.length > 0 && (
@@ -1393,11 +1720,11 @@ export const Attendance = () => {
                                 key={i}
                                 style={{
                                   fontSize: '11px',
-                                  background: theme.colors.inputBg,
+                                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
                                   padding: '2px 10px',
                                   borderRadius: '12px',
-                                  color: theme.colors.textSecondary,
-                                  border: `1px solid ${theme.colors.border}`,
+                                  color: theme.dark ? '#94A3B8' : '#64748B',
+                                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                                 }}
                               >
                                 📌 {project}
@@ -1406,7 +1733,7 @@ export const Attendance = () => {
                             {projects.length > 2 && (
                               <span style={{
                                 fontSize: '11px',
-                                color: theme.colors.textMuted,
+                                color: theme.dark ? '#94A3B8' : '#94A3B8',
                               }}>
                                 +{projects.length - 2} more
                               </span>
@@ -1416,7 +1743,7 @@ export const Attendance = () => {
                         <div style={{
                           marginTop: '6px',
                           fontSize: '11px',
-                          color: theme.colors.textMuted,
+                          color: theme.dark ? '#94A3B8' : '#94A3B8',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '4px',
@@ -1448,9 +1775,18 @@ export const Attendance = () => {
         ) : (
           <>
             {filteredCheckin.length === 0 ? (
-              <div className="empty-state">
-                <span className="icon">📍</span>
-                <p>No check-in/out records found</p>
+              <div style={{
+                padding: '40px',
+                textAlign: 'center',
+                color: theme.dark ? '#94A3B8' : '#94A3B8',
+                background: theme.dark 
+                  ? 'rgba(30, 41, 59, 0.4)' 
+                  : '#FFFFFF',
+                borderRadius: '14px',
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+              }}>
+                <div style={{ fontSize: '40px', marginBottom: '8px' }}>📍</div>
+                <p style={{ fontWeight: 600 }}>No check-in/out records found</p>
               </div>
             ) : (
               filteredCheckin.map((item, idx) => {
@@ -1463,14 +1799,17 @@ export const Attendance = () => {
                 return (
                   <div
                     key={idx}
-                    className="card"
                     style={{ 
                       marginBottom: '12px',
                       padding: '16px',
-                      background: theme.colors.card,
+                      background: theme.dark 
+                        ? 'rgba(30, 41, 59, 0.6)' 
+                        : '#FFFFFF',
                       borderRadius: '12px',
-                      border: `1px solid ${theme.colors.border}`,
-                      boxShadow: theme.dark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 2px 8px rgba(0,0,0,0.04)',
+                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+                      boxShadow: theme.dark 
+                        ? '0 2px 12px rgba(0,0,0,0.2)' 
+                        : '0 2px 12px rgba(0,0,0,0.04)',
                     }}
                   >
                     <div style={{
@@ -1479,12 +1818,12 @@ export const Attendance = () => {
                       alignItems: 'center',
                       marginBottom: '12px',
                       paddingBottom: '10px',
-                      borderBottom: `1px solid ${theme.colors.border}`,
+                      borderBottom: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                     }}>
                       <div style={{
                         fontSize: '15px',
                         fontWeight: 700,
-                        color: theme.colors.textPrimary,
+                        color: theme.dark ? '#F1F5F9' : '#0F172A',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
@@ -1514,10 +1853,10 @@ export const Attendance = () => {
                       marginBottom: '12px',
                     }}>
                       <div style={{
-                        background: theme.colors.inputBg,
+                        background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                         borderRadius: '10px',
                         padding: '12px',
-                        border: `1px solid ${theme.colors.border}`,
+                        border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                         display: 'flex',
                         flexDirection: 'column',
                       }}>
@@ -1537,14 +1876,14 @@ export const Attendance = () => {
                         <div style={{
                           fontSize: '16px',
                           fontWeight: 700,
-                          color: theme.colors.textPrimary,
+                          color: theme.dark ? '#F1F5F9' : '#0F172A',
                         }}>
                           {formatTime(checkInDate)}
                         </div>
                         {item.check_in_address && (
                           <div style={{
                             fontSize: '11px',
-                            color: theme.colors.textMuted,
+                            color: theme.dark ? '#94A3B8' : '#64748B',
                             marginTop: '6px',
                             lineHeight: '1.4',
                             wordBreak: 'break-word',
@@ -1555,10 +1894,10 @@ export const Attendance = () => {
                       </div>
 
                       <div style={{
-                        background: theme.colors.inputBg,
+                        background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                         borderRadius: '10px',
                         padding: '12px',
-                        border: `1px solid ${theme.colors.border}`,
+                        border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                         display: 'flex',
                         flexDirection: 'column',
                       }}>
@@ -1578,14 +1917,14 @@ export const Attendance = () => {
                         <div style={{
                           fontSize: '16px',
                           fontWeight: 700,
-                          color: theme.colors.textPrimary,
+                          color: theme.dark ? '#F1F5F9' : '#0F172A',
                         }}>
                           {formatTime(checkOutDate)}
                         </div>
                         {item.check_out_address && (
                           <div style={{
                             fontSize: '11px',
-                            color: theme.colors.textMuted,
+                            color: theme.dark ? '#94A3B8' : '#64748B',
                             marginTop: '6px',
                             lineHeight: '1.4',
                             wordBreak: 'break-word',
@@ -1601,7 +1940,7 @@ export const Attendance = () => {
                       justifyContent: 'flex-start',
                       alignItems: 'center',
                       paddingTop: '10px',
-                      borderTop: `1px solid ${theme.colors.border}`,
+                      borderTop: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                     }}>
                       <div style={{
                         display: 'flex',
@@ -1610,7 +1949,7 @@ export const Attendance = () => {
                       }}>
                         <span style={{
                           fontSize: '13px',
-                          color: theme.colors.textSecondary,
+                          color: theme.dark ? '#94A3B8' : '#64748B',
                         }}>
                           ⏱️ Working Hours:
                         </span>
@@ -1631,7 +1970,7 @@ export const Attendance = () => {
         )}
       </div>
 
-      {/* Detail Modal */}
+      {/* DETAIL MODAL - FIXED with proper time display */}
       {showDetailModal && selectedRecord && (
         <div
           style={{
@@ -1650,7 +1989,7 @@ export const Attendance = () => {
         >
           <div
             style={{
-              background: theme.colors.card,
+              background: theme.dark ? '#1E293B' : '#FFFFFF',
               borderRadius: '16px',
               padding: '24px',
               maxWidth: '420px',
@@ -1668,13 +2007,13 @@ export const Attendance = () => {
               alignItems: 'flex-start',
               marginBottom: '16px',
               paddingBottom: '12px',
-              borderBottom: `1px solid ${theme.colors.border}`,
+              borderBottom: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
             }}>
               <div>
                 <div style={{
                   fontSize: '18px',
                   fontWeight: 700,
-                  color: theme.colors.textPrimary,
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
@@ -1683,7 +2022,7 @@ export const Attendance = () => {
                 </div>
                 <div style={{
                   fontSize: '13px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   marginTop: '2px',
                 }}>
                   {formatDate(selectedRecord.attendance_date)}
@@ -1693,7 +2032,7 @@ export const Attendance = () => {
                 onClick={() => setShowDetailModal(false)}
                 style={{
                   fontSize: '24px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#94A3B8',
                   cursor: 'pointer',
                   background: 'none',
                   border: 'none',
@@ -1706,13 +2045,13 @@ export const Attendance = () => {
             </div>
 
             <div style={{
-              background: theme.colors.inputBg,
+              background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
               padding: '12px',
               borderRadius: '10px',
-              border: `1px solid ${theme.colors.border}`,
+              border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
               marginBottom: '16px',
             }}>
-              <div style={{ fontSize: '10px', fontWeight: 600, color: theme.colors.textMuted, textTransform: 'uppercase' }}>Status</div>
+              <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>Status</div>
               <div style={{
                 fontSize: '15px',
                 fontWeight: 700,
@@ -1739,29 +2078,30 @@ export const Attendance = () => {
               marginBottom: '16px',
             }}>
               <div style={{
-                background: theme.colors.inputBg,
+                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                 padding: '12px',
                 borderRadius: '10px',
-                border: `1px solid ${theme.colors.border}`,
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
               }}>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.colors.textMuted, textTransform: 'uppercase' }}>Date</div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: theme.colors.textPrimary }}>
+                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>Date</div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
                   {formatDate(selectedRecord.attendance_date)}
                 </div>
               </div>
               <div style={{
-                background: theme.colors.inputBg,
+                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                 padding: '12px',
                 borderRadius: '10px',
-                border: `1px solid ${theme.colors.border}`,
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
               }}>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.colors.textMuted, textTransform: 'uppercase' }}>Reporting Location</div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: theme.colors.textPrimary }}>
+                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>Reporting Location</div>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
                   📍 {selectedRecord.reporting_location || 'N/A'}
                 </div>
               </div>
             </div>
 
+            {/* FIXED: Time display section with proper formatting */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: '1fr 1fr 1fr',
@@ -1769,40 +2109,46 @@ export const Attendance = () => {
               marginBottom: '16px',
             }}>
               <div style={{
-                background: theme.colors.inputBg,
+                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                 padding: '12px',
                 borderRadius: '10px',
-                border: `1px solid ${theme.colors.border}`,
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
               }}>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.colors.textMuted, textTransform: 'uppercase' }}>Check In</div>
+                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>
+                  Check In
+                </div>
                 <div style={{ fontSize: '14px', fontWeight: 600, color: '#10B981' }}>
-                  {selectedRecord.check_in_time ? formatTime(selectedRecord.check_in_time) : '—'}
+                  {formatTimeDisplay(selectedRecord.check_in_time)}
                 </div>
               </div>
               <div style={{
-                background: theme.colors.inputBg,
+                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                 padding: '12px',
                 borderRadius: '10px',
-                border: `1px solid ${theme.colors.border}`,
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
               }}>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.colors.textMuted, textTransform: 'uppercase' }}>Check Out</div>
+                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>
+                  Check Out
+                </div>
                 <div style={{ fontSize: '14px', fontWeight: 600, color: '#EF4444' }}>
-                  {selectedRecord.check_out_time ? formatTime(selectedRecord.check_out_time) : '—'}
+                  {formatTimeDisplay(selectedRecord.check_out_time)}
                 </div>
               </div>
               <div style={{
-                background: theme.colors.inputBg,
+                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                 padding: '12px',
                 borderRadius: '10px',
-                border: `1px solid ${theme.colors.border}`,
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
               }}>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.colors.textMuted, textTransform: 'uppercase' }}>Working Hours</div>
+                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>
+                  Working Hours
+                </div>
                 <div style={{
                   fontSize: '14px',
                   fontWeight: 700,
                   color: selectedRecord.working_hours > 8 ? '#10B981' : selectedRecord.working_hours > 4 ? '#F59E0B' : '#EF4444',
                 }}>
-                  {selectedRecord.working_hours || 0}h
+                  {selectedRecord.working_hours ? `${selectedRecord.working_hours}h` : '0h'}
                 </div>
               </div>
             </div>
@@ -1811,14 +2157,14 @@ export const Attendance = () => {
               <div style={{
                 marginBottom: '16px',
                 padding: '12px',
-                background: theme.colors.inputBg,
+                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                 borderRadius: '10px',
-                border: `1px solid ${theme.colors.border}`,
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
               }}>
                 <div style={{
                   fontSize: '11px',
                   fontWeight: 700,
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   textTransform: 'uppercase',
                   letterSpacing: '0.3px',
                   marginBottom: '8px',
@@ -1828,16 +2174,16 @@ export const Attendance = () => {
                 {getProjects(selectedRecord).map((p, i) => (
                   <div key={i} style={{
                     padding: '8px 10px',
-                    background: theme.colors.card,
+                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
                     borderRadius: '6px',
                     marginBottom: i < getProjects(selectedRecord).length - 1 ? '6px' : 0,
-                    border: `1px solid ${theme.colors.border}`,
+                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                   }}>
-                    <div style={{ fontWeight: 600, color: theme.colors.textPrimary, fontSize: '13px' }}>
+                    <div style={{ fontWeight: 600, color: theme.dark ? '#F1F5F9' : '#0F172A', fontSize: '13px' }}>
                       📌 {p.name}
                     </div>
                     {p.details && (
-                      <div style={{ fontSize: '12px', color: theme.colors.textSecondary, marginTop: '2px' }}>
+                      <div style={{ fontSize: '12px', color: theme.dark ? '#94A3B8' : '#64748B', marginTop: '2px' }}>
                         {p.details}
                       </div>
                     )}
@@ -1850,21 +2196,21 @@ export const Attendance = () => {
               <div style={{
                 marginBottom: '16px',
                 padding: '12px',
-                background: theme.colors.inputBg,
+                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                 borderRadius: '10px',
-                border: `1px solid ${theme.colors.border}`,
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
               }}>
                 <div style={{
                   fontSize: '11px',
                   fontWeight: 700,
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   textTransform: 'uppercase',
                   letterSpacing: '0.3px',
                   marginBottom: '4px',
                 }}>
                   📝 Remarks
                 </div>
-                <div style={{ fontSize: '13px', color: theme.colors.textPrimary }}>
+                <div style={{ fontSize: '13px', color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
                   {selectedRecord.remarks}
                 </div>
               </div>
@@ -1877,7 +2223,7 @@ export const Attendance = () => {
                 padding: '12px',
                 borderRadius: '10px',
                 border: 'none',
-                background: `linear-gradient(135deg, ${theme.colors.primary}, ${theme.colors.primary}DD)`,
+                background: 'linear-gradient(135deg, #3B82F6, #6366F1)',
                 color: '#FFFFFF',
                 fontWeight: 700,
                 fontSize: '14px',
@@ -1914,7 +2260,7 @@ export const Attendance = () => {
           animation: 'fadeIn 0.2s ease-out',
         }} onClick={() => setShowACOForm(false)}>
           <div style={{
-            background: theme.colors.card,
+            background: theme.dark ? '#1E293B' : '#FFFFFF',
             borderRadius: '16px',
             padding: '24px',
             maxWidth: '480px',
@@ -1924,6 +2270,7 @@ export const Attendance = () => {
             boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
             animation: 'slideUp 0.3s ease-out',
           }} onClick={(e) => e.stopPropagation()}>
+            
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
@@ -1934,13 +2281,13 @@ export const Attendance = () => {
                 <h3 style={{
                   fontSize: '18px',
                   fontWeight: 700,
-                  color: theme.colors.textPrimary,
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                 }}>
                   🔄 Mark ACO Attendance
                 </h3>
                 <p style={{
                   fontSize: '12px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   marginTop: '2px',
                 }}>
                   Fill attendance for days you forgot to check out
@@ -1950,7 +2297,7 @@ export const Attendance = () => {
                 onClick={() => setShowACOForm(false)}
                 style={{
                   fontSize: '24px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#94A3B8',
                   cursor: 'pointer',
                   background: 'none',
                   border: 'none',
@@ -1981,11 +2328,11 @@ export const Attendance = () => {
               </p>
             </div>
 
-            <div className="form-group" style={{ marginBottom: '14px' }}>
+            <div style={{ marginBottom: '14px' }}>
               <label style={{ 
                 fontSize: '12px', 
                 fontWeight: 600, 
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 display: 'block',
                 marginBottom: '4px',
                 textTransform: 'uppercase',
@@ -1999,29 +2346,33 @@ export const Attendance = () => {
                   setSelectedACODate(e.target.value);
                   loadACODetails(e.target.value);
                 }}
-                className="form-control"
                 style={{
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   fontFamily: 'Inter, sans-serif',
                   cursor: 'pointer',
                 }}
               >
-                <option value="">Select date...</option>
+                <option value="" style={{ color: '#000000', background: '#FFFFFF' }}>Select date...</option>
                 {acoDates.map(date => (
-                  <option key={date} value={date}>
+                  <option key={date} value={date} style={{ color: '#000000', background: '#FFFFFF' }}>
                     {formatDate(date)}
                   </option>
                 ))}
               </select>
-              {acoDates.length === 0 && (
-                <div style={{ fontSize: '12px', color: theme.colors.textMuted, marginTop: '4px' }}>
+              {acoLoading && (
+                <div style={{ fontSize: '12px', color: '#8B5CF6', marginTop: '4px' }}>
+                  ⏳ Loading details...
+                </div>
+              )}
+              {acoDates.length === 0 && !acoLoading && (
+                <div style={{ fontSize: '12px', color: theme.dark ? '#94A3B8' : '#94A3B8', marginTop: '4px' }}>
                   No ACO entries available
                 </div>
               )}
@@ -2031,39 +2382,53 @@ export const Attendance = () => {
               <>
                 <div style={{
                   background: '#EDE9FE',
-                  padding: '12px 14px',
-                  borderRadius: '10px',
+                  padding: '14px 16px',
+                  borderRadius: '12px',
                   border: '1px solid #8B5CF6',
+                  marginBottom: '16px',
                 }}>
                   <div style={{
                     display: 'grid',
                     gridTemplateColumns: '1fr 1fr',
-                    gap: '8px',
+                    gap: '10px',
                   }}>
                     <div>
-                      <div style={{ fontSize: '10px', fontWeight: 600, color: '#5B21B6', textTransform: 'uppercase' }}>Check In Time</div>
-                      <div style={{ fontSize: '14px', fontWeight: 600, color: theme.colors.textPrimary }}>
+                      <div style={{ fontSize: '10px', fontWeight: 600, color: '#5B21B6', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                        ✅ Check In
+                      </div>
+                      <div style={{ fontSize: '15px', fontWeight: 700, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
                         {formatTime(acoDetails.check_in_time)}
                       </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '10px', fontWeight: 600, color: '#5B21B6', textTransform: 'uppercase' }}>Check In Location</div>
-                      <div style={{ fontSize: '12px', color: theme.colors.textSecondary }}>
+                      <div style={{ fontSize: '11px', color: '#5B21B6', marginTop: '2px' }}>
                         📍 {acoDetails.check_in_address || 'N/A'}
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '10px', fontWeight: 600, color: '#5B21B6', textTransform: 'uppercase' }}>Auto Check Out Time</div>
-                      <div style={{ fontSize: '14px', fontWeight: 600, color: theme.colors.textPrimary }}>
+                      <div style={{ fontSize: '10px', fontWeight: 600, color: '#5B21B6', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                        📤 Auto Check Out
+                      </div>
+                      <div style={{ fontSize: '15px', fontWeight: 700, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
                         {acoDetails.check_out_time ? formatTime(acoDetails.check_out_time) : '11:59 PM'}
                       </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '10px', fontWeight: 600, color: '#5B21B6', textTransform: 'uppercase' }}>Auto Check Out Location</div>
-                      <div style={{ fontSize: '12px', color: theme.colors.textSecondary }}>
+                      <div style={{ fontSize: '11px', color: '#5B21B6', marginTop: '2px' }}>
                         📍 {acoDetails.check_out_address || 'Auto captured'}
                       </div>
                     </div>
+                  </div>
+                  <div style={{
+                    marginTop: '10px',
+                    paddingTop: '10px',
+                    borderTop: '1px solid rgba(139,92,246,0.2)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}>
+                    <span style={{ fontSize: '12px', color: '#5B21B6', fontWeight: 500 }}>
+                      ⏱️ Working Hours:
+                    </span>
+                    <span style={{ fontSize: '16px', fontWeight: 800, color: '#5B21B6' }}>
+                      {acoDetails.working_hours ? `${acoDetails.working_hours}h` : '—'}
+                    </span>
                   </div>
                 </div>
 
@@ -2074,39 +2439,33 @@ export const Attendance = () => {
                   background: acoStatus === 'P' ? '#DCFCE7' : acoStatus === 'D' ? '#FEF3C7' : '#FEE2E2',
                   border: `1px solid ${acoStatus === 'P' ? '#10B981' : acoStatus === 'D' ? '#F59E0B' : '#DC2626'}`,
                 }}>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: theme.colors.textSecondary }}>
-                    Current Status:
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
+                    Status:
                     <span style={{
                       marginLeft: '8px',
-                      fontSize: '14px',
+                      fontSize: '15px',
                       fontWeight: 700,
                       color: acoStatus === 'P' ? '#10B981' : acoStatus === 'D' ? '#F59E0B' : '#DC2626',
                     }}>
                       {acoStatus === 'P' ? '✅ Present' : acoStatus === 'D' ? '⏳ Delayed' : '🚫 Beyond Delay'}
                     </span>
                   </div>
-                  {acoStatus === 'P' && (
-                    <div style={{ fontSize: '11px', color: '#166534', marginTop: '2px' }}>
-                      ✅ Within deadline - Will be marked as Present
-                    </div>
-                  )}
-                  {acoStatus === 'D' && (
-                    <div style={{ fontSize: '11px', color: '#92400E', marginTop: '2px' }}>
-                      ⏳ After 10 AM but within 72 hours - Will be marked as Delayed
-                    </div>
-                  )}
-                  {acoStatus === 'B' && (
-                    <div style={{ fontSize: '11px', color: '#991B1B', marginTop: '2px' }}>
-                      🚫 After 72 hours - Will be marked as Beyond Delay
-                    </div>
-                  )}
+                  <div style={{ 
+                    fontSize: '11px', 
+                    color: acoStatus === 'P' ? '#166534' : acoStatus === 'D' ? '#92400E' : '#991B1B',
+                    marginTop: '2px',
+                  }}>
+                    {acoStatus === 'P' && '✅ Within deadline - Will be marked as Present'}
+                    {acoStatus === 'D' && '⏳ After 10 AM but within 72 hours - Will be marked as Delayed'}
+                    {acoStatus === 'B' && '🚫 After 72 hours - Will be marked as Beyond Delay'}
+                  </div>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '14px' }}>
+                <div style={{ marginBottom: '14px' }}>
                   <label style={{ 
                     fontSize: '12px', 
                     fontWeight: 600, 
-                    color: theme.colors.textSecondary,
+                    color: theme.dark ? '#94A3B8' : '#64748B',
                     display: 'block',
                     marginBottom: '4px',
                     textTransform: 'uppercase',
@@ -2117,22 +2476,23 @@ export const Attendance = () => {
                   <select
                     value={acoFormData.reportingLocation}
                     onChange={(e) => setAcoFormData({ ...acoFormData, reportingLocation: e.target.value })}
-                    className="form-control"
                     style={{
                       width: '100%',
                       padding: '10px 14px',
                       borderRadius: '10px',
-                      border: `1px solid ${theme.colors.border}`,
-                      background: theme.colors.inputBg,
-                      color: theme.colors.textPrimary,
+                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                      background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                      color: theme.dark ? '#F1F5F9' : '#0F172A',
                       fontSize: '14px',
                       outline: 'none',
                       fontFamily: 'Inter, sans-serif',
                     }}
                   >
-                    <option value="">Select location...</option>
+                    <option value="" style={{ color: '#000000', background: '#FFFFFF' }}>Select location...</option>
                     {locations.map((loc) => (
-                      <option key={loc} value={loc}>{loc}</option>
+                      <option key={loc} value={loc} style={{ color: '#000000', background: '#FFFFFF' }}>
+                        {loc}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -2140,7 +2500,7 @@ export const Attendance = () => {
                 <div style={{
                   fontSize: '15px',
                   fontWeight: 700,
-                  color: theme.colors.textPrimary,
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   marginBottom: '14px',
                   display: 'flex',
                   alignItems: 'center',
@@ -2151,11 +2511,11 @@ export const Attendance = () => {
 
                 {acoProjectFields.map((field, index) => (
                   <div key={index} style={{
-                    background: theme.colors.inputBg,
+                    background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                     borderRadius: '12px',
                     padding: '14px',
                     marginBottom: '12px',
-                    border: `1px solid ${theme.colors.border}`,
+                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                     position: 'relative',
                   }}>
                     <div style={{
@@ -2167,7 +2527,7 @@ export const Attendance = () => {
                       <span style={{
                         fontSize: '13px',
                         fontWeight: 600,
-                        color: theme.colors.textPrimary,
+                        color: theme.dark ? '#F1F5F9' : '#0F172A',
                       }}>
                         📌 Project {index + 1} {index === 0 && <span style={{ color: '#EF4444' }}>*</span>}
                       </span>
@@ -2189,11 +2549,11 @@ export const Attendance = () => {
                       )}
                     </div>
 
-                    <div className="form-group" style={{ marginBottom: '10px' }}>
+                    <div style={{ marginBottom: '10px' }}>
                       <label style={{ 
                         fontSize: '11px', 
                         fontWeight: 600, 
-                        color: index === 0 ? '#EF4444' : theme.colors.textSecondary,
+                        color: index === 0 ? '#EF4444' : (theme.dark ? '#94A3B8' : '#64748B'),
                         display: 'block',
                         marginBottom: '4px',
                       }}>
@@ -2203,16 +2563,15 @@ export const Attendance = () => {
                         type="text"
                         value={field.project}
                         onChange={(e) => updateAcoProjectField(index, 'project', e.target.value)}
-                        className="form-control"
                         placeholder="Search project..."
                         list="projects-list"
                         style={{
                           width: '100%',
                           padding: '8px 12px',
                           borderRadius: '10px',
-                          border: `1px solid ${theme.colors.border}`,
-                          background: theme.colors.inputBg,
-                          color: theme.colors.textPrimary,
+                          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                          background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                          color: theme.dark ? '#F1F5F9' : '#0F172A',
                           fontSize: '14px',
                           outline: 'none',
                           fontFamily: 'Inter, sans-serif',
@@ -2220,16 +2579,16 @@ export const Attendance = () => {
                       />
                       <datalist id="projects-list">
                         {projects.map((p) => (
-                          <option key={p} value={p} />
+                          <option key={p} value={p} style={{ color: '#000000', background: '#FFFFFF' }} />
                         ))}
                       </datalist>
                     </div>
 
-                    <div className="form-group" style={{ marginBottom: 0 }}>
+                    <div style={{ marginBottom: 0 }}>
                       <label style={{ 
                         fontSize: '11px', 
                         fontWeight: 600, 
-                        color: index === 0 ? '#EF4444' : theme.colors.textSecondary,
+                        color: index === 0 ? '#EF4444' : (theme.dark ? '#94A3B8' : '#64748B'),
                         display: 'block',
                         marginBottom: '4px',
                       }}>
@@ -2238,16 +2597,15 @@ export const Attendance = () => {
                       <textarea
                         value={field.workDone}
                         onChange={(e) => updateAcoProjectField(index, 'workDone', e.target.value)}
-                        className="form-control"
                         rows="2"
                         placeholder="Describe work done..."
                         style={{
                           width: '100%',
                           padding: '8px 12px',
                           borderRadius: '10px',
-                          border: `1px solid ${theme.colors.border}`,
-                          background: theme.colors.inputBg,
-                          color: theme.colors.textPrimary,
+                          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                          background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                          color: theme.dark ? '#F1F5F9' : '#0F172A',
                           fontSize: '14px',
                           outline: 'none',
                           fontFamily: 'Inter, sans-serif',
@@ -2266,9 +2624,9 @@ export const Attendance = () => {
                       width: '100%',
                       padding: '10px',
                       borderRadius: '10px',
-                      border: `2px dashed ${theme.colors.border}`,
+                      border: `2px dashed ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
                       background: 'transparent',
-                      color: theme.colors.textSecondary,
+                      color: theme.dark ? '#94A3B8' : '#94A3B8',
                       fontWeight: 600,
                       fontSize: '14px',
                       cursor: 'pointer',
@@ -2280,11 +2638,11 @@ export const Attendance = () => {
                   </button>
                 )}
 
-                <div className="form-group" style={{ marginBottom: '16px' }}>
+                <div style={{ marginBottom: '16px' }}>
                   <label style={{ 
                     fontSize: '11px', 
                     fontWeight: 600, 
-                    color: theme.colors.textSecondary,
+                    color: theme.dark ? '#94A3B8' : '#64748B',
                     display: 'block',
                     marginBottom: '4px',
                   }}>
@@ -2293,16 +2651,15 @@ export const Attendance = () => {
                   <textarea
                     value={acoFormData.remarks}
                     onChange={(e) => setAcoFormData({ ...acoFormData, remarks: e.target.value })}
-                    className="form-control"
                     rows="2"
                     placeholder="Any additional remarks..."
                     style={{
                       width: '100%',
                       padding: '8px 12px',
                       borderRadius: '10px',
-                      border: `1px solid ${theme.colors.border}`,
-                      background: theme.colors.inputBg,
-                      color: theme.colors.textPrimary,
+                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                      background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                      color: theme.dark ? '#F1F5F9' : '#0F172A',
                       fontSize: '14px',
                       outline: 'none',
                       fontFamily: 'Inter, sans-serif',
@@ -2348,6 +2705,21 @@ export const Attendance = () => {
                 </button>
               </>
             )}
+
+            {selectedACODate && !acoDetails && !acoLoading && (
+              <div style={{
+                padding: '20px',
+                textAlign: 'center',
+                color: theme.dark ? '#94A3B8' : '#64748B',
+                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
+                borderRadius: '10px',
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+              }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>🔍</div>
+                <p>No ACO record found for this date</p>
+                <p style={{ fontSize: '12px', marginTop: '4px' }}>Please select a different date</p>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2365,9 +2737,12 @@ export const Attendance = () => {
           backdropFilter: 'blur(4px)',
           zIndex: 1000,
           animation: 'fadeIn 0.2s ease-out',
-        }} onClick={() => setShowCheckInModal(false)}>
+        }} onClick={() => {
+          setShowCheckInModal(false);
+          setLocationFetched(false);
+        }}>
           <div style={{
-            background: theme.colors.card,
+            background: theme.dark ? '#1E293B' : '#FFFFFF',
             borderRadius: '16px',
             padding: '24px',
             maxWidth: '400px',
@@ -2384,15 +2759,18 @@ export const Attendance = () => {
               <h3 style={{
                 fontSize: '18px',
                 fontWeight: 700,
-                color: theme.colors.textPrimary,
+                color: theme.dark ? '#F1F5F9' : '#0F172A',
               }}>
                 Check In
               </h3>
               <button
-                onClick={() => setShowCheckInModal(false)}
+                onClick={() => {
+                  setShowCheckInModal(false);
+                  setLocationFetched(false);
+                }}
                 style={{
                   fontSize: '24px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#94A3B8',
                   cursor: 'pointer',
                   background: 'none',
                   border: 'none',
@@ -2405,7 +2783,7 @@ export const Attendance = () => {
 
             <p style={{
               fontSize: '13px',
-              color: theme.colors.textSecondary,
+              color: theme.dark ? '#94A3B8' : '#64748B',
               marginBottom: '16px',
             }}>
               {new Date().toLocaleDateString('en-IN', { 
@@ -2418,7 +2796,7 @@ export const Attendance = () => {
             </p>
 
             <div style={{
-              background: theme.colors.inputBg,
+              background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
               borderRadius: '12px',
               padding: '16px',
               marginBottom: '16px',
@@ -2433,7 +2811,7 @@ export const Attendance = () => {
                 <span style={{
                   fontSize: '14px',
                   fontWeight: 600,
-                  color: theme.colors.textPrimary,
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                 }}>
                   Current Location
                 </span>
@@ -2451,7 +2829,7 @@ export const Attendance = () => {
                   fontSize: '13px',
                   fontWeight: 500,
                 }}>
-                  <span className="animate-spin" style={{ display: 'inline-block' }}>⏳</span>
+                  <span style={{ display: 'inline-block' }}>⏳</span>
                   Fetching location...
                 </div>
               ) : locationError ? (
@@ -2469,18 +2847,18 @@ export const Attendance = () => {
                 <>
                   <div style={{
                     padding: '8px 12px',
-                    background: theme.colors.card,
+                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
                     borderRadius: '8px',
-                    border: `1px solid ${theme.colors.border}`,
+                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                     fontSize: '13px',
-                    color: theme.colors.textPrimary,
+                    color: theme.dark ? '#F1F5F9' : '#0F172A',
                     wordBreak: 'break-word',
                   }}>
-                    {address || 'Location captured'}
+                    📍 {address || 'Location captured'}
                   </div>
                   <div style={{
                     fontSize: '11px',
-                    color: theme.colors.textMuted,
+                    color: theme.dark ? '#94A3B8' : '#94A3B8',
                     marginTop: '4px',
                   }}>
                     Lat: {location.lat.toFixed(6)}, Lng: {location.lng.toFixed(6)}
@@ -2521,9 +2899,9 @@ export const Attendance = () => {
                   marginTop: '12px',
                   padding: '8px 16px',
                   borderRadius: '8px',
-                  border: `1px solid ${theme.colors.border}`,
-                  background: theme.colors.card,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                  background: 'transparent',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '13px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -2542,14 +2920,17 @@ export const Attendance = () => {
               gap: '12px',
             }}>
               <button
-                onClick={() => setShowCheckInModal(false)}
+                onClick={() => {
+                  setShowCheckInModal(false);
+                  setLocationFetched(false);
+                }}
                 style={{
                   flex: 1,
                   padding: '12px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
                   background: 'transparent',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   fontWeight: 600,
                   fontSize: '14px',
                   cursor: 'pointer',
@@ -2560,7 +2941,7 @@ export const Attendance = () => {
               </button>
               <button
                 onClick={handleCheckIn}
-                disabled={submitting || fetchingLocation || !location}
+                disabled={submitting}
                 style={{
                   flex: 1,
                   padding: '12px',
@@ -2569,10 +2950,10 @@ export const Attendance = () => {
                   color: '#FFFFFF',
                   fontWeight: 700,
                   fontSize: '14px',
-                  cursor: (submitting || fetchingLocation || !location) ? 'not-allowed' : 'pointer',
+                  cursor: submitting ? 'not-allowed' : 'pointer',
                   transition: 'all 0.2s ease',
                   background: 'linear-gradient(135deg, #059669, #10B981)',
-                  opacity: (submitting || fetchingLocation || !location) ? 0.6 : 1,
+                  opacity: submitting ? 0.6 : 1,
                   boxShadow: '0 4px 14px rgba(5,150,105,0.3)',
                 }}
               >
@@ -2596,9 +2977,12 @@ export const Attendance = () => {
           backdropFilter: 'blur(4px)',
           zIndex: 1000,
           animation: 'fadeIn 0.2s ease-out',
-        }} onClick={() => setShowCheckOutModal(false)}>
+        }} onClick={() => {
+          setShowCheckOutModal(false);
+          setLocationFetched(false);
+        }}>
           <div style={{
-            background: theme.colors.card,
+            background: theme.dark ? '#1E293B' : '#FFFFFF',
             borderRadius: '16px',
             padding: '24px',
             maxWidth: '400px',
@@ -2615,15 +2999,18 @@ export const Attendance = () => {
               <h3 style={{
                 fontSize: '18px',
                 fontWeight: 700,
-                color: theme.colors.textPrimary,
+                color: theme.dark ? '#F1F5F9' : '#0F172A',
               }}>
                 Check Out
               </h3>
               <button
-                onClick={() => setShowCheckOutModal(false)}
+                onClick={() => {
+                  setShowCheckOutModal(false);
+                  setLocationFetched(false);
+                }}
                 style={{
                   fontSize: '24px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#94A3B8',
                   cursor: 'pointer',
                   background: 'none',
                   border: 'none',
@@ -2636,7 +3023,7 @@ export const Attendance = () => {
 
             <p style={{
               fontSize: '13px',
-              color: theme.colors.textSecondary,
+              color: theme.dark ? '#94A3B8' : '#64748B',
               marginBottom: '16px',
             }}>
               {new Date().toLocaleDateString('en-IN', { 
@@ -2676,7 +3063,7 @@ export const Attendance = () => {
             )}
 
             <div style={{
-              background: theme.colors.inputBg,
+              background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
               borderRadius: '12px',
               padding: '16px',
               marginBottom: '16px',
@@ -2691,7 +3078,7 @@ export const Attendance = () => {
                 <span style={{
                   fontSize: '14px',
                   fontWeight: 600,
-                  color: theme.colors.textPrimary,
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                 }}>
                   Check-out Location
                 </span>
@@ -2709,7 +3096,7 @@ export const Attendance = () => {
                   fontSize: '13px',
                   fontWeight: 500,
                 }}>
-                  <span className="animate-spin" style={{ display: 'inline-block' }}>⏳</span>
+                  <span style={{ display: 'inline-block' }}>⏳</span>
                   Fetching location...
                 </div>
               ) : locationError ? (
@@ -2727,18 +3114,18 @@ export const Attendance = () => {
                 <>
                   <div style={{
                     padding: '8px 12px',
-                    background: theme.colors.card,
+                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
                     borderRadius: '8px',
-                    border: `1px solid ${theme.colors.border}`,
+                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                     fontSize: '13px',
-                    color: theme.colors.textPrimary,
+                    color: theme.dark ? '#F1F5F9' : '#0F172A',
                     wordBreak: 'break-word',
                   }}>
-                    {address || 'Location captured'}
+                    📍 {address || 'Location captured'}
                   </div>
                   <div style={{
                     fontSize: '11px',
-                    color: theme.colors.textMuted,
+                    color: theme.dark ? '#94A3B8' : '#94A3B8',
                     marginTop: '4px',
                   }}>
                     Lat: {location.lat.toFixed(6)}, Lng: {location.lng.toFixed(6)}
@@ -2779,9 +3166,9 @@ export const Attendance = () => {
                   marginTop: '12px',
                   padding: '8px 16px',
                   borderRadius: '8px',
-                  border: `1px solid ${theme.colors.border}`,
-                  background: theme.colors.card,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                  background: 'transparent',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '13px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -2822,14 +3209,17 @@ export const Attendance = () => {
               gap: '12px',
             }}>
               <button
-                onClick={() => setShowCheckOutModal(false)}
+                onClick={() => {
+                  setShowCheckOutModal(false);
+                  setLocationFetched(false);
+                }}
                 style={{
                   flex: 1,
                   padding: '12px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
                   background: 'transparent',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   fontWeight: 600,
                   fontSize: '14px',
                   cursor: 'pointer',
@@ -2840,7 +3230,7 @@ export const Attendance = () => {
               </button>
               <button
                 onClick={handleCheckOut}
-                disabled={submitting || fetchingLocation || !location}
+                disabled={submitting}
                 style={{
                   flex: 1,
                   padding: '12px',
@@ -2849,10 +3239,10 @@ export const Attendance = () => {
                   color: '#FFFFFF',
                   fontWeight: 700,
                   fontSize: '14px',
-                  cursor: (submitting || fetchingLocation || !location) ? 'not-allowed' : 'pointer',
+                  cursor: submitting ? 'not-allowed' : 'pointer',
                   transition: 'all 0.2s ease',
                   background: 'linear-gradient(135deg, #DC2626, #EF4444)',
-                  opacity: (submitting || fetchingLocation || !location) ? 0.6 : 1,
+                  opacity: submitting ? 0.6 : 1,
                   boxShadow: '0 4px 14px rgba(220,38,38,0.3)',
                 }}
               >
@@ -2863,7 +3253,7 @@ export const Attendance = () => {
         </div>
       )}
 
-      {/* Attendance Form */}
+      {/* Attendance Form Modal */}
       {showForm && !isAttendanceComplete && (
         <div style={{
           position: 'fixed',
@@ -2878,7 +3268,7 @@ export const Attendance = () => {
           animation: 'fadeIn 0.2s ease-out',
         }} onClick={() => setShowForm(false)}>
           <div style={{
-            background: theme.colors.card,
+            background: theme.dark ? '#1E293B' : '#FFFFFF',
             borderRadius: '16px',
             padding: '24px',
             maxWidth: '480px',
@@ -2898,13 +3288,13 @@ export const Attendance = () => {
                 <h3 style={{
                   fontSize: '18px',
                   fontWeight: 700,
-                  color: theme.colors.textPrimary,
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                 }}>
                   📋 Attendance Form
                 </h3>
                 <p style={{
                   fontSize: '12px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   marginTop: '2px',
                 }}>
                   {new Date().toLocaleDateString('en-IN', { 
@@ -2920,7 +3310,7 @@ export const Attendance = () => {
                 onClick={() => setShowForm(false)}
                 style={{
                   fontSize: '24px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#94A3B8',
                   cursor: 'pointer',
                   background: 'none',
                   border: 'none',
@@ -2948,11 +3338,11 @@ export const Attendance = () => {
               </p>
             </div>
 
-            <div className="form-group" style={{ marginBottom: '14px' }}>
+            <div style={{ marginBottom: '14px' }}>
               <label style={{ 
                 fontSize: '12px', 
                 fontWeight: 600, 
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 display: 'block',
                 marginBottom: '4px',
                 textTransform: 'uppercase',
@@ -2964,14 +3354,13 @@ export const Attendance = () => {
                 type="date"
                 value={formData.attendanceDate}
                 onChange={(e) => setFormData({ ...formData, attendanceDate: e.target.value })}
-                className="form-control"
                 style={{
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
@@ -2980,11 +3369,11 @@ export const Attendance = () => {
               />
             </div>
 
-            <div className="form-group" style={{ marginBottom: '14px' }}>
+            <div style={{ marginBottom: '14px' }}>
               <label style={{ 
                 fontSize: '12px', 
                 fontWeight: 600, 
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 display: 'block',
                 marginBottom: '4px',
                 textTransform: 'uppercase',
@@ -2995,23 +3384,24 @@ export const Attendance = () => {
               <select
                 value={formData.reportingLocation}
                 onChange={(e) => setFormData({ ...formData, reportingLocation: e.target.value })}
-                className="form-control"
                 style={{
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
                   fontFamily: 'Inter, sans-serif',
                 }}
               >
-                <option value="">Select location...</option>
+                <option value="" style={{ color: '#000000', background: '#FFFFFF' }}>Select location...</option>
                 {locations.map((loc) => (
-                  <option key={loc} value={loc}>{loc}</option>
+                  <option key={loc} value={loc} style={{ color: '#000000', background: '#FFFFFF' }}>
+                    {loc}
+                  </option>
                 ))}
               </select>
             </div>
@@ -3022,11 +3412,11 @@ export const Attendance = () => {
               gap: '12px',
               marginBottom: '14px',
             }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
+              <div style={{ marginBottom: 0 }}>
                 <label style={{ 
                   fontSize: '10px', 
                   fontWeight: 600, 
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   display: 'block',
                   marginBottom: '3px',
                   textTransform: 'uppercase',
@@ -3037,14 +3427,13 @@ export const Attendance = () => {
                 <input
                   type="text"
                   value={formData.checkInTime}
-                  className="form-control"
                   style={{
                     width: '100%',
                     padding: '8px 12px',
                     borderRadius: '10px',
-                    border: `1px solid ${theme.colors.border}`,
-                    background: theme.colors.inputBg,
-                    color: theme.colors.textPrimary,
+                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                    color: theme.dark ? '#F1F5F9' : '#0F172A',
                     fontSize: '13px',
                     outline: 'none',
                     fontFamily: 'Inter, sans-serif',
@@ -3054,11 +3443,11 @@ export const Attendance = () => {
                   readOnly
                 />
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
+              <div style={{ marginBottom: 0 }}>
                 <label style={{ 
                   fontSize: '10px', 
                   fontWeight: 600, 
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   display: 'block',
                   marginBottom: '3px',
                   textTransform: 'uppercase',
@@ -3069,14 +3458,13 @@ export const Attendance = () => {
                 <input
                   type="text"
                   value={formData.checkOutTime}
-                  className="form-control"
                   style={{
                     width: '100%',
                     padding: '8px 12px',
                     borderRadius: '10px',
-                    border: `1px solid ${theme.colors.border}`,
-                    background: theme.colors.inputBg,
-                    color: theme.colors.textPrimary,
+                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                    color: theme.dark ? '#F1F5F9' : '#0F172A',
                     fontSize: '13px',
                     outline: 'none',
                     fontFamily: 'Inter, sans-serif',
@@ -3094,11 +3482,11 @@ export const Attendance = () => {
               gap: '12px',
               marginBottom: '16px',
             }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
+              <div style={{ marginBottom: 0 }}>
                 <label style={{ 
                   fontSize: '10px', 
                   fontWeight: 600, 
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   display: 'block',
                   marginBottom: '3px',
                   textTransform: 'uppercase',
@@ -3109,14 +3497,13 @@ export const Attendance = () => {
                 <input
                   type="text"
                   value={formData.checkInLocation}
-                  className="form-control"
                   style={{
                     width: '100%',
                     padding: '8px 12px',
                     borderRadius: '10px',
-                    border: `1px solid ${theme.colors.border}`,
-                    background: theme.colors.inputBg,
-                    color: theme.colors.textPrimary,
+                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                    color: theme.dark ? '#F1F5F9' : '#0F172A',
                     fontSize: '13px',
                     outline: 'none',
                     fontFamily: 'Inter, sans-serif',
@@ -3126,11 +3513,11 @@ export const Attendance = () => {
                   readOnly
                 />
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
+              <div style={{ marginBottom: 0 }}>
                 <label style={{ 
                   fontSize: '10px', 
                   fontWeight: 600, 
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   display: 'block',
                   marginBottom: '3px',
                   textTransform: 'uppercase',
@@ -3141,14 +3528,13 @@ export const Attendance = () => {
                 <input
                   type="text"
                   value={formData.checkOutLocation}
-                  className="form-control"
                   style={{
                     width: '100%',
                     padding: '8px 12px',
                     borderRadius: '10px',
-                    border: `1px solid ${theme.colors.border}`,
-                    background: theme.colors.inputBg,
-                    color: theme.colors.textPrimary,
+                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                    color: theme.dark ? '#F1F5F9' : '#0F172A',
                     fontSize: '13px',
                     outline: 'none',
                     fontFamily: 'Inter, sans-serif',
@@ -3162,14 +3548,14 @@ export const Attendance = () => {
 
             <div style={{
               height: '1px',
-              background: theme.colors.border,
+              background: theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
               margin: '0 0 16px 0',
             }} />
 
             <div style={{
               fontSize: '15px',
               fontWeight: 700,
-              color: theme.colors.textPrimary,
+              color: theme.dark ? '#F1F5F9' : '#0F172A',
               marginBottom: '14px',
               display: 'flex',
               alignItems: 'center',
@@ -3180,11 +3566,11 @@ export const Attendance = () => {
 
             {projectFields.map((field, index) => (
               <div key={index} style={{
-                background: theme.colors.inputBg,
+                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
                 borderRadius: '12px',
                 padding: '14px',
                 marginBottom: '12px',
-                border: `1px solid ${theme.colors.border}`,
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
                 position: 'relative',
               }}>
                 <div style={{
@@ -3196,7 +3582,7 @@ export const Attendance = () => {
                   <span style={{
                     fontSize: '13px',
                     fontWeight: 600,
-                    color: theme.colors.textPrimary,
+                    color: theme.dark ? '#F1F5F9' : '#0F172A',
                   }}>
                     📌 Project {index + 1} {index === 0 && <span style={{ color: '#EF4444' }}>*</span>}
                   </span>
@@ -3218,11 +3604,11 @@ export const Attendance = () => {
                   )}
                 </div>
 
-                <div className="form-group" style={{ marginBottom: '10px' }}>
+                <div style={{ marginBottom: '10px' }}>
                   <label style={{ 
                     fontSize: '11px', 
                     fontWeight: 600, 
-                    color: index === 0 ? '#EF4444' : theme.colors.textSecondary,
+                    color: index === 0 ? '#EF4444' : (theme.dark ? '#94A3B8' : '#64748B'),
                     display: 'block',
                     marginBottom: '4px',
                   }}>
@@ -3232,16 +3618,15 @@ export const Attendance = () => {
                     type="text"
                     value={field.project}
                     onChange={(e) => updateProjectField(index, 'project', e.target.value)}
-                    className="form-control"
                     placeholder="Search project..."
                     list="projects-list"
                     style={{
                       width: '100%',
                       padding: '8px 12px',
                       borderRadius: '10px',
-                      border: `1px solid ${theme.colors.border}`,
-                      background: theme.colors.inputBg,
-                      color: theme.colors.textPrimary,
+                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                      background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                      color: theme.dark ? '#F1F5F9' : '#0F172A',
                       fontSize: '14px',
                       outline: 'none',
                       fontFamily: 'Inter, sans-serif',
@@ -3249,16 +3634,16 @@ export const Attendance = () => {
                   />
                   <datalist id="projects-list">
                     {projects.map((p) => (
-                      <option key={p} value={p} />
+                      <option key={p} value={p} style={{ color: '#000000', background: '#FFFFFF' }} />
                     ))}
                   </datalist>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: 0 }}>
+                <div style={{ marginBottom: 0 }}>
                   <label style={{ 
                     fontSize: '11px', 
                     fontWeight: 600, 
-                    color: index === 0 ? '#EF4444' : theme.colors.textSecondary,
+                    color: index === 0 ? '#EF4444' : (theme.dark ? '#94A3B8' : '#64748B'),
                     display: 'block',
                     marginBottom: '4px',
                   }}>
@@ -3267,16 +3652,15 @@ export const Attendance = () => {
                   <textarea
                     value={field.workDone}
                     onChange={(e) => updateProjectField(index, 'workDone', e.target.value)}
-                    className="form-control"
                     rows="2"
                     placeholder="Describe work done..."
                     style={{
                       width: '100%',
                       padding: '8px 12px',
                       borderRadius: '10px',
-                      border: `1px solid ${theme.colors.border}`,
-                      background: theme.colors.inputBg,
-                      color: theme.colors.textPrimary,
+                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                      background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                      color: theme.dark ? '#F1F5F9' : '#0F172A',
                       fontSize: '14px',
                       outline: 'none',
                       fontFamily: 'Inter, sans-serif',
@@ -3295,9 +3679,9 @@ export const Attendance = () => {
                   width: '100%',
                   padding: '10px',
                   borderRadius: '10px',
-                  border: `2px dashed ${theme.colors.border}`,
+                  border: `2px dashed ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
                   background: 'transparent',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#94A3B8',
                   fontWeight: 600,
                   fontSize: '14px',
                   cursor: 'pointer',
@@ -3309,11 +3693,11 @@ export const Attendance = () => {
               </button>
             )}
 
-            <div className="form-group" style={{ marginBottom: '16px' }}>
+            <div style={{ marginBottom: '16px' }}>
               <label style={{ 
                 fontSize: '11px', 
                 fontWeight: 600, 
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 display: 'block',
                 marginBottom: '4px',
               }}>
@@ -3322,16 +3706,15 @@ export const Attendance = () => {
               <textarea
                 value={formData.remarks}
                 onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                className="form-control"
                 rows="2"
                 placeholder="Any additional remarks..."
                 style={{
                   width: '100%',
                   padding: '8px 12px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   fontFamily: 'Inter, sans-serif',
@@ -3342,7 +3725,6 @@ export const Attendance = () => {
             </div>
 
             <button
-              className="btn-primary"
               onClick={handleSubmit}
               disabled={submitting}
               style={{

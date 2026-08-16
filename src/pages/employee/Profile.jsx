@@ -151,22 +151,108 @@ export const Profile = () => {
       maxWidth: '480px',
       margin: '0 auto',
       minHeight: '100vh',
-      backgroundColor: theme.colors.background,
-      paddingBottom: '80px',
+      backgroundColor: theme.dark ? '#0F172A' : '#F8FAFC',
+      padding: '16px 16px 100px',
     }}>
-      {/* Header */}
-      <div className="page-header">
-        <h1>Profile</h1>
-        <p>Manage your account</p>
+      
+      {/* ✅ UBER-STYLE HEADER - Same as Dashboard, Attendance, Leave */}
+      <div style={{
+        background: 'linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%)',
+        borderRadius: '20px',
+        padding: '24px 20px 20px',
+        marginBottom: '16px',
+        border: 'none',
+        boxShadow: '0 4px 24px rgba(59,130,246,0.25)',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* Decorative circles */}
+        <div style={{
+          position: 'absolute',
+          top: -40,
+          right: -30,
+          width: '120px',
+          height: '120px',
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.06)',
+        }} />
+        <div style={{
+          position: 'absolute',
+          bottom: -60,
+          left: -40,
+          width: '100px',
+          height: '100px',
+          borderRadius: '50%',
+          background: 'rgba(255,255,255,0.04)',
+        }} />
+
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          {/* Top Row: Title + Theme Toggle */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            marginBottom: '6px',
+          }}>
+            <div>
+              <h1 style={{ 
+                color: '#FFFFFF', 
+                fontSize: '22px', 
+                fontWeight: 700, 
+                margin: 0,
+                lineHeight: 1.2,
+              }}>
+                👤 Profile
+              </h1>
+              <p style={{ 
+                color: 'rgba(255,255,255,0.7)', 
+                fontSize: '13px', 
+                fontWeight: 500,
+                marginTop: '2px',
+              }}>
+                Manage your account
+              </p>
+            </div>
+            
+            {/* Theme Toggle - White style */}
+            <button
+              onClick={toggleDark}
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '12px',
+                border: '1px solid rgba(255,255,255,0.2)',
+                background: 'rgba(255,255,255,0.1)',
+                color: '#FFFFFF',
+                fontSize: '18px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backdropFilter: 'blur(4px)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                e.currentTarget.style.transform = 'scale(1.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                e.currentTarget.style.transform = 'scale(1)';
+              }}
+            >
+              {theme.dark ? '☀️' : '🌙'}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Avatar - Fixed position */}
+      {/* Avatar - Uber Style */}
       <div style={{
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        marginTop: '0', // Removed negative margin
-        padding: '20px 20px 0',
+        padding: '0 20px 20px',
         position: 'relative',
         zIndex: 2,
       }}>
@@ -179,10 +265,10 @@ export const Profile = () => {
           justifyContent: 'center',
           fontSize: '36px',
           fontWeight: 800,
-          background: '#FFFFFF',
+          background: theme.dark ? '#1E293B' : '#FFFFFF',
           border: '4px solid #3B82F6',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-          color: '#1E40AF',
+          boxShadow: '0 8px 24px rgba(59,130,246,0.25)',
+          color: '#3B82F6',
         }}>
           {user?.name?.charAt(0).toUpperCase() || '👤'}
         </div>
@@ -190,13 +276,13 @@ export const Profile = () => {
           fontSize: '20px',
           fontWeight: 700,
           marginTop: '12px',
-          color: theme.colors.textPrimary,
+          color: theme.dark ? '#F1F5F9' : '#0F172A',
         }}>
           {user?.name || 'User'}
         </div>
         <div style={{
           fontSize: '14px',
-          color: theme.colors.textSecondary,
+          color: theme.dark ? '#94A3B8' : '#64748B',
         }}>
           {user?.designation || 'N/A'}
         </div>
@@ -206,27 +292,31 @@ export const Profile = () => {
           borderRadius: '9999px',
           fontSize: '11px',
           fontWeight: 700,
-          background: '#EFF6FF',
-          color: '#1E40AF',
+          background: 'rgba(59,130,246,0.1)',
+          color: '#3B82F6',
           marginTop: '6px',
         }}>
           {user?.role || 'Employee'}
         </span>
       </div>
 
-      {/* Personal Information */}
+      {/* Personal Information - Uber Style */}
       <div style={{
-        background: theme.colors.card,
+        background: theme.dark 
+          ? 'rgba(30, 41, 59, 0.6)' 
+          : '#FFFFFF',
         borderRadius: '16px',
         padding: '20px',
-        border: `1px solid ${theme.colors.border}`,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-        margin: '20px 20px 0',
+        marginBottom: '16px',
+        border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+        boxShadow: theme.dark 
+          ? '0 4px 20px rgba(0,0,0,0.2)' 
+          : '0 4px 20px rgba(0,0,0,0.04)',
       }}>
         <div style={{
           fontSize: '15px',
           fontWeight: 700,
-          color: theme.colors.textPrimary,
+          color: theme.dark ? '#F1F5F9' : '#0F172A',
           marginBottom: '16px',
         }}>
           Personal Information
@@ -238,7 +328,7 @@ export const Profile = () => {
               display: 'flex',
               alignItems: 'center',
               padding: '10px 0',
-              borderBottom: idx < profileFields.length - 1 ? `1px solid ${theme.colors.border}` : 'none',
+              borderBottom: idx < profileFields.length - 1 ? `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}` : 'none',
             }}
           >
             <span style={{
@@ -253,7 +343,7 @@ export const Profile = () => {
               <div style={{
                 fontSize: '11px',
                 fontWeight: 600,
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#94A3B8',
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px',
               }}>
@@ -262,7 +352,7 @@ export const Profile = () => {
               <div style={{
                 fontSize: '14px',
                 fontWeight: 500,
-                color: theme.colors.textPrimary,
+                color: theme.dark ? '#F1F5F9' : '#0F172A',
                 marginTop: '2px',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -275,8 +365,8 @@ export const Profile = () => {
         ))}
       </div>
 
-      {/* Actions */}
-      <div style={{ padding: '16px 20px 0' }}>
+      {/* Actions - Uber Style */}
+      <div>
         {/* Edit Profile Button */}
         <button
           onClick={() => setIsEditing(true)}
@@ -284,21 +374,30 @@ export const Profile = () => {
             width: '100%',
             display: 'flex',
             alignItems: 'center',
-            padding: '16px 18px',
+            padding: '14px 18px',
             borderRadius: '12px',
-            border: `1px solid ${theme.colors.border}`,
-            background: theme.colors.card,
+            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+            background: theme.dark 
+              ? 'rgba(30, 41, 59, 0.6)' 
+              : '#FFFFFF',
             marginBottom: '10px',
             transition: 'all 0.2s ease',
             cursor: 'pointer',
+            boxShadow: theme.dark 
+              ? '0 2px 12px rgba(0,0,0,0.2)' 
+              : '0 2px 12px rgba(0,0,0,0.04)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = theme.colors.primary;
+            e.currentTarget.style.borderColor = '#3B82F6';
             e.currentTarget.style.transform = 'translateX(4px)';
+            e.currentTarget.style.boxShadow = '0 4px 20px rgba(59,130,246,0.15)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = theme.colors.border;
+            e.currentTarget.style.borderColor = theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
             e.currentTarget.style.transform = 'translateX(0)';
+            e.currentTarget.style.boxShadow = theme.dark 
+              ? '0 2px 12px rgba(0,0,0,0.2)' 
+              : '0 2px 12px rgba(0,0,0,0.04)';
           }}
         >
           <span style={{ fontSize: '20px', marginRight: '14px' }}>✏️</span>
@@ -307,11 +406,11 @@ export const Profile = () => {
             textAlign: 'left',
             fontWeight: 600,
             fontSize: '15px',
-            color: theme.colors.textPrimary,
+            color: theme.dark ? '#F1F5F9' : '#0F172A',
           }}>
             Edit Profile
           </span>
-          <span style={{ color: theme.colors.textSecondary }}>→</span>
+          <span style={{ color: theme.dark ? '#94A3B8' : '#94A3B8' }}>→</span>
         </button>
 
         {/* Change Password Button */}
@@ -321,21 +420,30 @@ export const Profile = () => {
             width: '100%',
             display: 'flex',
             alignItems: 'center',
-            padding: '16px 18px',
+            padding: '14px 18px',
             borderRadius: '12px',
-            border: `1px solid ${theme.colors.border}`,
-            background: theme.colors.card,
+            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+            background: theme.dark 
+              ? 'rgba(30, 41, 59, 0.6)' 
+              : '#FFFFFF',
             marginBottom: '10px',
             transition: 'all 0.2s ease',
             cursor: 'pointer',
+            boxShadow: theme.dark 
+              ? '0 2px 12px rgba(0,0,0,0.2)' 
+              : '0 2px 12px rgba(0,0,0,0.04)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = theme.colors.primary;
+            e.currentTarget.style.borderColor = '#3B82F6';
             e.currentTarget.style.transform = 'translateX(4px)';
+            e.currentTarget.style.boxShadow = '0 4px 20px rgba(59,130,246,0.15)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = theme.colors.border;
+            e.currentTarget.style.borderColor = theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
             e.currentTarget.style.transform = 'translateX(0)';
+            e.currentTarget.style.boxShadow = theme.dark 
+              ? '0 2px 12px rgba(0,0,0,0.2)' 
+              : '0 2px 12px rgba(0,0,0,0.04)';
           }}
         >
           <span style={{ fontSize: '20px', marginRight: '14px' }}>🔒</span>
@@ -344,62 +452,25 @@ export const Profile = () => {
             textAlign: 'left',
             fontWeight: 600,
             fontSize: '15px',
-            color: theme.colors.textPrimary,
+            color: theme.dark ? '#F1F5F9' : '#0F172A',
           }}>
             Change Password
           </span>
-          <span style={{ color: theme.colors.textSecondary }}>→</span>
+          <span style={{ color: theme.dark ? '#94A3B8' : '#94A3B8' }}>→</span>
         </button>
 
-        {/* Dark Mode Toggle */}
-        <button
-          onClick={toggleDark}
-          style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            padding: '16px 18px',
-            borderRadius: '12px',
-            border: `1px solid ${theme.colors.border}`,
-            background: theme.colors.card,
-            marginBottom: '10px',
-            transition: 'all 0.2s ease',
-            cursor: 'pointer',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = theme.colors.primary;
-            e.currentTarget.style.transform = 'translateX(4px)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = theme.colors.border;
-            e.currentTarget.style.transform = 'translateX(0)';
-          }}
-        >
-          <span style={{ fontSize: '20px', marginRight: '14px' }}>{theme.dark ? '☀️' : '🌙'}</span>
-          <span style={{
-            flex: 1,
-            textAlign: 'left',
-            fontWeight: 600,
-            fontSize: '15px',
-            color: theme.colors.textPrimary,
-          }}>
-            {theme.dark ? 'Light Mode' : 'Dark Mode'}
-          </span>
-          <span style={{ color: theme.colors.textSecondary }}>→</span>
-        </button>
-
-        {/* Admin Tools - Simplified */}
+        {/* Admin Tools */}
         {isAdmin && (
           <div style={{ 
             marginTop: '16px', 
             paddingTop: '16px', 
-            borderTop: `2px solid ${theme.colors.border}` 
+            borderTop: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
           }}>
             <div style={{
               fontSize: '14px',
               fontWeight: 700,
-              color: theme.colors.textPrimary,
-              marginBottom: '14px',
+              color: theme.dark ? '#F1F5F9' : '#0F172A',
+              marginBottom: '12px',
             }}>
               🛠️ Admin Quick Access
             </div>
@@ -411,18 +482,23 @@ export const Profile = () => {
                 alignItems: 'center',
                 padding: '14px 18px',
                 borderRadius: '12px',
-                border: `1px solid ${theme.colors.border}`,
-                background: theme.colors.card,
+                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
+                background: theme.dark 
+                  ? 'rgba(30, 41, 59, 0.6)' 
+                  : '#FFFFFF',
                 marginBottom: '10px',
                 transition: 'all 0.2s ease',
                 cursor: 'pointer',
+                boxShadow: theme.dark 
+                  ? '0 2px 12px rgba(0,0,0,0.2)' 
+                  : '0 2px 12px rgba(0,0,0,0.04)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = theme.colors.primary;
+                e.currentTarget.style.borderColor = '#3B82F6';
                 e.currentTarget.style.transform = 'translateX(4px)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = theme.colors.border;
+                e.currentTarget.style.borderColor = theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
                 e.currentTarget.style.transform = 'translateX(0)';
               }}
             >
@@ -432,11 +508,11 @@ export const Profile = () => {
                 textAlign: 'left',
                 fontWeight: 600,
                 fontSize: '14px',
-                color: theme.colors.textPrimary,
+                color: theme.dark ? '#F1F5F9' : '#0F172A',
               }}>
                 Go to Admin Dashboard
               </span>
-              <span style={{ color: theme.colors.textSecondary }}>→</span>
+              <span style={{ color: theme.dark ? '#94A3B8' : '#94A3B8' }}>→</span>
             </button>
           </div>
         )}
@@ -448,13 +524,18 @@ export const Profile = () => {
             width: '100%',
             display: 'flex',
             alignItems: 'center',
-            padding: '16px 18px',
+            padding: '14px 18px',
             borderRadius: '12px',
             border: `1px solid #EF4444`,
-            background: theme.colors.card,
+            background: theme.dark 
+              ? 'rgba(30, 41, 59, 0.6)' 
+              : '#FFFFFF',
             marginBottom: '10px',
             transition: 'all 0.2s ease',
             cursor: 'pointer',
+            boxShadow: theme.dark 
+              ? '0 2px 12px rgba(0,0,0,0.2)' 
+              : '0 2px 12px rgba(0,0,0,0.04)',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.borderColor = '#DC2626';
@@ -463,7 +544,9 @@ export const Profile = () => {
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.borderColor = '#EF4444';
-            e.currentTarget.style.background = theme.colors.card;
+            e.currentTarget.style.background = theme.dark 
+              ? 'rgba(30, 41, 59, 0.6)' 
+              : '#FFFFFF';
             e.currentTarget.style.transform = 'translateX(0)';
           }}
         >
@@ -496,7 +579,7 @@ export const Profile = () => {
           animation: 'fadeIn 0.2s ease-out',
         }} onClick={() => setIsEditing(false)}>
           <div style={{
-            background: theme.colors.card,
+            background: theme.dark ? '#1E293B' : '#FFFFFF',
             borderRadius: '16px',
             padding: '24px',
             maxWidth: '400px',
@@ -515,7 +598,7 @@ export const Profile = () => {
               <h3 style={{
                 fontSize: '18px',
                 fontWeight: 700,
-                color: theme.colors.textPrimary,
+                color: theme.dark ? '#F1F5F9' : '#0F172A',
               }}>
                 Edit Profile
               </h3>
@@ -523,7 +606,7 @@ export const Profile = () => {
                 onClick={() => setIsEditing(false)}
                 style={{
                   fontSize: '24px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#94A3B8',
                   cursor: 'pointer',
                   background: 'none',
                   border: 'none',
@@ -539,7 +622,7 @@ export const Profile = () => {
                 display: 'block',
                 fontSize: '12px',
                 fontWeight: 600,
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 marginBottom: '4px',
                 textTransform: 'uppercase',
                 letterSpacing: '0.3px',
@@ -554,9 +637,9 @@ export const Profile = () => {
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
@@ -570,7 +653,7 @@ export const Profile = () => {
                 display: 'block',
                 fontSize: '12px',
                 fontWeight: 600,
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 marginBottom: '4px',
                 textTransform: 'uppercase',
                 letterSpacing: '0.3px',
@@ -585,9 +668,9 @@ export const Profile = () => {
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
@@ -601,7 +684,7 @@ export const Profile = () => {
                 display: 'block',
                 fontSize: '12px',
                 fontWeight: 600,
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 marginBottom: '4px',
                 textTransform: 'uppercase',
                 letterSpacing: '0.3px',
@@ -616,9 +699,9 @@ export const Profile = () => {
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
@@ -633,7 +716,7 @@ export const Profile = () => {
                   display: 'block',
                   fontSize: '12px',
                   fontWeight: 600,
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   marginBottom: '4px',
                   textTransform: 'uppercase',
                   letterSpacing: '0.3px',
@@ -648,9 +731,9 @@ export const Profile = () => {
                     width: '100%',
                     padding: '10px 14px',
                     borderRadius: '10px',
-                    border: `1px solid ${theme.colors.border}`,
-                    background: theme.colors.inputBg,
-                    color: theme.colors.textPrimary,
+                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                    color: theme.dark ? '#F1F5F9' : '#0F172A',
                     fontSize: '14px',
                     outline: 'none',
                     transition: 'all 0.2s ease',
@@ -663,7 +746,7 @@ export const Profile = () => {
                   display: 'block',
                   fontSize: '12px',
                   fontWeight: 600,
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   marginBottom: '4px',
                   textTransform: 'uppercase',
                   letterSpacing: '0.3px',
@@ -678,9 +761,9 @@ export const Profile = () => {
                     width: '100%',
                     padding: '10px 14px',
                     borderRadius: '10px',
-                    border: `1px solid ${theme.colors.border}`,
-                    background: theme.colors.inputBg,
-                    color: theme.colors.textPrimary,
+                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                    color: theme.dark ? '#F1F5F9' : '#0F172A',
                     fontSize: '14px',
                     outline: 'none',
                     transition: 'all 0.2s ease',
@@ -695,7 +778,7 @@ export const Profile = () => {
                 display: 'block',
                 fontSize: '12px',
                 fontWeight: 600,
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 marginBottom: '4px',
                 textTransform: 'uppercase',
                 letterSpacing: '0.3px',
@@ -710,9 +793,9 @@ export const Profile = () => {
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
@@ -726,7 +809,7 @@ export const Profile = () => {
                 display: 'block',
                 fontSize: '12px',
                 fontWeight: 600,
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 marginBottom: '4px',
                 textTransform: 'uppercase',
                 letterSpacing: '0.3px',
@@ -741,9 +824,9 @@ export const Profile = () => {
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
@@ -759,9 +842,9 @@ export const Profile = () => {
                   flex: 1,
                   padding: '12px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
                   background: 'transparent',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   fontWeight: 600,
                   fontSize: '14px',
                   cursor: 'pointer',
@@ -812,7 +895,7 @@ export const Profile = () => {
           animation: 'fadeIn 0.2s ease-out',
         }} onClick={() => setShowChangePassword(false)}>
           <div style={{
-            background: theme.colors.card,
+            background: theme.dark ? '#1E293B' : '#FFFFFF',
             borderRadius: '16px',
             padding: '24px',
             maxWidth: '400px',
@@ -829,7 +912,7 @@ export const Profile = () => {
               <h3 style={{
                 fontSize: '18px',
                 fontWeight: 700,
-                color: theme.colors.textPrimary,
+                color: theme.dark ? '#F1F5F9' : '#0F172A',
               }}>
                 Change Password
               </h3>
@@ -841,7 +924,7 @@ export const Profile = () => {
                 }}
                 style={{
                   fontSize: '24px',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#94A3B8',
                   cursor: 'pointer',
                   background: 'none',
                   border: 'none',
@@ -876,7 +959,7 @@ export const Profile = () => {
                 display: 'block',
                 fontSize: '12px',
                 fontWeight: 600,
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 marginBottom: '4px',
                 textTransform: 'uppercase',
                 letterSpacing: '0.3px',
@@ -892,9 +975,9 @@ export const Profile = () => {
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
-                  border: `1px solid ${passwordError ? '#EF4444' : theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${passwordError ? '#EF4444' : (theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)')}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
@@ -908,7 +991,7 @@ export const Profile = () => {
                 display: 'block',
                 fontSize: '12px',
                 fontWeight: 600,
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 marginBottom: '4px',
                 textTransform: 'uppercase',
                 letterSpacing: '0.3px',
@@ -924,9 +1007,9 @@ export const Profile = () => {
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
-                  border: `1px solid ${passwordError ? '#EF4444' : theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${passwordError ? '#EF4444' : (theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)')}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
@@ -940,7 +1023,7 @@ export const Profile = () => {
                 display: 'block',
                 fontSize: '12px',
                 fontWeight: 600,
-                color: theme.colors.textSecondary,
+                color: theme.dark ? '#94A3B8' : '#64748B',
                 marginBottom: '4px',
                 textTransform: 'uppercase',
                 letterSpacing: '0.3px',
@@ -956,9 +1039,9 @@ export const Profile = () => {
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '10px',
-                  border: `1px solid ${passwordError ? '#EF4444' : theme.colors.border}`,
-                  background: theme.colors.inputBg,
-                  color: theme.colors.textPrimary,
+                  border: `1px solid ${passwordError ? '#EF4444' : (theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)')}`,
+                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                  color: theme.dark ? '#F1F5F9' : '#0F172A',
                   fontSize: '14px',
                   outline: 'none',
                   transition: 'all 0.2s ease',
@@ -978,9 +1061,9 @@ export const Profile = () => {
                   flex: 1,
                   padding: '12px',
                   borderRadius: '10px',
-                  border: `1px solid ${theme.colors.border}`,
+                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
                   background: 'transparent',
-                  color: theme.colors.textSecondary,
+                  color: theme.dark ? '#94A3B8' : '#64748B',
                   fontWeight: 600,
                   fontSize: '14px',
                   cursor: 'pointer',

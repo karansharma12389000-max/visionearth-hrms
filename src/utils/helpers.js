@@ -2,62 +2,58 @@
 
 import { 
   getTodayIST, 
-  formatUTCToIST, 
-  formatUTCDateToIST,
-  formatUTCDateTimeToIST,
+  formatISTTime, 
+  formatISTDate,
+  formatISTDateTime,
   getCurrentISTTime,
   getCurrentISTDate,
   getMonthRangeIST,
-  getISTDateFromUTC,
-  getISTTimeFromUTC,
   isTodayIST
 } from './timeUtils';
 
 // ✅ Export IST utilities for easy access
 export { 
   getTodayIST, 
-  formatUTCToIST, 
-  formatUTCDateToIST,
-  formatUTCDateTimeToIST,
+  formatISTTime as formatUTCToIST,
+  formatISTDate as formatUTCDateToIST,
+  formatISTDateTime as formatUTCDateTimeToIST,
   getCurrentISTTime,
   getCurrentISTDate,
   getMonthRangeIST,
-  getISTDateFromUTC,
-  getISTTimeFromUTC,
   isTodayIST
 };
 
 // ✅ Get today's date in IST (legacy compatibility)
 export const getTodayStr = getTodayIST;
 
-// ✅ Format date in IST
+// ✅ Format date in IST (legacy)
 export const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
-  return formatUTCDateToIST(dateString);
+  return formatISTDate(dateString);
 };
 
-// ✅ Format time in IST
+// ✅ Format time in IST (legacy)
 export const formatTime = (timeString) => {
   if (!timeString) return 'N/A';
-  return formatUTCToIST(timeString);
+  return formatISTTime(timeString);
 };
 
-// ✅ Format date and time in IST
+// ✅ Format date and time in IST (legacy)
 export const formatDateTime = (dateString) => {
   if (!dateString) return 'N/A';
-  return formatUTCDateTimeToIST(dateString);
+  return formatISTDateTime(dateString);
 };
 
 // ✅ Format date for display (alias)
 export const formatDateDisplay = (dateString) => {
   if (!dateString) return 'N/A';
-  return formatUTCDateToIST(dateString);
+  return formatISTDate(dateString);
 };
 
 // ✅ Format time for display (alias)
 export const formatTimeDisplay = (timeString) => {
   if (!timeString) return 'N/A';
-  return formatUTCToIST(timeString);
+  return formatISTTime(timeString);
 };
 
 // ✅ Get status color

@@ -1,7 +1,11 @@
 // src/services/scheduledJobs.js
 import { supabase } from './supabase';
+import { getTodayIST } from '../utils/helpers';
 
-// ✅ Helper: Get current location for auto check-out
+// ============================================================
+// 1. HELPER FUNCTIONS
+// ============================================================
+
 export const getCurrentLocation = () => {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
@@ -36,14 +40,17 @@ export const getCurrentLocation = () => {
   });
 };
 
-// ✅ Check if employee has completed FULL attendance process
+// ============================================================
+// 2. CHECK FULL ATTENDANCE PROCESS
+// ============================================================
+
 export const hasCompletedFullAttendance = async (employeeId, date) => {
   try {
     const { data: checkInData, error: checkInError } = await supabase
       .from('check_in_out')
       .select('id, check_in_time, check_out_time, check_in_address, check_out_address, working_hours')
       .eq('employee_id', employeeId)
-      .gte('check_in_time', date)
+      .gte('check_in_time', date + 'T00:00:00.000Z')
       .lte('check_in_time', date + 'T23:59:59.999Z')
       .maybeSingle();
 
@@ -83,10 +90,13 @@ export const hasCompletedFullAttendance = async (employeeId, date) => {
   }
 };
 
-// ✅ Process approved leaves - ONLY if full process NOT completed
+// ============================================================
+// 3. PROCESS APPROVED LEAVES
+// ============================================================
+
 export const processApprovedLeaves = async () => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayIST();
     
     const { data: approvedLeaves, error: leaveError } = await supabase
       .from('leave_requests')
@@ -98,7 +108,7 @@ export const processApprovedLeaves = async () => {
     if (leaveError) throw leaveError;
     
     if (approvedLeaves && approvedLeaves.length > 0) {
-      console.log(`📅 Processing ${approvedLeaves.length} approved leaves for today`);
+      console.log(`📅 Processing ${approvedLeaves.length} approved leaves for today (IST: ${today})`);
       
       for (const leave of approvedLeaves) {
         const fullAttendance = await hasCompletedFullAttendance(leave.employee_id, today);
@@ -152,10 +162,13 @@ export const processApprovedLeaves = async () => {
   }
 };
 
-// ✅ Auto Check-Out with current location and ACO flag
+// ============================================================
+// 4. AUTO CHECK-OUT EMPLOYEES
+// ============================================================
+
 export const autoCheckOutEmployees = async () => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayIST();
     const endOfDay = new Date(today + 'T23:59:59.999Z').toISOString();
     
     const currentLocation = await getCurrentLocation();
@@ -166,13 +179,14 @@ export const autoCheckOutEmployees = async () => {
       .from('check_in_out')
       .select('*')
       .eq('status', 'Checked In')
-      .gte('check_in_time', today)
+      .gte('check_in_time', today + 'T00:00:00.000Z')
+      .lte('check_in_time', today + 'T23:59:59.999Z')
       .is('check_out_time', null);
     
     if (error) throw error;
     
     if (checkIns && checkIns.length > 0) {
-      console.log(`🔄 Auto check-out for ${checkIns.length} employees with current location`);
+      console.log(`🔄 Auto check-out for ${checkIns.length} employees (IST: ${today})`);
       
       for (const checkIn of checkIns) {
         const checkInTime = new Date(checkIn.check_in_time);
@@ -192,7 +206,7 @@ export const autoCheckOutEmployees = async () => {
           })
           .eq('id', checkIn.id);
         
-        console.log(`🔄 Auto check-out completed for ${checkIn.employee_id} (ACO - Not filled yet)`);
+        console.log(`🔄 Auto check-out completed for ${checkIn.employee_id}`);
       }
     }
     
@@ -203,15 +217,75 @@ export const autoCheckOutEmployees = async () => {
   }
 };
 
-// ✅ Auto Mark Present (P) when full process is completed
+// ============================================================
+// 5. MARK ACO IN ATTENDANCE
+// ============================================================
+
+export const autoMarkACOAttendance = async () => {
+  try {
+    const today = getTodayIST();
+    
+    const { data: autoCheckOuts, error } = await supabase
+      .from('check_in_out')
+      .select(`
+        *,
+        employees:employee_id (name)
+      `)
+      .eq('status', 'Checked Out (Auto)')
+      .eq('aco_filled', false)
+      .gte('check_in_time', today + 'T00:00:00.000Z')
+      .lte('check_in_time', today + 'T23:59:59.999Z');
+    
+    if (error) throw error;
+    
+    let processed = 0;
+    
+    for (const checkOut of autoCheckOuts || []) {
+      const { data: existingAtt } = await supabase
+        .from('attendance')
+        .select('id')
+        .eq('employee_id', checkOut.employee_id)
+        .eq('attendance_date', today)
+        .maybeSingle();
+      
+      if (!existingAtt) {
+        await supabase
+          .from('attendance')
+          .insert({
+            employee_id: checkOut.employee_id,
+            employee_name: checkOut.employees?.name || 'Employee',
+            attendance_date: today,
+            status: 'ACO',
+            reporting_location: checkOut.check_in_address?.split(',')[0] || 'Auto Check-Out',
+            check_in_time: checkOut.check_in_time ? new Date(checkOut.check_in_time).toTimeString().slice(0, 8) : null,
+            check_out_time: checkOut.check_out_time ? new Date(checkOut.check_out_time).toTimeString().slice(0, 8) : null,
+            working_hours: checkOut.working_hours || 0,
+            remarks: 'Auto Check-Out - Fill project details'
+          });
+        processed++;
+        console.log(`✅ Created ACO record for employee ${checkOut.employee_id} (IST: ${today})`);
+      }
+    }
+    
+    return { success: true, processed };
+  } catch (error) {
+    console.error('Error in autoMarkACOAttendance:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// ============================================================
+// 6. MARK PRESENT FOR FULL PROCESS
+// ============================================================
+
 export const autoMarkPresent = async () => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayIST();
     
     const { data: checkIns, error } = await supabase
       .from('check_in_out')
       .select('employee_id, check_in_time, check_out_time, check_in_address, check_out_address, working_hours')
-      .gte('check_in_time', today)
+      .gte('check_in_time', today + 'T00:00:00.000Z')
       .lte('check_in_time', today + 'T23:59:59.999Z');
     
     if (error) throw error;
@@ -238,7 +312,7 @@ export const autoMarkPresent = async () => {
             })
             .eq('id', existingAtt.id);
           processedEmployees.push(checkIn.employee_id);
-          console.log(`✅ Marked Present (P) for employee ${checkIn.employee_id}`);
+          console.log(`✅ Marked Present (P) for employee ${checkIn.employee_id} (IST: ${today})`);
         }
       }
     }
@@ -250,10 +324,13 @@ export const autoMarkPresent = async () => {
   }
 };
 
-// ✅ Auto Mark Absent or Leave
+// ============================================================
+// 7. MARK ABSENT OR LEAVE
+// ============================================================
+
 export const autoMarkAbsentOrLeave = async () => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayIST();
     
     const { data: employees, error: empError } = await supabase
       .from('employees')
@@ -277,7 +354,7 @@ export const autoMarkAbsentOrLeave = async () => {
     const employeesToProcess = employees?.filter(emp => !existingMap.has(emp.id)) || [];
     
     if (employeesToProcess.length > 0) {
-      console.log(`❌ Processing ${employeesToProcess.length} employees without attendance`);
+      console.log(`❌ Processing ${employeesToProcess.length} employees without attendance (IST: ${today})`);
       
       for (const emp of employeesToProcess) {
         const { data: leaveData } = await supabase
@@ -299,7 +376,7 @@ export const autoMarkAbsentOrLeave = async () => {
               reporting_location: 'Leave',
               remarks: 'Approved leave'
             });
-          console.log(`📅 Marked Leave (L) for ${emp.name}`);
+          console.log(`📅 Marked Leave (L) for ${emp.name} (IST: ${today})`);
         } else {
           await supabase
             .from('attendance')
@@ -311,7 +388,7 @@ export const autoMarkAbsentOrLeave = async () => {
               reporting_location: 'N/A',
               remarks: 'Auto marked absent'
             });
-          console.log(`❌ Marked Absent (A) for ${emp.name}`);
+          console.log(`❌ Marked Absent (A) for ${emp.name} (IST: ${today})`);
         }
       }
     }
@@ -323,30 +400,28 @@ export const autoMarkAbsentOrLeave = async () => {
   }
 };
 
-// ✅ MAIN JOB
+// ============================================================
+// 8. MAIN JOB
+// ============================================================
+
 export const runEndOfDayJobs = async () => {
   console.log('🌙 Running end of day jobs...');
-  console.log(`📅 Date: ${new Date().toISOString()}`);
+  console.log(`📅 IST Date: ${getTodayIST()}`);
   
   const results = {
     processLeaves: null,
     autoCheckOut: null,
     autoMarkPresent: null,
     autoMarkAbsentOrLeave: null,
+    autoMarkACO: null,
     timestamp: new Date().toISOString()
   };
   
   try {
-    console.log('✅ Step 1: Marking Present (P) for full process...');
     results.autoMarkPresent = await autoMarkPresent();
-    
-    console.log('📅 Step 2: Processing approved leaves...');
     results.processLeaves = await processApprovedLeaves();
-    
-    console.log('🔄 Step 3: Auto check-out with current location...');
     results.autoCheckOut = await autoCheckOutEmployees();
-    
-    console.log('❌ Step 4: Marking absent/leave...');
+    results.autoMarkACO = await autoMarkACOAttendance();
     results.autoMarkAbsentOrLeave = await autoMarkAbsentOrLeave();
     
     console.log('✅ End of day jobs completed!');
@@ -360,7 +435,10 @@ export const runEndOfDayJobs = async () => {
   }
 };
 
-// ✅ Schedule jobs
+// ============================================================
+// 9. SCHEDULE JOBS
+// ============================================================
+
 export const scheduleEndOfDayJob = () => {
   const now = new Date();
   const midnight = new Date(now);
@@ -379,22 +457,18 @@ export const scheduleEndOfDayJob = () => {
     const currentMinute = new Date().getMinutes();
     
     if (currentHour >= 0 && currentHour <= 23) {
-      console.log('🔄 Running periodic check for full process...');
       await autoMarkPresent();
     }
     
     if (currentHour >= 0 && currentHour <= 23) {
-      console.log('🔄 Running periodic check for leaves...');
       await processApprovedLeaves();
     }
     
     if (currentHour >= 18 && currentHour < 23) {
-      console.log('🔄 Running auto check-out check...');
       await autoCheckOutEmployees();
     }
     
     if (currentHour === 23 && currentMinute === 30) {
-      console.log('🔄 Running final end-of-day check...');
       await runEndOfDayJobs();
     }
   }, 30000);
