@@ -1,6 +1,7 @@
 // src/services/scheduledJobs.js
 
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws'; // Add this for Node.js
 
 // Get Supabase credentials
 const supabaseUrl = process.env.SUPABASE_URL || import.meta.env?.VITE_SUPABASE_URL;
@@ -8,15 +9,25 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ||
                     process.env.SUPABASE_ANON_KEY || 
                     import.meta.env?.VITE_SUPABASE_ANON_KEY;
 
-// Create Supabase client
-let supabase;
+// Check if running in Node.js
 const isNode = typeof window === 'undefined' || typeof window.document === 'undefined';
 
+// Create Supabase client with WebSocket support for Node.js
+let supabase;
+
 if (isNode) {
-  supabase = createClient(supabaseUrl, supabaseKey);
+  // Node.js environment - use ws package
+  supabase = createClient(supabaseUrl, supabaseKey, {
+    realtime: {
+      transport: WebSocket
+    }
+  });
+  console.log('✅ Supabase client initialized for Node.js with WebSocket support');
 } else {
+  // Browser environment
   const { supabase: supabaseClient } = await import('./supabase');
   supabase = supabaseClient;
+  console.log('✅ Supabase client initialized for browser');
 }
 
 // ============================================

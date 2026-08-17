@@ -18,10 +18,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
       
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '22'  # Changed from 18 to 22
           
       - name: Set timezone to IST
         run: |
@@ -31,6 +31,9 @@ jobs:
       - name: Install dependencies
         run: npm install
         
+      - name: Install ws package for WebSocket support
+        run: npm install ws --save-dev
+        
       - name: Run Auto Check-Out and Absent processing (IST)
         run: node -e "import('./src/services/scheduledJobs.js').then(module => module.runAutoCheckOutAndAbsent())"
         env:
@@ -38,6 +41,7 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           TZ: Asia/Kolkata
+          NODE_OPTIONS: --experimental-vm-modules
           
       - name: Log completion with IST time
         run: |
