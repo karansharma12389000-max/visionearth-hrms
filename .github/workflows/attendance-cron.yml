@@ -1,0 +1,44 @@
+# .github/workflows/attendance-cron.yml
+name: Attendance Auto Processing (IST Timezone)
+
+on:
+  schedule:
+    # 11:55 PM IST = 6:25 PM UTC (IST is UTC+5:30)
+    - cron: '25 18 * * *'
+    # 12:05 AM IST = 6:35 PM UTC
+    - cron: '35 18 * * *'
+  # Allow manual trigger from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  run-auto-checkout:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Set timezone to IST
+        run: |
+          sudo timedatectl set-timezone Asia/Kolkata
+          date
+          
+      - name: Install dependencies
+        run: npm install
+        
+      - name: Run Auto Check-Out and Absent processing (IST)
+        run: node -e "import('./src/services/scheduledJobs.js').then(module => module.runAutoCheckOutAndAbsent())"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TZ: Asia/Kolkata
+          
+      - name: Log completion with IST time
+        run: |
+          echo "✅ Auto Check-Out and Absent processing completed at $(TZ=Asia/Kolkata date)"
