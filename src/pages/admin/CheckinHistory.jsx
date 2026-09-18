@@ -1,4 +1,7 @@
 // src/pages/admin/CheckinHistory.jsx
+//
+// Vision Earth HRMS — Premium Check-In/Out History
+// All raw check-in and check-out records.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -6,19 +9,21 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../services/supabase';
-import { 
-  getTodayIST, 
-  formatDate, 
-  formatTime, 
-  getMonthName 
+import {
+  getTodayIST,
+  formatDate,
+  formatTime,
+  getMonthName,
 } from '../../utils/helpers';
 import BottomNavigation from '../../components/BottomNavigation';
+import { THEME, isDark } from '../../utils/designTokens';
 
 export const AdminCheckinHistory = () => {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { user } = useAuth();
-  
+  const dark = isDark(theme);
+
   const [loading, setLoading] = useState(true);
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
@@ -30,48 +35,64 @@ export const AdminCheckinHistory = () => {
     total: 0,
     checkedIn: 0,
     checkedOut: 0,
-    autoCheckedOut: 0
+    late: 0,
   });
 
+  // Theme helpers
+  const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
+  const cardBg = dark ? THEME.dark.card : THEME.cardBg;
+  const textPrimary = dark ? THEME.dark.text : THEME.text;
+  const textSecondary = dark ? THEME.dark.textSecondary : THEME.textSecondary;
+  const textMuted = dark ? THEME.dark.textMuted : THEME.textMuted;
+  const border = dark ? THEME.dark.border : THEME.border;
+  const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
+
+  // ============================================
+  // FETCH
+  // ============================================
   const fetchCheckinHistory = async (startDate, endDate) => {
     try {
       setLoading(true);
-      
+
       let query = supabase
         .from('check_in_out')
         .select('*')
         .order('check_in_time', { ascending: false });
 
       if (startDate && endDate) {
-        query = query
-          .gte('check_in_time', startDate)
-          .lte('check_in_time', endDate);
+        query = query.gte('check_in_time', startDate).lte('check_in_time', endDate);
       }
 
       const { data: checkinData, error: checkinError } = await query;
-      
       if (checkinError) throw checkinError;
-      
+
       const { data: empData, error: empError } = await supabase
         .from('employees')
         .select('id, name, employee_id, email, department');
-      
+
       if (empError) throw empError;
-      
-      const combinedData = checkinData?.map(item => ({
-        ...item,
-        employee: empData?.find(emp => emp.id === item.employee_id) || null
-      })) || [];
-      
+
+      const combinedData =
+        checkinData?.map((item) => ({
+          ...item,
+          employee: empData?.find((emp) => emp.id === item.employee_id) || null,
+        })) || [];
+
       setCheckins(combinedData);
       setFilteredCheckins(combinedData);
-      
+
       const total = combinedData?.length || 0;
-      const checkedIn = combinedData?.filter(c => c.status === 'Checked In').length || 0;
-      const checkedOut = combinedData?.filter(c => c.status === 'Checked Out').length || 0;
-      const autoCheckedOut = combinedData?.filter(c => c.status === 'Checked Out (Auto)').length || 0;
-      
-      setStats({ total, checkedIn, checkedOut, autoCheckedOut });
+      const checkedIn =
+        combinedData?.filter((c) => c.status === 'Checked In').length || 0;
+      const checkedOut =
+        combinedData?.filter(
+          (c) => c.status === 'Checked Out' || c.status === 'Checked Out (Late)'
+        ).length || 0;
+      const late =
+        combinedData?.filter((c) => c.status === 'Checked Out (Late)').length ||
+        0;
+
+      setStats({ total, checkedIn, checkedOut, late });
     } catch (error) {
       console.error('Error fetching check-in history:', error);
       toast.error('Failed to load check-in history');
@@ -91,7 +112,11 @@ export const AdminCheckinHistory = () => {
 
   const loadMonthData = () => {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`;
-    const endDate = `${year}-${String(month).padStart(2, '0')}-${new Date(year, month, 0).getDate()}T23:59:59.999Z`;
+    const endDate = `${year}-${String(month).padStart(2, '0')}-${new Date(
+      year,
+      month,
+      0
+    ).getDate()}T23:59:59.999Z`;
     setViewMode('month');
     setFilterDate('');
     fetchCheckinHistory(startDate, endDate);
@@ -124,355 +149,533 @@ export const AdminCheckinHistory = () => {
     }
   }, [month, year]);
 
-  const formatTimeDisplay = (date) => {
-    if (!date) return 'N/A';
-    return formatTime(date);
-  };
-
-  const formatDateDisplay = (date) => {
-    if (!date) return 'N/A';
-    return formatDate(date);
-  };
-
-  const getTodayStr = () => {
-    const today = new Date();
-    return today.toLocaleDateString('en-IN', { 
-      day: '2-digit', 
-      month: 'short', 
-      year: 'numeric',
-      timeZone: 'Asia/Kolkata'
-    });
-  };
-
+  // ============================================
+  // LOADING
+  // ============================================
   if (loading) {
     return (
-      <div style={{
-        maxWidth: '480px',
-        margin: '0 auto',
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: theme.colors.background,
-      }}>
+      <div
+        style={{
+          maxWidth: '480px',
+          margin: '0 auto',
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: pageBg,
+        }}
+      >
         <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '50%',
-            border: `3px solid ${theme.colors.border}`,
-            borderTopColor: theme.colors.primary,
-            animation: 'spin 0.8s linear infinite',
-            margin: '0 auto'
-          }} />
-          <p style={{ marginTop: '12px', color: theme.colors.textSecondary, fontSize: '13px' }}>
-            Loading check-in history...
+          <div
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: `4px solid ${THEME.primaryLight}33`,
+              borderTopColor: THEME.primary,
+              animation: 'spin 0.8s linear infinite',
+              margin: '0 auto',
+            }}
+          />
+          <p
+            style={{
+              marginTop: '16px',
+              color: textSecondary,
+              fontSize: '14px',
+            }}
+          >
+            Loading...
           </p>
         </div>
       </div>
     );
   }
 
+  const getTodayStr = () => {
+    return new Date().toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'Asia/Kolkata',
+    });
+  };
+
+  // ============================================
+  // RENDER
+  // ============================================
   return (
-    <div style={{
-      maxWidth: '480px',
-      margin: '0 auto',
-      minHeight: '100vh',
-      backgroundColor: theme.colors.background,
-      paddingBottom: '80px',
-    }}>
-      <div className="page-header">
-        <h1>📍 Check-In/Out History</h1>
-        <p>
-          {viewMode === 'today' && `Today • ${getTodayStr()}`}
-          {viewMode === 'month' && `${getMonthName(month)} ${year}`}
-          {viewMode === 'custom' && filterDate && formatDate(filterDate)}
-          {viewMode === 'all' && 'All Records'}
-        </p>
+    <div
+      style={{
+        maxWidth: '480px',
+        margin: '0 auto',
+        minHeight: '100vh',
+        backgroundColor: pageBg,
+        paddingBottom: '120px',
+        fontFamily: THEME.font,
+      }}
+    >
+      {/* HEADER */}
+      <div style={{ padding: '16px 16px 8px' }}>
+        <div
+          style={{
+            background: dark
+              ? 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)'
+              : 'linear-gradient(135deg, #FFFFFF 0%, #F0FDF4 100%)',
+            borderRadius: THEME.radius2xl,
+            padding: '22px 20px 20px',
+            boxShadow: dark ? THEME.shadowDark : THEME.shadowLg,
+            border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : '#E6F5EE'}`,
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: -60,
+              right: -60,
+              width: '160px',
+              height: '160px',
+              borderRadius: '50%',
+              background:
+                'radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%)',
+              pointerEvents: 'none',
+            }}
+          />
+
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              marginBottom: '14px',
+              position: 'relative',
+              zIndex: 1,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div
+                style={{
+                  width: '52px',
+                  height: '52px',
+                  borderRadius: THEME.radiusMd,
+                  background: dark ? '#0F172A' : '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(16,185,129,0.15)',
+                  border: '1px solid #D1FAE5',
+                  overflow: 'hidden',
+                }}
+              >
+                <img
+                  src="/vision-earth-logo.png"
+                  alt="Vision Earth"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontSize: '16px',
+                    fontWeight: 800,
+                    color: textPrimary,
+                    letterSpacing: '0.5px',
+                    lineHeight: 1.1,
+                  }}
+                >
+                  CHECK-IN
+                </div>
+                <div
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: THEME.primary,
+                    letterSpacing: '3px',
+                    marginTop: '3px',
+                  }}
+                >
+                  HISTORY
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              fontSize: '11px',
+              color: textMuted,
+              fontWeight: 500,
+              position: 'relative',
+              zIndex: 1,
+            }}
+          >
+            📍{' '}
+            {viewMode === 'today' && `Today · ${getTodayStr()}`}
+            {viewMode === 'month' && `${getMonthName(month)} ${year}`}
+            {viewMode === 'custom' && filterDate && formatDate(filterDate)}
+            {viewMode === 'all' && 'All Records'}
+          </div>
+        </div>
       </div>
 
-      <div style={{
-        display: 'flex',
-        gap: '8px',
-        padding: '8px 16px',
-        background: theme.colors.card,
-        borderBottom: `1px solid ${theme.colors.border}`,
-        flexWrap: 'wrap',
-      }}>
-        <button
-          onClick={loadTodayData}
+      {/* VIEW MODE TABS */}
+      <div style={{ padding: '0 16px 12px' }}>
+        <div
           style={{
-            padding: '6px 16px',
-            borderRadius: '20px',
-            border: viewMode === 'today' ? `2px solid ${theme.colors.primary}` : `1px solid ${theme.colors.border}`,
-            background: viewMode === 'today' ? theme.colors.primary + '20' : 'transparent',
-            color: viewMode === 'today' ? theme.colors.primary : theme.colors.textSecondary,
-            fontWeight: 600,
-            fontSize: '12px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
+            display: 'flex',
+            gap: '4px',
+            padding: '4px',
+            background: dark ? 'rgba(255,255,255,0.03)' : '#F1F5F9',
+            borderRadius: THEME.radiusPill,
+            border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'}`,
           }}
         >
-          📅 Today
-        </button>
-        <button
-          onClick={loadMonthData}
-          style={{
-            padding: '6px 16px',
-            borderRadius: '20px',
-            border: viewMode === 'month' ? `2px solid ${theme.colors.primary}` : `1px solid ${theme.colors.border}`,
-            background: viewMode === 'month' ? theme.colors.primary + '20' : 'transparent',
-            color: viewMode === 'month' ? theme.colors.primary : theme.colors.textSecondary,
-            fontWeight: 600,
-            fontSize: '12px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          📊 This Month
-        </button>
-        <button
-          onClick={loadAllData}
-          style={{
-            padding: '6px 16px',
-            borderRadius: '20px',
-            border: viewMode === 'all' ? `2px solid ${theme.colors.primary}` : `1px solid ${theme.colors.border}`,
-            background: viewMode === 'all' ? theme.colors.primary + '20' : 'transparent',
-            color: viewMode === 'all' ? theme.colors.primary : theme.colors.textSecondary,
-            fontWeight: 600,
-            fontSize: '12px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          📋 All
-        </button>
+          {[
+            { key: 'today', label: '📅 Today', onClick: loadTodayData },
+            { key: 'month', label: '📊 Month', onClick: loadMonthData },
+            { key: 'all', label: '📋 All', onClick: loadAllData },
+          ].map((v) => {
+            const active = viewMode === v.key;
+            return (
+              <button
+                key={v.key}
+                onClick={v.onClick}
+                style={{
+                  flex: 1,
+                  padding: '9px 6px',
+                  borderRadius: THEME.radiusPill,
+                  border: 'none',
+                  background: active
+                    ? dark
+                      ? '#1E293B'
+                      : '#FFFFFF'
+                    : 'transparent',
+                  color: active ? THEME.primary : textSecondary,
+                  fontWeight: active ? 800 : 600,
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: active ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                  fontFamily: THEME.font,
+                }}
+              >
+                {v.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <div style={{
-        display: 'flex',
-        gap: '10px',
-        padding: '12px 16px',
-        background: theme.colors.card,
-        borderBottom: `1px solid ${theme.colors.border}`,
-        flexWrap: 'wrap',
-        alignItems: 'center',
-      }}>
-        <select
-          value={month}
-          onChange={(e) => setMonth(parseInt(e.target.value))}
-          className="form-control"
-          style={{ 
-            flex: 1, 
-            minWidth: '80px',
-            padding: '8px 12px',
-            borderRadius: '8px',
-            border: `1px solid ${theme.colors.border}`,
-            background: theme.colors.inputBg,
-            color: theme.colors.textPrimary,
-            outline: 'none',
-            fontFamily: 'Inter, sans-serif',
-            cursor: 'pointer',
-            fontSize: '12px',
+      {/* FILTERS */}
+      <div style={{ padding: '0 16px 12px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+          <select
+            value={month}
+            onChange={(e) => setMonth(parseInt(e.target.value))}
+            style={{
+              flex: 1,
+              padding: '11px 12px',
+              borderRadius: THEME.radiusMd,
+              border: `1px solid ${border}`,
+              background: cardBg,
+              color: textPrimary,
+              fontSize: '12px',
+              fontWeight: 600,
+              outline: 'none',
+              fontFamily: THEME.font,
+              cursor: 'pointer',
+              appearance: 'none',
+              backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 10px center',
+              backgroundSize: '14px',
+              paddingRight: '32px',
+              boxSizing: 'border-box',
+            }}
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <option key={m} value={m}>
+                {getMonthName(m)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={year}
+            onChange={(e) => setYear(parseInt(e.target.value))}
+            style={{
+              flex: 1,
+              padding: '11px 12px',
+              borderRadius: THEME.radiusMd,
+              border: `1px solid ${border}`,
+              background: cardBg,
+              color: textPrimary,
+              fontSize: '12px',
+              fontWeight: 600,
+              outline: 'none',
+              fontFamily: THEME.font,
+              cursor: 'pointer',
+              appearance: 'none',
+              backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 10px center',
+              backgroundSize: '14px',
+              paddingRight: '32px',
+              boxSizing: 'border-box',
+            }}
+          >
+            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(
+              (y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              )
+            )}
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            style={{
+              flex: 1,
+              padding: '11px 12px',
+              borderRadius: THEME.radiusMd,
+              border: `1px solid ${border}`,
+              background: cardBg,
+              color: textPrimary,
+              fontSize: '12px',
+              fontWeight: 600,
+              outline: 'none',
+              fontFamily: THEME.font,
+              boxSizing: 'border-box',
+            }}
+          />
+          <button
+            onClick={loadCustomDate}
+            style={{
+              padding: '11px 18px',
+              borderRadius: THEME.radiusMd,
+              border: 'none',
+              background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+              color: '#FFFFFF',
+              fontWeight: 800,
+              fontSize: '12px',
+              cursor: 'pointer',
+              boxShadow: THEME.shadowGreen,
+              fontFamily: THEME.font,
+              letterSpacing: '0.3px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+            }}
+          >
+            🔍 Search
+          </button>
+        </div>
+      </div>
+
+      {/* STATS */}
+      <div style={{ padding: '0 16px 12px' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: '8px',
           }}
         >
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <option key={m} value={m}>{getMonthName(m)}</option>
+          {[
+            { value: stats.total, label: 'Total', color: THEME.blue, icon: '📊' },
+            { value: stats.checkedIn, label: 'In', color: THEME.primary, icon: '✓' },
+            { value: stats.checkedOut, label: 'Out', color: THEME.purple, icon: '↑' },
+            { value: stats.late, label: 'Late', color: THEME.amber, icon: '⏳' },
+          ].map((stat, idx) => (
+            <div
+              key={idx}
+              style={{
+                background: cardBg,
+                borderRadius: THEME.radiusMd,
+                padding: '10px 6px',
+                textAlign: 'center',
+                border: `1px solid ${border}`,
+                boxShadow: cardShadow,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '12px',
+                  marginBottom: '2px',
+                  opacity: 0.9,
+                }}
+              >
+                {stat.icon}
+              </div>
+              <div
+                style={{
+                  fontSize: '18px',
+                  fontWeight: 800,
+                  color: stat.color,
+                  lineHeight: 1,
+                  letterSpacing: '-0.5px',
+                }}
+              >
+                {stat.value}
+              </div>
+              <div
+                style={{
+                  fontSize: '8px',
+                  fontWeight: 700,
+                  color: textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.3px',
+                  marginTop: '3px',
+                }}
+              >
+                {stat.label}
+              </div>
+            </div>
           ))}
-        </select>
-        <select
-          value={year}
-          onChange={(e) => setYear(parseInt(e.target.value))}
-          className="form-control"
-          style={{ 
-            flex: 1, 
-            minWidth: '70px',
-            padding: '8px 12px',
-            borderRadius: '8px',
-            border: `1px solid ${theme.colors.border}`,
-            background: theme.colors.inputBg,
-            color: theme.colors.textPrimary,
-            outline: 'none',
-            fontFamily: 'Inter, sans-serif',
-            cursor: 'pointer',
-            fontSize: '12px',
-          }}
-        >
-          {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
-        
-        <input
-          type="date"
-          value={filterDate}
-          onChange={(e) => setFilterDate(e.target.value)}
-          className="form-control"
-          style={{ 
-            flex: 1,
-            minWidth: '120px',
-            padding: '8px 12px',
-            borderRadius: '8px',
-            border: `1px solid ${theme.colors.border}`,
-            background: theme.colors.inputBg,
-            color: theme.colors.textPrimary,
-            outline: 'none',
-            fontFamily: 'Inter, sans-serif',
-            fontSize: '12px',
-          }}
-        />
-        
-        <button
-          onClick={loadCustomDate}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '8px',
-            border: 'none',
-            background: 'linear-gradient(135deg, #059669, #10B981)',
-            color: '#FFFFFF',
-            fontWeight: 600,
-            fontSize: '12px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            whiteSpace: 'nowrap',
-            boxShadow: '0 2px 8px rgba(5,150,105,0.3)',
-          }}
-        >
-          🔍 Search
-        </button>
-      </div>
-
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '8px',
-        padding: '12px 16px',
-      }}>
-        <div style={{
-          textAlign: 'center',
-          padding: '10px 8px',
-          background: '#3B82F615',
-          borderRadius: '8px',
-          border: '1px solid #3B82F630',
-        }}>
-          <div style={{ fontSize: '18px', fontWeight: 800, color: '#3B82F6' }}>{stats.total}</div>
-          <div style={{ fontSize: '8px', fontWeight: 600, color: theme.colors.textSecondary, textTransform: 'uppercase' }}>Total</div>
-        </div>
-        <div style={{
-          textAlign: 'center',
-          padding: '10px 8px',
-          background: '#10B98115',
-          borderRadius: '8px',
-          border: '1px solid #10B98130',
-        }}>
-          <div style={{ fontSize: '18px', fontWeight: 800, color: '#10B981' }}>{stats.checkedIn}</div>
-          <div style={{ fontSize: '8px', fontWeight: 600, color: theme.colors.textSecondary, textTransform: 'uppercase' }}>✅ In</div>
-        </div>
-        <div style={{
-          textAlign: 'center',
-          padding: '10px 8px',
-          background: '#8B5CF615',
-          borderRadius: '8px',
-          border: '1px solid #8B5CF630',
-        }}>
-          <div style={{ fontSize: '18px', fontWeight: 800, color: '#8B5CF6' }}>{stats.checkedOut}</div>
-          <div style={{ fontSize: '8px', fontWeight: 600, color: theme.colors.textSecondary, textTransform: 'uppercase' }}>📤 Out</div>
-        </div>
-        <div style={{
-          textAlign: 'center',
-          padding: '10px 8px',
-          background: '#F59E0B15',
-          borderRadius: '8px',
-          border: '1px solid #F59E0B30',
-        }}>
-          <div style={{ fontSize: '18px', fontWeight: 800, color: '#F59E0B' }}>{stats.autoCheckedOut}</div>
-          <div style={{ fontSize: '8px', fontWeight: 600, color: theme.colors.textSecondary, textTransform: 'uppercase' }}>🔄 Auto</div>
         </div>
       </div>
 
-      <div style={{
-        padding: '0 16px 8px',
-        fontSize: '12px',
-        color: theme.colors.textMuted,
-      }}>
-        {filteredCheckins.length} {filteredCheckins.length === 1 ? 'record' : 'records'} found
+      {/* RESULTS COUNT */}
+      <div
+        style={{
+          padding: '0 16px 8px',
+          fontSize: '11px',
+          color: textMuted,
+          fontWeight: 600,
+        }}
+      >
+        {filteredCheckins.length}{' '}
+        {filteredCheckins.length === 1 ? 'record' : 'records'} found
       </div>
 
+      {/* LIST */}
       <div style={{ padding: '0 16px 16px' }}>
         {filteredCheckins.length === 0 ? (
-          <div style={{
-            padding: '40px',
-            textAlign: 'center',
-            color: theme.colors.textSecondary,
-            background: theme.colors.card,
-            borderRadius: '12px',
-            border: `1px solid ${theme.colors.border}`,
-          }}>
-            <div style={{ fontSize: '40px', marginBottom: '8px' }}>📍</div>
-            <p style={{ fontWeight: 600 }}>No check-in/out records found</p>
-            <p style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>
-              {viewMode === 'today' && 'No check-ins or check-outs for today'}
-              {viewMode === 'month' && `No records for ${getMonthName(month)} ${year}`}
-              {viewMode === 'custom' && filterDate && `No records for ${formatDate(filterDate)}`}
-              {viewMode === 'all' && 'No records available'}
+          <div
+            style={{
+              padding: '48px 24px',
+              textAlign: 'center',
+              background: cardBg,
+              borderRadius: THEME.radiusLg,
+              border: `1px solid ${border}`,
+            }}
+          >
+            <div style={{ fontSize: '44px', marginBottom: '12px' }}>📍</div>
+            <p
+              style={{
+                fontSize: '14px',
+                fontWeight: 700,
+                color: textSecondary,
+                margin: 0,
+              }}
+            >
+              No check-in/out records
             </p>
           </div>
         ) : (
           filteredCheckins.map((item, idx) => {
-            const statusColor = item.status === 'Checked In' ? '#10B981' : 
-                               item.status === 'Checked Out (Auto)' ? '#F59E0B' : '#8B5CF6';
-            
-            const checkInDate = item.check_in_time ? new Date(item.check_in_time) : null;
-            const checkOutDate = item.check_out_time ? new Date(item.check_out_time) : null;
-            
+            const statusColor =
+              item.status === 'Checked In'
+                ? THEME.primary
+                : item.status === 'Checked Out (Late)'
+                ? THEME.amber
+                : THEME.purple;
+
+            const checkInDate = item.check_in_time
+              ? new Date(item.check_in_time)
+              : null;
+            const checkOutDate = item.check_out_time
+              ? new Date(item.check_out_time)
+              : null;
+
             return (
               <div
                 key={idx}
-                style={{ 
-                  marginBottom: '12px',
+                style={{
+                  marginBottom: '10px',
                   padding: '14px',
-                  background: theme.colors.card,
-                  borderRadius: '12px',
-                  border: `1px solid ${theme.colors.border}`,
-                  boxShadow: theme.dark ? '0 2px 8px rgba(0,0,0,0.2)' : '0 2px 8px rgba(0,0,0,0.04)',
+                  background: cardBg,
+                  borderRadius: THEME.radiusLg,
+                  border: `1px solid ${border}`,
+                  boxShadow: cardShadow,
                 }}
               >
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '10px',
-                  paddingBottom: '8px',
-                  borderBottom: `1px solid ${theme.colors.border}`,
-                }}>
-                  <div>
-                    <div style={{
-                      fontSize: '14px',
-                      fontWeight: 700,
-                      color: theme.colors.textPrimary,
+                {/* Header */}
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '10px',
+                    paddingBottom: '10px',
+                    borderBottom: `1px solid ${border}`,
+                  }}
+                >
+                  <div
+                    style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px',
-                    }}>
-                      <span>👤</span>
-                      {item.employee?.name || 'Unknown Employee'}
+                      gap: '8px',
+                      flex: 1,
+                      minWidth: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        color: '#FFFFFF',
+                        flexShrink: 0,
+                        boxShadow: '0 3px 8px rgba(16,185,129,0.25)',
+                      }}
+                    >
+                      {item.employee?.name?.charAt(0).toUpperCase() || '?'}
                     </div>
-                    <div style={{
-                      fontSize: '10px',
-                      color: theme.colors.textMuted,
-                      marginTop: '1px',
-                    }}>
-                      {item.employee?.employee_id} • {formatDateDisplay(checkInDate)}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          color: textPrimary,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {item.employee?.name || 'Unknown'}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '10px',
+                          color: textMuted,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {item.employee?.employee_id} · {formatDate(checkInDate)}
+                      </div>
                     </div>
                   </div>
                   <span
                     style={{
-                      padding: '3px 12px',
-                      borderRadius: '16px',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      backgroundColor: statusColor + '22',
+                      padding: '4px 10px',
+                      borderRadius: THEME.radiusPill,
+                      fontSize: '9px',
+                      fontWeight: 800,
+                      backgroundColor: statusColor + '18',
                       color: statusColor,
+                      border: `1px solid ${statusColor}30`,
                       whiteSpace: 'nowrap',
                     }}
                   >
@@ -480,122 +683,166 @@ export const AdminCheckinHistory = () => {
                   </span>
                 </div>
 
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '10px',
-                  marginBottom: '10px',
-                }}>
-                  <div style={{
-                    background: theme.colors.inputBg,
-                    borderRadius: '8px',
-                    padding: '10px',
-                    border: `1px solid ${theme.colors.border}`,
-                    display: 'flex',
-                    flexDirection: 'column',
-                  }}>
-                    <div style={{
-                      fontSize: '9px',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                      color: '#10B981',
-                      marginBottom: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}>
-                      <span>✅</span> Check In
+                {/* In/Out grid */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '8px',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <div
+                    style={{
+                      background: dark ? '#0F172A' : '#F8FAFC',
+                      borderRadius: '10px',
+                      padding: '10px',
+                      border: `1px solid ${border}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        color: THEME.primary,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.4px',
+                        marginBottom: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span>✓</span> Check In
                     </div>
-                    <div style={{
-                      fontSize: '15px',
-                      fontWeight: 700,
-                      color: theme.colors.textPrimary,
-                    }}>
-                      {formatTimeDisplay(checkInDate)}
+                    <div
+                      style={{
+                        fontSize: '14px',
+                        fontWeight: 800,
+                        color: textPrimary,
+                      }}
+                    >
+                      {checkInDate ? formatTime(checkInDate) : '—'}
                     </div>
                     {item.check_in_address && (
-                      <div style={{
-                        fontSize: '9px',
-                        color: theme.colors.textMuted,
-                        marginTop: '4px',
-                        lineHeight: '1.3',
-                        wordBreak: 'break-word',
-                      }}>
-                        📍 {item.check_in_address}
+                      <div
+                        style={{
+                          fontSize: '9px',
+                          color: textMuted,
+                          marginTop: '4px',
+                          lineHeight: 1.3,
+                          wordBreak: 'break-word',
+                          fontWeight: 500,
+                        }}
+                      >
+                        📍 {item.check_in_address.slice(0, 40)}
+                        {item.check_in_address.length > 40 ? '…' : ''}
                       </div>
                     )}
                   </div>
 
-                  <div style={{
-                    background: theme.colors.inputBg,
-                    borderRadius: '8px',
-                    padding: '10px',
-                    border: `1px solid ${theme.colors.border}`,
-                    display: 'flex',
-                    flexDirection: 'column',
-                  }}>
-                    <div style={{
-                      fontSize: '9px',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                      color: '#EF4444',
-                      marginBottom: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}>
-                      <span>📤</span> Check Out
+                  <div
+                    style={{
+                      background: dark ? '#0F172A' : '#F8FAFC',
+                      borderRadius: '10px',
+                      padding: '10px',
+                      border: `1px solid ${border}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        color: THEME.red,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.4px',
+                        marginBottom: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span>↑</span> Check Out
                     </div>
-                    <div style={{
-                      fontSize: '15px',
-                      fontWeight: 700,
-                      color: theme.colors.textPrimary,
-                    }}>
-                      {item.check_out_time ? formatTimeDisplay(checkOutDate) : '—'}
+                    <div
+                      style={{
+                        fontSize: '14px',
+                        fontWeight: 800,
+                        color: textPrimary,
+                      }}
+                    >
+                      {checkOutDate ? formatTime(checkOutDate) : '—'}
                     </div>
                     {item.check_out_address && (
-                      <div style={{
-                        fontSize: '9px',
-                        color: theme.colors.textMuted,
-                        marginTop: '4px',
-                        lineHeight: '1.3',
-                        wordBreak: 'break-word',
-                      }}>
-                        📍 {item.check_out_address}
+                      <div
+                        style={{
+                          fontSize: '9px',
+                          color: textMuted,
+                          marginTop: '4px',
+                          lineHeight: 1.3,
+                          wordBreak: 'break-word',
+                          fontWeight: 500,
+                        }}
+                      >
+                        📍 {item.check_out_address.slice(0, 40)}
+                        {item.check_out_address.length > 40 ? '…' : ''}
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'flex-start',
-                  alignItems: 'center',
-                  paddingTop: '8px',
-                  borderTop: `1px solid ${theme.colors.border}`,
-                }}>
-                  <div style={{
+                {/* Footer: working hours */}
+                <div
+                  style={{
                     display: 'flex',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
-                    gap: '6px',
-                  }}>
-                    <span style={{
-                      fontSize: '12px',
-                      color: theme.colors.textSecondary,
-                    }}>
-                      ⏱️ Working Hours:
-                    </span>
-                    <span style={{
+                    paddingTop: '8px',
+                    borderTop: `1px solid ${border}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: textSecondary,
+                      fontWeight: 600,
+                    }}
+                  >
+                    ⏱️ Working Hours
+                  </div>
+                  <div
+                    style={{
                       fontSize: '14px',
                       fontWeight: 800,
-                      color: item.working_hours > 8 ? '#10B981' : item.working_hours > 4 ? '#F59E0B' : '#EF4444',
-                    }}>
-                      {item.working_hours ? `${item.working_hours}h` : '—'}
-                    </span>
+                      color:
+                        item.working_hours > 8
+                          ? THEME.primary
+                          : item.working_hours > 4
+                          ? THEME.amber
+                          : THEME.red,
+                    }}
+                  >
+                    {item.working_hours ? `${item.working_hours}h` : '—'}
                   </div>
                 </div>
+
+                {item.forgotten_checkout && (
+                  <div
+                    style={{
+                      marginTop: '8px',
+                      padding: '5px 10px',
+                      borderRadius: '8px',
+                      background: THEME.orangeSoft,
+                      color: '#B45309',
+                      fontSize: '9px',
+                      fontWeight: 800,
+                      display: 'inline-block',
+                      border: `1px solid ${THEME.orange}30`,
+                    }}
+                  >
+                    ⚠️ Forgotten check-out
+                  </div>
+                )}
               </div>
             );
           })
@@ -606,3 +853,5 @@ export const AdminCheckinHistory = () => {
     </div>
   );
 };
+
+export default AdminCheckinHistory;

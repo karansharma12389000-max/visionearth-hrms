@@ -1,4 +1,6 @@
 // src/pages/employee/Attendance.jsx
+//
+// Vision Earth HRMS — Attendance Page (Enhanced)
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -6,548 +8,111 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../services/supabase';
-import { 
-  getTodayIST, 
-  formatDate, 
-  formatTime, 
-  formatDateTime,
-  getStatusColor, 
+import {
+  getTodayIST,
+  formatDate,
+  formatTime,
+  getStatusColor,
   getStatusLabel,
   getStatusIcon,
-  getMonthName
+  getMonthName,
 } from '../../utils/helpers';
 import BottomNavigation from '../../components/BottomNavigation';
+import { THEME, isDark } from '../../utils/designTokens';
+
+// ============================================
+// GLOBAL ANIMATION STYLES
+// ============================================
+const injectStyles = () => {
+  if (document.getElementById('attendance-animations')) return;
+  const style = document.createElement('style');
+  style.id = 'attendance-animations';
+  style.textContent = `
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.15); }
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .att-fade-in {
+      animation: fadeInUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+    }
+    .att-tab-active::before {
+      content: '';
+      position: absolute;
+      top: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10B981;
+      animation: pulseDot 1.5s ease-in-out infinite;
+      box-shadow: 0 0 8px #10B981;
+    }
+  `;
+  document.head.appendChild(style);
+};
 
 export const Attendance = () => {
   const navigate = useNavigate();
   const { theme, toggleDark } = useTheme();
   const { user } = useAuth();
-  
+  const dark = isDark(theme);
+
+  // Inject animations once
+  useEffect(() => { injectStyles(); }, []);
+
   const [attendance, setAttendance] = useState([]);
   const [checkinHistory, setCheckinHistory] = useState([]);
   const [filteredAttendance, setFilteredAttendance] = useState([]);
   const [filteredCheckin, setFilteredCheckin] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [showCheckInModal, setShowCheckInModal] = useState(false);
-  const [showCheckOutModal, setShowCheckOutModal] = useState(false);
-  const [locations, setLocations] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [checkInStatus, setCheckInStatus] = useState(null);
-  const [location, setLocation] = useState(null);
-  const [address, setAddress] = useState('');
-  const [fetchingLocation, setFetchingLocation] = useState(false);
-  const [locationError, setLocationError] = useState('');
-  const [locationFetched, setLocationFetched] = useState(false);
-  const [todayAttendance, setTodayAttendance] = useState(null);
-  const [isComplete, setIsComplete] = useState(false);
   const [activeTab, setActiveTab] = useState('attendance');
-  
+
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  
+
   const [viewMode, setViewMode] = useState('today');
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
   const [filterDate, setFilterDate] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
 
-  const [showACOForm, setShowACOForm] = useState(false);
-  const [acoDates, setAcoDates] = useState([]);
-  const [selectedACODate, setSelectedACODate] = useState('');
-  const [acoDetails, setAcoDetails] = useState(null);
-  const [acoStatus, setAcoStatus] = useState('');
-  const [acoSubmitting, setAcoSubmitting] = useState(false);
-  const [acoProjectFields, setAcoProjectFields] = useState([
-    { project: '', workDone: '' }
-  ]);
-  const [acoFormData, setAcoFormData] = useState({
-    reportingLocation: user?.reporting_location || '',
-    remarks: '',
-  });
-  const [acoLoading, setAcoLoading] = useState(false);
+  // ============================================
+  // HELPERS
+  // ============================================
+  const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
+  const cardBg = dark ? THEME.dark.card : THEME.cardBg;
+  const textPrimary = dark ? THEME.dark.text : THEME.text;
+  const textSecondary = dark ? THEME.dark.textSecondary : THEME.textSecondary;
+  const textMuted = dark ? THEME.dark.textMuted : THEME.textMuted;
+  const border = dark ? THEME.dark.border : THEME.border;
+  const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
-  const [projectFields, setProjectFields] = useState([
-    { project: '', workDone: '' }
-  ]);
-
-  const [formData, setFormData] = useState({
-    attendanceDate: getTodayIST(),
-    reportingLocation: user?.reporting_location || '',
-    checkInTime: '',
-    checkInLocation: '',
-    checkOutTime: '',
-    checkOutLocation: '',
-    remarks: '',
-    status: 'P'
-  });
-
-  const infoMessage = `⏰ Important: Submit after 5 PM for full attendance credit (P). Delay up to 72 hrs gets D. Beyond 72 hrs gets B. Before 5 PM is marked Absent (A).`;
-
-  const statusColors = {
-    'P': '#10B981',
-    'Present': '#10B981',
-    'A': '#EF4444',
-    'Absent': '#EF4444',
-    'D': '#F59E0B',
-    'Delayed': '#F59E0B',
-    'B': '#DC2626',
-    'Beyond Delay': '#DC2626',
-    'L': '#3B82F6',
-    'Leave': '#3B82F6',
-    'ACO': '#8B5CF6',
-    'Auto Check-Out': '#8B5CF6',
-  };
-
-  // Helper function to format time from various formats
-  const formatTimeDisplay = (timeValue) => {
-    if (!timeValue) return 'N/A';
-    
-    // If it's already a time string (HH:MM:SS format)
-    if (typeof timeValue === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(timeValue)) {
-      return timeValue.slice(0, 5); // Return HH:MM
-    }
-    
-    // Try parsing as ISO date string
-    try {
-      const date = new Date(timeValue);
-      if (!isNaN(date.getTime())) {
-        return date.toTimeString().slice(0, 5); // HH:MM
-      }
-    } catch (e) {
-      // Fall through
-    }
-    
-    return 'N/A';
-  };
-
-  const fetchLocationsAndProjects = async () => {
-    try {
-      const { data: locData } = await supabase
-        .from('office_locations')
-        .select('name')
-        .eq('is_active', true);
-      
-      setLocations(locData?.map(l => l.name) || ['Head Office', 'Branch Office', 'Client Site', 'Work From Home', 'Field Work']);
-      
-      const { data: projData } = await supabase
-        .from('projects')
-        .select('name')
-        .eq('is_active', true);
-      
-      setProjects(projData?.map(p => p.name) || ['Project Alpha', 'Project Beta', 'Internal', 'Support', 'Training', 'Administrative']);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    }
-  };
-
-  const fetchACODates = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('check_in_out')
-        .select('*')
-        .eq('employee_id', user?.id)
-        .eq('status', 'Checked Out (Auto)')
-        .eq('aco_filled', false)
-        .order('check_in_time', { ascending: false });
-      
-      if (error) throw error;
-      
-      const dates = data?.map(item => {
-        const date = new Date(item.check_in_time);
-        return date.toISOString().split('T')[0];
-      }) || [];
-      
-      setAcoDates(dates);
-      return dates.length > 0;
-    } catch (error) {
-      console.error('Error fetching ACO dates:', error);
-      return false;
-    }
-  };
-
-  const loadACODetails = async (date) => {
-    if (!date) {
-      setAcoDetails(null);
-      return;
-    }
-    
-    try {
-      setAcoLoading(true);
-      
-      const { data, error } = await supabase
-        .from('check_in_out')
-        .select('*')
-        .eq('employee_id', user?.id)
-        .eq('status', 'Checked Out (Auto)')
-        .gte('check_in_time', date + 'T00:00:00.000Z')
-        .lte('check_in_time', date + 'T23:59:59.999Z')
-        .maybeSingle();
-      
-      if (error) throw error;
-      
-      if (data) {
-        setAcoDetails(data);
-        
-        const checkInDate = new Date(data.check_in_time);
-        const now = new Date();
-        const nextDay10AM = new Date(checkInDate);
-        nextDay10AM.setDate(checkInDate.getDate() + 1);
-        nextDay10AM.setHours(10, 0, 0, 0);
-        
-        const hoursDiff = (now - checkInDate) / (1000 * 60 * 60);
-        
-        let status = '';
-        if (now <= nextDay10AM) {
-          status = 'P';
-        } else if (hoursDiff <= 72) {
-          status = 'D';
-        } else {
-          status = 'B';
-        }
-        setAcoStatus(status);
-        
-        setAcoFormData(prev => ({
-          ...prev,
-          reportingLocation: data.check_in_address?.split(',')[0] || user?.reporting_location || 'Head Office'
-        }));
-        
-        setAcoProjectFields([{ project: '', workDone: '' }]);
-        
-      } else {
-        setAcoDetails(null);
-      }
-    } catch (error) {
-      console.error('Error loading ACO details:', error);
-      setAcoDetails(null);
-    } finally {
-      setAcoLoading(false);
-    }
-  };
-
-  const handleAcoSubmit = async () => {
-    if (!selectedACODate) {
-      toast.error('Please select an ACO date');
-      return;
-    }
-    if (!acoFormData.reportingLocation) {
-      toast.error('Please select reporting location');
-      return;
-    }
-
-    const hasProject = acoProjectFields.some(p => p.project && p.workDone);
-    if (!hasProject) {
-      toast.error('Please add at least one project with work details');
-      return;
-    }
-
-    try {
-      setAcoSubmitting(true);
-
-      const attendanceData = {
-        employee_id: user?.id,
-        employee_name: user?.name,
-        attendance_date: selectedACODate,
-        reporting_location: acoFormData.reportingLocation,
-        check_in_time: acoDetails?.check_in_time ? new Date(acoDetails.check_in_time).toTimeString().slice(0, 8) : null,
-        check_in_location: acoDetails?.check_in_address || null,
-        check_in_gps: acoDetails?.check_in_gps || null,
-        check_out_time: acoDetails?.check_out_time ? new Date(acoDetails.check_out_time).toTimeString().slice(0, 8) : null,
-        check_out_location: acoDetails?.check_out_address || null,
-        check_out_gps: acoDetails?.check_out_gps || null,
-        working_hours: acoDetails?.working_hours || 0,
-        status: acoStatus,
-        remarks: acoFormData.remarks || `ACO attendance - ${acoStatus === 'P' ? 'Present' : acoStatus === 'D' ? 'Delayed' : 'Beyond Delay'}`,
-        project1: acoProjectFields[0]?.project || null,
-        project1_details: acoProjectFields[0]?.workDone || null,
-        project2: acoProjectFields[1]?.project || null,
-        project2_details: acoProjectFields[1]?.workDone || null,
-        project3: acoProjectFields[2]?.project || null,
-        project3_details: acoProjectFields[2]?.workDone || null,
-        project4: acoProjectFields[3]?.project || null,
-        project4_details: acoProjectFields[3]?.workDone || null,
-        project5: acoProjectFields[4]?.project || null,
-        project5_details: acoProjectFields[4]?.workDone || null,
-        project6: acoProjectFields[5]?.project || null,
-        project6_details: acoProjectFields[5]?.workDone || null
-      };
-
-      const { error } = await supabase
-        .from('attendance')
-        .insert(attendanceData);
-
-      if (error) throw error;
-
-      await supabase
-        .from('check_in_out')
-        .update({ aco_filled: true })
-        .eq('id', acoDetails.id);
-
-      const statusText = acoStatus === 'P' ? 'Present' : acoStatus === 'D' ? 'Delayed' : 'Beyond Delay';
-      toast.success(`✅ ACO attendance marked successfully as ${statusText}!`);
-      
-      setShowACOForm(false);
-      setSelectedACODate('');
-      setAcoDetails(null);
-      setAcoProjectFields([{ project: '', workDone: '' }]);
-      setAcoFormData({ reportingLocation: user?.reporting_location || '', remarks: '' });
-      
-      await fetchTodayData();
-      await fetchAttendance();
-      await fetchCheckinHistory();
-      await fetchACODates();
-      
-    } catch (error) {
-      console.error('Error submitting ACO attendance:', error);
-      toast.error(error.message || 'Failed to submit ACO attendance');
-    } finally {
-      setAcoSubmitting(false);
-    }
-  };
-
-  const openCheckInModal = () => {
-    setShowCheckInModal(true);
-    setLocationFetched(false);
-    setLocation(null);
-    setAddress('');
-    setLocationError('');
-    getCurrentLocation();
-  };
-
-  const openCheckOutModal = () => {
-    setShowCheckOutModal(true);
-    setLocationFetched(false);
-    setLocation(null);
-    setAddress('');
-    setLocationError('');
-    getCurrentLocation();
-  };
-
-  const getCurrentLocation = () => {
-    return new Promise((resolve) => {
-      if (locationFetched && location && !locationError) {
-        resolve(location);
-        return;
-      }
-
-      setFetchingLocation(true);
-      setLocationError('');
-      
-      if (!navigator.geolocation) {
-        setLocationError('Geolocation is not supported by your browser');
-        setFetchingLocation(false);
-        resolve(null);
-        return;
-      }
-
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          const loc = { lat: latitude, lng: longitude };
-          setLocation(loc);
-          setLocationFetched(true);
-          
-          try {
-            const response = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
-              {
-                headers: { 'User-Agent': 'VisionEarthHRMS/1.0' }
-              }
-            );
-            const data = await response.json();
-            if (data && data.display_name) {
-              setAddress(data.display_name);
-            } else {
-              setAddress(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
-            }
-          } catch (err) {
-            setAddress(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
-          }
-          
-          setFetchingLocation(false);
-          resolve(loc);
-        },
-        (error) => {
-          let msg = 'Unable to get location';
-          switch (error.code) {
-            case error.PERMISSION_DENIED:
-              msg = 'Location permission denied. Please enable location services.';
-              break;
-            case error.POSITION_UNAVAILABLE:
-              msg = 'Location information is unavailable.';
-              break;
-            case error.TIMEOUT:
-              msg = 'Location request timed out.';
-              break;
-          }
-          setLocationError(msg);
-          setFetchingLocation(false);
-          setLocationFetched(false);
-          resolve(null);
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    });
-  };
-
-  const handleCheckIn = async () => {
-    const loc = await getCurrentLocation();
-    
-    if (!loc) {
-      toast.error('Unable to get location. Please check your GPS.');
-      return;
-    }
-    
-    try {
-      setSubmitting(true);
-      
-      const now = new Date();
-      const checkInTime = now.toISOString();
-      const gps = `${loc.lat},${loc.lng}`;
-
-      const { data, error } = await supabase
-        .from('check_in_out')
-        .insert({
-          employee_id: user?.id,
-          check_in_time: checkInTime,
-          check_in_gps: gps,
-          check_in_address: address || 'Location captured',
-          status: 'Checked In'
-        })
-        .select()
-        .single();
-      
-      if (error) throw error;
-
-      const istTimeDisplay = formatTime(checkInTime);
-      toast.success(`✅ Checked in at ${istTimeDisplay} IST`);
-      setShowCheckInModal(false);
-      setLocationFetched(false);
-      await fetchTodayData();
-      await fetchCheckinHistory();
-      
-    } catch (error) {
-      console.error('Check-in error:', error);
-      toast.error(error.message || 'Failed to check in');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleCheckOut = async () => {
-    const loc = await getCurrentLocation();
-    
-    if (!loc) {
-      toast.error('Unable to get location. Please check your GPS.');
-      return;
-    }
-    
-    try {
-      setSubmitting(true);
-      
-      const now = new Date();
-      const checkOutTime = now.toISOString();
-      const checkInTime = new Date(checkInStatus.check_in_time);
-      const diffMs = now.getTime() - checkInTime.getTime();
-      const diffHrs = Math.round((diffMs / 3600000) * 100) / 100;
-
-      const { error: updateError } = await supabase
-        .from('check_in_out')
-        .update({
-          check_out_time: checkOutTime,
-          check_out_gps: `${loc.lat},${loc.lng}`,
-          check_out_address: address || 'Location captured',
-          working_hours: diffHrs,
-          status: 'Checked Out'
-        })
-        .eq('id', checkInStatus.id);
-      
-      if (updateError) throw updateError;
-
-      const istTimeDisplay = formatTime(checkOutTime);
-      toast.success(`✅ Checked out at ${istTimeDisplay} IST - ${diffHrs} hrs`);
-      setShowCheckOutModal(false);
-      setLocationFetched(false);
-      await fetchTodayData();
-      await fetchCheckinHistory();
-      
-    } catch (error) {
-      console.error('Check-out error:', error);
-      toast.error(error.message || 'Failed to check out');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const fetchTodayData = async () => {
-    try {
-      const today = getTodayIST();
-      
-      const { data: statusData, error: statusError } = await supabase
-        .from('check_in_out')
-        .select('*')
-        .eq('employee_id', user?.id)
-        .gte('check_in_time', today + 'T00:00:00.000Z')
-        .lte('check_in_time', today + 'T23:59:59.999Z')
-        .order('check_in_time', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (!statusError) {
-        setCheckInStatus(statusData);
-        if (statusData) {
-          setFormData(prev => ({
-            ...prev,
-            checkInTime: statusData.check_in_time ? formatTime(statusData.check_in_time) : '',
-            checkInLocation: statusData.check_in_address || '',
-            checkOutTime: statusData.check_out_time ? formatTime(statusData.check_out_time) : '',
-            checkOutLocation: statusData.check_out_address || '',
-            attendanceDate: today,
-            reportingLocation: statusData.check_in_address?.split(',')[0] || user?.reporting_location || 'Head Office'
-          }));
-        }
-      }
-      
-      const { data: attData, error: attError } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('employee_id', user?.id)
-        .eq('attendance_date', today)
-        .maybeSingle();
-      
-      if (!attError) {
-        setTodayAttendance(attData);
-        const hasProjects = attData && (attData.project1 || attData.project1_details || attData.project2 || attData.project2_details);
-        setIsComplete(!!hasProjects);
-        
-        if (hasProjects) {
-          setShowForm(false);
-        }
-      }
-      
-    } catch (error) {
-      console.error('Error fetching today data:', error);
-    }
-  };
-
+  // ============================================
+  // FETCH
+  // ============================================
   const fetchAttendance = async () => {
     try {
       setLoading(true);
-      
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
         .eq('employee_id', user?.id)
         .order('attendance_date', { ascending: false });
-      
+
       if (error) throw error;
-      
       setAttendance(data || []);
       applyFilters(data || [], checkinHistory);
-      
-    } catch (error) {
-      console.error('Error fetching attendance:', error);
+    } catch (err) {
+      console.error('Error fetching attendance:', err);
       toast.error('Failed to load attendance');
     } finally {
       setLoading(false);
@@ -561,68 +126,58 @@ export const Attendance = () => {
         .select('*')
         .eq('employee_id', user?.id)
         .order('check_in_time', { ascending: false });
-      
+
       if (error) throw error;
-      
       setCheckinHistory(data || []);
       applyFilters(attendance, data || []);
-      
-    } catch (error) {
-      console.error('Error fetching check-in history:', error);
-      toast.error('Failed to load check-in history');
+    } catch (err) {
+      console.error('Error fetching history:', err);
     }
   };
 
   const applyFilters = (attData = attendance, checkData = checkinHistory) => {
-    let filteredAtt = [...attData];
-    let filteredCheck = [...checkData];
-
+    let fAtt = [...attData];
+    let fCheck = [...checkData];
     const today = getTodayIST();
-    
+
     if (viewMode === 'today') {
-      filteredAtt = filteredAtt.filter(a => a.attendance_date === today);
-      filteredCheck = filteredCheck.filter(c => {
+      fAtt = fAtt.filter((a) => a.attendance_date === today);
+      fCheck = fCheck.filter((c) => {
         if (!c.check_in_time) return false;
-        const checkDate = new Date(c.check_in_time);
-        const checkDateStr = checkDate.toISOString().split('T')[0];
-        return checkDateStr === today;
+        const d = new Date(c.check_in_time).toISOString().split('T')[0];
+        return d === today;
       });
     } else if (viewMode === 'month') {
       const monthStr = `${year}-${String(month).padStart(2, '0')}`;
-      filteredAtt = filteredAtt.filter(a => a.attendance_date?.startsWith(monthStr));
-      filteredCheck = filteredCheck.filter(c => {
+      fAtt = fAtt.filter((a) => a.attendance_date?.startsWith(monthStr));
+      fCheck = fCheck.filter((c) => {
         if (!c.check_in_time) return false;
-        const checkDate = new Date(c.check_in_time);
-        const checkDateStr = checkDate.toISOString().split('T')[0];
-        return checkDateStr?.startsWith(monthStr);
+        const d = new Date(c.check_in_time).toISOString().split('T')[0];
+        return d?.startsWith(monthStr);
       });
     }
 
     if (filterDate) {
-      filteredAtt = filteredAtt.filter(a => a.attendance_date === filterDate);
-      filteredCheck = filteredCheck.filter(c => {
+      fAtt = fAtt.filter((a) => a.attendance_date === filterDate);
+      fCheck = fCheck.filter((c) => {
         if (!c.check_in_time) return false;
-        const checkDate = new Date(c.check_in_time);
-        const checkDateStr = checkDate.toISOString().split('T')[0];
-        return checkDateStr === filterDate;
+        const d = new Date(c.check_in_time).toISOString().split('T')[0];
+        return d === filterDate;
       });
     }
-    
+
     if (filterStatus !== 'all') {
-      filteredAtt = filteredAtt.filter(a => a.status === filterStatus);
+      fAtt = fAtt.filter((a) => a.status === filterStatus);
     }
 
-    setFilteredAttendance(filteredAtt);
-    setFilteredCheckin(filteredCheck);
+    setFilteredAttendance(fAtt);
+    setFilteredCheckin(fCheck);
   };
 
   useEffect(() => {
     if (user?.id) {
-      fetchLocationsAndProjects();
-      fetchTodayData();
       fetchAttendance();
       fetchCheckinHistory();
-      fetchACODates();
     }
   }, [user]);
 
@@ -630,235 +185,88 @@ export const Attendance = () => {
     applyFilters();
   }, [viewMode, month, year, filterDate, filterStatus, attendance, checkinHistory]);
 
-  const resetFilters = () => {
-    setViewMode('today');
-    setMonth(new Date().getMonth() + 1);
-    setYear(new Date().getFullYear());
-    setFilterDate('');
-    setFilterStatus('all');
-  };
-
-  const handleSearch = () => {
-    if (filterDate) {
-      setViewMode('custom');
-      applyFilters();
-    } else {
-      toast.error('Please select a date to search');
-    }
-  };
-
-  const addProjectField = () => {
-    if (projectFields.length < 6) {
-      setProjectFields([...projectFields, { project: '', workDone: '' }]);
-    } else {
-      toast.error('Maximum 6 projects allowed');
-    }
-  };
-
-  const removeProjectField = (index) => {
-    if (projectFields.length > 1) {
-      const newFields = projectFields.filter((_, i) => i !== index);
-      setProjectFields(newFields);
-    }
-  };
-
-  const updateProjectField = (index, field, value) => {
-    const newFields = [...projectFields];
-    newFields[index][field] = value;
-    setProjectFields(newFields);
-  };
-
-  const addAcoProjectField = () => {
-    if (acoProjectFields.length < 6) {
-      setAcoProjectFields([...acoProjectFields, { project: '', workDone: '' }]);
-    } else {
-      toast.error('Maximum 6 projects allowed');
-    }
-  };
-
-  const removeAcoProjectField = (index) => {
-    if (acoProjectFields.length > 1) {
-      const newFields = acoProjectFields.filter((_, i) => i !== index);
-      setAcoProjectFields(newFields);
-    }
-  };
-
-  const updateAcoProjectField = (index, field, value) => {
-    const newFields = [...acoProjectFields];
-    newFields[index][field] = value;
-    setAcoProjectFields(newFields);
-  };
-
-  const extractTimeFromISO = (isoString) => {
-    if (!isoString) return null;
-    if (/^\d{2}:\d{2}:\d{2}$/.test(isoString)) return isoString;
-    try {
-      const date = new Date(isoString);
-      if (isNaN(date.getTime())) return null;
-      return date.toTimeString().slice(0, 8);
-    } catch (e) {
-      return null;
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!formData.attendanceDate) {
-      toast.error('Please select attendance date');
-      return;
-    }
-    if (!formData.reportingLocation) {
-      toast.error('Please select reporting location');
-      return;
-    }
-
-    const hasProject = projectFields.some(p => p.project && p.workDone);
-    if (!hasProject) {
-      toast.error('Please add at least one project with work details');
-      return;
-    }
-
-    if (isComplete) {
-      toast.error('Attendance already completed for today!');
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-
-      let checkInTime = null;
-      let checkOutTime = null;
-      let checkInLocation = null;
-      let checkInGps = null;
-      let checkOutLocation = null;
-      let checkOutGps = null;
-      let workingHours = 0;
-
-      if (checkInStatus) {
-        checkInTime = checkInStatus.check_in_time 
-          ? new Date(checkInStatus.check_in_time).toTimeString().slice(0, 8) 
-          : null;
-        checkOutTime = checkInStatus.check_out_time 
-          ? new Date(checkInStatus.check_out_time).toTimeString().slice(0, 8) 
-          : null;
-        checkInLocation = checkInStatus.check_in_address || null;
-        checkInGps = checkInStatus.check_in_gps || null;
-        checkOutLocation = checkInStatus.check_out_address || null;
-        checkOutGps = checkInStatus.check_out_gps || null;
-        workingHours = checkInStatus.working_hours || 0;
-      }
-
-      const attendanceData = {
-        employee_id: user?.id,
-        employee_name: user?.name,
-        attendance_date: formData.attendanceDate,
-        reporting_location: formData.reportingLocation,
-        check_in_time: checkInTime,
-        check_in_location: checkInLocation,
-        check_in_gps: checkInGps,
-        check_out_time: checkOutTime,
-        check_out_location: checkOutLocation,
-        check_out_gps: checkOutGps,
-        working_hours: workingHours,
-        status: 'P',
-        remarks: formData.remarks || '',
-        project1: projectFields[0]?.project || null,
-        project1_details: projectFields[0]?.workDone || null,
-        project2: projectFields[1]?.project || null,
-        project2_details: projectFields[1]?.workDone || null,
-        project3: projectFields[2]?.project || null,
-        project3_details: projectFields[2]?.workDone || null,
-        project4: projectFields[3]?.project || null,
-        project4_details: projectFields[3]?.workDone || null,
-        project5: projectFields[4]?.project || null,
-        project5_details: projectFields[4]?.workDone || null,
-        project6: projectFields[5]?.project || null,
-        project6_details: projectFields[5]?.workDone || null
-      };
-
-      const { error } = await supabase
-        .from('attendance')
-        .insert(attendanceData);
-
-      if (error) throw error;
-
-      toast.success('✅ Attendance marked successfully!');
-      setShowForm(false);
-      setProjectFields([{ project: '', workDone: '' }]);
-      
-      await fetchTodayData();
-      await fetchAttendance();
-      await fetchCheckinHistory();
-      
-    } catch (error) {
-      console.error('Error submitting attendance:', error);
-      toast.error(error.message || 'Failed to submit attendance');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
+  // ============================================
+  // HELPERS
+  // ============================================
   const handleCardClick = (record) => {
     setSelectedRecord(record);
     setShowDetailModal(true);
   };
 
   const getProjects = (record) => {
-    const projects = [];
+    const out = [];
     for (let i = 1; i <= 6; i++) {
       if (record[`project${i}`]) {
-        projects.push({
+        out.push({
           name: record[`project${i}`],
-          details: record[`project${i}_details`] || ''
+          details: record[`project${i}_details`] || '',
         });
       }
     }
-    return projects;
+    return out;
   };
 
-  const isCheckedIn = checkInStatus?.status === 'Checked In' && !checkInStatus?.check_out_time;
-  const isCheckedOut = checkInStatus?.status === 'Checked Out' || checkInStatus?.check_out_time;
-  const isAttendanceComplete = isComplete || (todayAttendance && (todayAttendance.project1 || todayAttendance.project1_details || todayAttendance.project2 || todayAttendance.project2_details));
-
-  const total = attendance.length;
-  const present = attendance.filter(a => a.status === 'P' || a.status === 'Present').length;
-  const absent = attendance.filter(a => a.status === 'A' || a.status === 'Absent').length;
-  const leave = attendance.filter(a => a.status === 'L' || a.status === 'Leave').length;
-  const autoCheckout = attendance.filter(a => a.status === 'ACO' || a.status === 'Auto Check-Out').length;
-  const delayed = attendance.filter(a => a.status === 'D' || a.status === 'Delayed').length;
-  const beyondDelay = attendance.filter(a => a.status === 'B' || a.status === 'Beyond Delay').length;
-  const acoPendingCount = acoDates.length;
-
-  const getViewLabel = () => {
-    if (viewMode === 'today') return `Today • ${formatDate(getTodayIST())}`;
-    if (viewMode === 'month') return `${getMonthName(month)} ${year}`;
-    if (viewMode === 'custom' && filterDate) {
-      return formatDate(filterDate);
+  const formatTimeDisplay = (timeValue) => {
+    if (!timeValue) return 'N/A';
+    if (typeof timeValue === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(timeValue)) {
+      return timeValue.slice(0, 5);
     }
-    return 'All Records';
+    try {
+      const d = new Date(timeValue);
+      if (!isNaN(d.getTime())) return d.toTimeString().slice(0, 5);
+    } catch {}
+    return 'N/A';
   };
 
+  // ============================================
+  // STATS
+  // ============================================
+  const total = attendance.length;
+  const present = attendance.filter(
+    (a) => a.status === 'P' || a.status === 'Present'
+  ).length;
+  const absent = attendance.filter(
+    (a) => a.status === 'A' || a.status === 'Absent'
+  ).length;
+  const leave = attendance.filter(
+    (a) => a.status === 'L' || a.status === 'Leave'
+  ).length;
+  const delayed = attendance.filter(
+    (a) => a.status === 'D' || a.status === 'Delayed'
+  ).length;
+  const beyondDelay = attendance.filter(
+    (a) => a.status === 'B' || a.status === 'Beyond Delay'
+  ).length;
+
+  // ============================================
+  // LOADING
+  // ============================================
   if (loading) {
     return (
-      <div style={{
-        maxWidth: '480px',
-        margin: '0 auto',
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: theme.dark ? '#0F172A' : '#F8FAFC',
-      }}>
+      <div
+        style={{
+          maxWidth: '480px',
+          margin: '0 auto',
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: pageBg,
+        }}
+      >
         <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '50%',
-            border: `3px solid ${theme.colors.border}`,
-            borderTopColor: theme.colors.primary,
-            animation: 'spin 0.8s linear infinite',
-            margin: '0 auto'
-          }} />
-          <p style={{ marginTop: '12px', color: theme.colors.textSecondary, fontSize: '13px' }}>
+          <div
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: `4px solid ${THEME.primaryLight}33`,
+              borderTopColor: THEME.primary,
+              animation: 'spin 0.8s linear infinite',
+              margin: '0 auto',
+            }}
+          />
+          <p style={{ marginTop: '16px', color: textSecondary, fontSize: '14px' }}>
             Loading...
           </p>
         </div>
@@ -866,907 +274,688 @@ export const Attendance = () => {
     );
   }
 
+  // ============================================
+  // RENDER
+  // ============================================
   return (
-    <div style={{
-      maxWidth: '480px',
-      margin: '0 auto',
-      minHeight: '100vh',
-      backgroundColor: theme.dark ? '#0F172A' : '#F8FAFC',
-      padding: '16px 16px 100px',
-    }}>
-      
-      {/* HEADER */}
-      <div style={{
-        background: 'linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%)',
-        borderRadius: '20px',
-        padding: '24px 20px 20px',
-        marginBottom: '16px',
-        border: 'none',
-        boxShadow: '0 4px 24px rgba(59,130,246,0.25)',
-        position: 'relative',
-        overflow: 'hidden',
-      }}>
-        <div style={{
-          position: 'absolute',
-          top: -40,
-          right: -30,
-          width: '120px',
-          height: '120px',
-          borderRadius: '50%',
-          background: 'rgba(255,255,255,0.06)',
-        }} />
-        <div style={{
-          position: 'absolute',
-          bottom: -60,
-          left: -40,
-          width: '100px',
-          height: '100px',
-          borderRadius: '50%',
-          background: 'rgba(255,255,255,0.04)',
-        }} />
+    <div
+      style={{
+        maxWidth: '480px',
+        margin: '0 auto',
+        minHeight: '100vh',
+        backgroundColor: pageBg,
+        paddingBottom: '120px',
+        fontFamily: THEME.font,
+      }}
+    >
+      {/* ============================================ */}
+      {/* PREMIUM HEADER */}
+      {/* ============================================ */}
+      <div style={{ padding: '16px 16px 8px' }}>
+        <div
+          style={{
+            background: dark
+              ? 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)'
+              : 'linear-gradient(135deg, #FFFFFF 0%, #F0FDF4 100%)',
+            borderRadius: THEME.radius2xl,
+            padding: '22px 20px 20px',
+            boxShadow: dark ? THEME.shadowDark : THEME.shadowLg,
+            border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : '#E6F5EE'}`,
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: -60,
+              right: -60,
+              width: '160px',
+              height: '160px',
+              borderRadius: '50%',
+              background:
+                'radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%)',
+              pointerEvents: 'none',
+            }}
+          />
 
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginBottom: '10px',
-          }}>
-            <div>
-              <h1 style={{ 
-                color: '#FFFFFF', 
-                fontSize: '22px', 
-                fontWeight: 700, 
-                margin: 0,
-                lineHeight: 1.2,
-              }}>
-                📍 Check In / Out
-              </h1>
-              <p style={{ 
-                color: 'rgba(255,255,255,0.7)', 
-                fontSize: '13px', 
-                fontWeight: 500,
-                marginTop: '2px',
-              }}>
-                {getViewLabel()}
-              </p>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              marginBottom: '16px',
+              position: 'relative',
+              zIndex: 1,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div
+                style={{
+                  width: '52px',
+                  height: '52px',
+                  borderRadius: THEME.radiusMd,
+                  background: dark ? '#0F172A' : '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(16,185,129,0.15)',
+                  border: '1px solid #D1FAE5',
+                  overflow: 'hidden',
+                }}
+              >
+                <img
+                  src="/vision-earth-logo.png"
+                  alt="Vision Earth"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontSize: '16px',
+                    fontWeight: 800,
+                    color: textPrimary,
+                    letterSpacing: '0.5px',
+                    lineHeight: 1.1,
+                  }}
+                >
+                  ATTENDANCE
+                </div>
+                <div
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: THEME.primary,
+                    letterSpacing: '3px',
+                    marginTop: '3px',
+                  }}
+                >
+                  HISTORY
+                </div>
+              </div>
             </div>
-            
+
             <button
               onClick={toggleDark}
               style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.2)',
-                background: 'rgba(255,255,255,0.1)',
-                color: '#FFFFFF',
-                fontSize: '18px',
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                border: 'none',
+                background: dark
+                  ? 'rgba(255,255,255,0.08)'
+                  : 'linear-gradient(135deg, #FEF3C7, #FDE68A)',
+                fontSize: '16px',
                 cursor: 'pointer',
-                transition: 'all 0.2s ease',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backdropFilter: 'blur(4px)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-                e.currentTarget.style.transform = 'scale(1.05)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-                e.currentTarget.style.transform = 'scale(1)';
+                boxShadow: '0 4px 12px rgba(245,158,11,0.2)',
               }}
             >
-              {theme.dark ? '☀️' : '🌙'}
+              {dark ? '☀️' : '🌙'}
             </button>
           </div>
 
-          {isAttendanceComplete && (
-            <span style={{
-              background: 'rgba(16,185,129,0.2)',
-              color: '#10B981',
-              padding: '4px 12px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 600,
-              display: 'inline-block',
-              marginTop: '4px',
-            }}>
-              ✅ Attendance Complete
-            </span>
-          )}
-          {!isAttendanceComplete && !isCheckedIn && !isCheckedOut && (
-            <span style={{
-              background: 'rgba(239,68,68,0.2)',
-              color: '#EF4444',
-              padding: '4px 12px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 600,
-              display: 'inline-block',
-              marginTop: '4px',
-            }}>
-              ⭕ Not Checked In
-            </span>
-          )}
-          {isCheckedIn && !isAttendanceComplete && (
-            <span style={{
-              background: 'rgba(16,185,129,0.2)',
-              color: '#10B981',
-              padding: '4px 12px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 600,
-              display: 'inline-block',
-              marginTop: '4px',
-            }}>
-              🟢 At Work
-            </span>
-          )}
-          {isCheckedOut && !isAttendanceComplete && (
-            <span style={{
-              background: 'rgba(139,92,246,0.2)',
-              color: '#8B5CF6',
-              padding: '4px 12px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 600,
-              display: 'inline-block',
-              marginTop: '4px',
-            }}>
-              ⏳ Checked Out - Fill Attendance
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Status Card */}
-      <div style={{
-        margin: '0 0 16px',
-        padding: '14px 16px',
-        background: theme.dark 
-          ? 'rgba(30, 41, 59, 0.8)' 
-          : '#FFFFFF',
-        borderRadius: '12px',
-        border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-        boxShadow: theme.dark 
-          ? '0 4px 20px rgba(0,0,0,0.2)' 
-          : '0 4px 20px rgba(0,0,0,0.04)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-      }}>
-        <div>
-          <div style={{
-            fontSize: '13px',
-            fontWeight: 600,
-            color: isAttendanceComplete ? '#166534' : isCheckedIn ? '#166534' : isCheckedOut ? '#5B21B6' : '#92400E',
-          }}>
-            {isAttendanceComplete 
-              ? '✅ Attendance Complete' 
-              : isCheckedIn 
-                ? '🟢 At Work'
-                : isCheckedOut 
-                  ? '⏳ Checked Out - Fill Attendance' 
-                  : '⭕ Not Checked In'}
-          </div>
-          <div style={{
-            fontSize: '11px',
-            color: theme.dark ? '#94A3B8' : '#64748B',
-            marginTop: '2px',
-          }}>
-            {isAttendanceComplete 
-              ? `Completed on ${formatDate(getTodayIST())}` 
-              : isCheckedIn 
-                ? `Since ${formatTime(checkInStatus?.check_in_time)}` 
-                : isCheckedOut 
-                  ? `Out at ${formatTime(checkInStatus?.check_out_time)} • ${checkInStatus?.working_hours || 0}h worked`
-                  : 'Check in to start your day'}
-          </div>
-        </div>
-
-        {!isCheckedIn && !isCheckedOut && !isAttendanceComplete && (
-          <button
-            onClick={openCheckInModal}
+          <div
             style={{
-              padding: '6px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              background: '#10B981',
-              color: '#FFFFFF',
-              fontWeight: 600,
-              fontSize: '12px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.05)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(16,185,129,0.3)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = 'none';
-            }}
-          >
-            📍 Check In
-          </button>
-        )}
-
-        {isCheckedIn && !isAttendanceComplete && (
-          <button
-            onClick={openCheckOutModal}
-            style={{
-              padding: '6px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              background: '#EF4444',
-              color: '#FFFFFF',
-              fontWeight: 600,
-              fontSize: '12px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.05)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(239,68,68,0.3)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = 'none';
-            }}
-          >
-            📤 Check Out
-          </button>
-        )}
-
-        {isCheckedOut && !isAttendanceComplete && (
-          <button
-            onClick={() => setShowForm(true)}
-            style={{
-              padding: '6px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              background: '#8B5CF6',
-              color: '#FFFFFF',
-              fontWeight: 600,
-              fontSize: '12px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.05)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(139,92,246,0.3)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = 'none';
-            }}
-          >
-            📋 Fill Attendance
-          </button>
-        )}
-
-        {isAttendanceComplete && (
-          <span style={{
-            padding: '6px 14px',
-            borderRadius: '8px',
-            background: '#10B981',
-            color: '#FFFFFF',
-            fontWeight: 600,
-            fontSize: '12px',
-          }}>
-            ✅ Done
-          </span>
-        )}
-      </div>
-
-      {/* Stats Grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '8px',
-        padding: '0 0 12px',
-      }}>
-        <div style={{
-          background: theme.dark 
-            ? 'rgba(30, 41, 59, 0.6)' 
-            : '#FFFFFF',
-          borderRadius: '12px',
-          padding: '12px 8px',
-          textAlign: 'center',
-          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
-          minHeight: '70px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-        }}>
-          <div style={{ fontSize: '22px', fontWeight: 800, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
-            {total}
-          </div>
-          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
-            Total
-          </div>
-        </div>
-
-        <div style={{
-          background: theme.dark 
-            ? 'rgba(30, 41, 59, 0.6)' 
-            : '#FFFFFF',
-          borderRadius: '12px',
-          padding: '12px 8px',
-          textAlign: 'center',
-          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
-          minHeight: '70px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-        }}>
-          <div style={{ fontSize: '22px', fontWeight: 800, color: '#10B981' }}>
-            {present}
-          </div>
-          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
-            Present
-          </div>
-        </div>
-
-        <div style={{
-          background: theme.dark 
-            ? 'rgba(30, 41, 59, 0.6)' 
-            : '#FFFFFF',
-          borderRadius: '12px',
-          padding: '12px 8px',
-          textAlign: 'center',
-          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
-          minHeight: '70px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-        }}>
-          <div style={{ fontSize: '22px', fontWeight: 800, color: '#F59E0B' }}>
-            {delayed}
-          </div>
-          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
-            Delayed
-          </div>
-        </div>
-
-        <div style={{
-          background: theme.dark 
-            ? 'rgba(30, 41, 59, 0.6)' 
-            : '#FFFFFF',
-          borderRadius: '12px',
-          padding: '12px 8px',
-          textAlign: 'center',
-          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
-          minHeight: '70px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-        }}>
-          <div style={{ fontSize: '22px', fontWeight: 800, color: '#DC2626' }}>
-            {beyondDelay}
-          </div>
-          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
-            Beyond Delay
-          </div>
-        </div>
-
-        <div style={{
-          background: theme.dark 
-            ? 'rgba(30, 41, 59, 0.6)' 
-            : '#FFFFFF',
-          borderRadius: '12px',
-          padding: '12px 8px',
-          textAlign: 'center',
-          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
-          minHeight: '70px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-        }}>
-          <div style={{ fontSize: '22px', fontWeight: 800, color: '#EF4444' }}>
-            {absent}
-          </div>
-          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
-            Absent
-          </div>
-        </div>
-
-        <div style={{
-          background: theme.dark 
-            ? 'rgba(30, 41, 59, 0.6)' 
-            : '#FFFFFF',
-          borderRadius: '12px',
-          padding: '12px 8px',
-          textAlign: 'center',
-          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
-          minHeight: '70px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-        }}>
-          <div style={{ fontSize: '22px', fontWeight: 800, color: '#3B82F6' }}>
-            {leave}
-          </div>
-          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
-            Leave
-          </div>
-        </div>
-
-        <div style={{
-          background: theme.dark 
-            ? 'rgba(30, 41, 59, 0.6)' 
-            : '#FFFFFF',
-          borderRadius: '12px',
-          padding: '12px 8px',
-          textAlign: 'center',
-          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-          boxShadow: theme.dark ? '0 2px 12px rgba(0,0,0,0.2)' : '0 2px 12px rgba(0,0,0,0.04)',
-          minHeight: '70px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-        }}>
-          <div style={{ fontSize: '22px', fontWeight: 800, color: '#8B5CF6' }}>
-            {acoPendingCount}
-          </div>
-          <div style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.3px', color: theme.dark ? '#94A3B8' : '#94A3B8' }}>
-            Auto Check-Out
-          </div>
-          {acoPendingCount > 0 && (
-            <div style={{
-              fontSize: '7px',
-              color: '#8B5CF6',
-              marginTop: '2px',
+              fontSize: '11px',
+              color: textMuted,
+              letterSpacing: '0.8px',
               fontWeight: 500,
-            }}>
-              {acoPendingCount} pending
-            </div>
-          )}
-        </div>
-
-        <div 
-          onClick={() => {
-            if (acoPendingCount > 0) {
-              setShowACOForm(true);
-            } else {
-              toast.info('No ACO entries available to mark');
-            }
-          }}
-          style={{
-            padding: '12px 8px',
-            borderRadius: '10px',
-            textAlign: 'center',
-            border: `1px solid ${acoPendingCount > 0 ? '#8B5CF6' : '#CBD5E1'}`,
-            background: acoPendingCount > 0 ? 'linear-gradient(135deg, #8B5CF6, #6D28D9)' : '#CBD5E1',
-            cursor: acoPendingCount > 0 ? 'pointer' : 'not-allowed',
-            transition: 'all 0.2s ease',
-            boxShadow: acoPendingCount > 0 ? '0 4px 14px rgba(139,92,246,0.3)' : 'none',
-            opacity: acoPendingCount > 0 ? 1 : 0.6,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: '70px',
-          }}
-          onMouseEnter={(e) => {
-            if (acoPendingCount > 0) {
-              e.currentTarget.style.transform = 'scale(1.05)';
-              e.currentTarget.style.boxShadow = '0 6px 20px rgba(139,92,246,0.4)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (acoPendingCount > 0) {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = '0 4px 14px rgba(139,92,246,0.3)';
-            }
-          }}
-        >
-          <div style={{
-            fontSize: '9px',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.3px',
-            color: '#FFFFFF',
-            marginBottom: '2px',
-          }}>
-            🔄 Mark ACO
-          </div>
-          <div style={{
-            fontSize: '22px',
-            fontWeight: 800,
-            color: '#FFFFFF',
-          }}>
-            {acoPendingCount}
-          </div>
-          <div style={{
-            fontSize: '8px',
-            color: 'rgba(255,255,255,0.8)',
-            marginTop: '2px',
-          }}>
-            {acoPendingCount > 0 ? 'Click to fill' : 'No entries'}
-          </div>
-        </div>
-      </div>
-
-      {/* View Mode Buttons */}
-      <div style={{
-        display: 'flex',
-        gap: '8px',
-        padding: '8px 0',
-        borderBottom: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
-        flexWrap: 'wrap',
-        marginBottom: '12px',
-      }}>
-        <button
-          onClick={() => {
-            setViewMode('today');
-            setFilterDate('');
-          }}
-          style={{
-            padding: '6px 16px',
-            borderRadius: '20px',
-            border: viewMode === 'today' ? `2px solid #3B82F6` : `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
-            background: viewMode === 'today' ? 'rgba(59,130,246,0.15)' : 'transparent',
-            color: viewMode === 'today' ? '#3B82F6' : (theme.dark ? '#94A3B8' : '#64748B'),
-            fontWeight: 600,
-            fontSize: '12px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          📅 Today
-        </button>
-        <button
-          onClick={() => {
-            setViewMode('month');
-            setFilterDate('');
-          }}
-          style={{
-            padding: '6px 16px',
-            borderRadius: '20px',
-            border: viewMode === 'month' ? `2px solid #3B82F6` : `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
-            background: viewMode === 'month' ? 'rgba(59,130,246,0.15)' : 'transparent',
-            color: viewMode === 'month' ? '#3B82F6' : (theme.dark ? '#94A3B8' : '#64748B'),
-            fontWeight: 600,
-            fontSize: '12px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          📊 This Month
-        </button>
-        <button
-          onClick={() => {
-            setViewMode('all');
-            setFilterDate('');
-          }}
-          style={{
-            padding: '6px 16px',
-            borderRadius: '20px',
-            border: viewMode === 'all' ? `2px solid #3B82F6` : `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
-            background: viewMode === 'all' ? 'rgba(59,130,246,0.15)' : 'transparent',
-            color: viewMode === 'all' ? '#3B82F6' : (theme.dark ? '#94A3B8' : '#64748B'),
-            fontWeight: 600,
-            fontSize: '12px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          📋 All
-        </button>
-      </div>
-
-      {/* Filter Controls */}
-      <div style={{
-        display: 'flex',
-        gap: '8px',
-        padding: '10px 0',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        marginBottom: '12px',
-      }}>
-        <select
-          value={month}
-          onChange={(e) => {
-            setMonth(parseInt(e.target.value));
-            if (viewMode !== 'month') setViewMode('custom');
-          }}
-          style={{ 
-            flex: 1, 
-            minWidth: '80px',
-            padding: '8px 12px',
-            borderRadius: '8px',
-            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-            background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-            color: theme.dark ? '#F1F5F9' : '#0F172A',
-            outline: 'none',
-            fontFamily: 'Inter, sans-serif',
-            cursor: 'pointer',
-            fontSize: '12px',
-          }}
-        >
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <option key={m} value={m} style={{ color: '#000000', background: '#FFFFFF' }}>
-              {new Date(2024, m - 1).toLocaleDateString('en-US', { month: 'short' })}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={year}
-          onChange={(e) => {
-            setYear(parseInt(e.target.value));
-            if (viewMode !== 'month') setViewMode('custom');
-          }}
-          style={{ 
-            flex: 1, 
-            minWidth: '70px',
-            padding: '8px 12px',
-            borderRadius: '8px',
-            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-            background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-            color: theme.dark ? '#F1F5F9' : '#0F172A',
-            outline: 'none',
-            fontFamily: 'Inter, sans-serif',
-            cursor: 'pointer',
-            fontSize: '12px',
-          }}
-        >
-          {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (
-            <option key={y} value={y} style={{ color: '#000000', background: '#FFFFFF' }}>{y}</option>
-          ))}
-        </select>
-
-        <input
-          type="date"
-          value={filterDate}
-          onChange={(e) => setFilterDate(e.target.value)}
-          style={{ 
-            flex: 1,
-            minWidth: '120px',
-            padding: '8px 12px',
-            borderRadius: '8px',
-            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-            background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-            color: theme.dark ? '#F1F5F9' : '#0F172A',
-            outline: 'none',
-            fontFamily: 'Inter, sans-serif',
-            fontSize: '12px',
-          }}
-        />
-
-        <button
-          onClick={handleSearch}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '8px',
-            border: 'none',
-            background: 'linear-gradient(135deg, #059669, #10B981)',
-            color: '#FFFFFF',
-            fontWeight: 600,
-            fontSize: '12px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            whiteSpace: 'nowrap',
-            boxShadow: '0 2px 8px rgba(5,150,105,0.3)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'scale(1.02)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
-        >
-          🔍 Search
-        </button>
-
-        {(viewMode === 'custom' || filterDate || filterStatus !== 'all') && (
-          <button
-            onClick={resetFilters}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '8px',
-              border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-              background: 'transparent',
-              color: theme.dark ? '#94A3B8' : '#94A3B8',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
+              position: 'relative',
+              zIndex: 1,
             }}
           >
-            ✕ Clear
-          </button>
-        )}
+            📍 Your check-in and attendance records
+          </div>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '8px', 
-        padding: '0 0 12px',
-        borderBottom: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
-      }}>
-        <button
-          onClick={() => setActiveTab('attendance')}
+      {/* ============================================ */}
+      {/* ENHANCED STATS GRID */}
+      {/* ============================================ */}
+      <div style={{ padding: '0 16px 16px' }}>
+        <div
           style={{
-            padding: '10px 20px',
-            borderRadius: '10px 10px 0 0',
-            border: 'none',
-            fontWeight: 700,
-            fontSize: '14px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            background: activeTab === 'attendance' ? (theme.dark ? 'rgba(30,41,59,0.6)' : '#FFFFFF') : 'transparent',
-            color: activeTab === 'attendance' ? '#3B82F6' : (theme.dark ? '#94A3B8' : '#94A3B8'),
-            borderBottom: activeTab === 'attendance' ? `2px solid #3B82F6` : 'none',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '10px',
           }}
         >
-          📋 Attendance History
-        </button>
-        <button
-          onClick={() => setActiveTab('checkinout')}
+          {[
+            {
+              value: total,
+              label: 'Total',
+              color: dark ? '#94A3B8' : '#475569',
+              bg: dark ? '#1E293B' : '#FFFFFF',
+              icon: '📊',
+              glow: '#94A3B8',
+            },
+            {
+              value: present,
+              label: 'Present',
+              color: THEME.primary,
+              bg: dark ? '#1E293B' : THEME.primarySoft,
+              icon: '✓',
+              glow: THEME.primary,
+            },
+            {
+              value: delayed,
+              label: 'Delayed',
+              color: THEME.amber,
+              bg: dark ? '#1E293B' : THEME.amberSoft,
+              icon: '⏳',
+              glow: THEME.amber,
+            },
+            {
+              value: beyondDelay,
+              label: 'Beyond',
+              color: THEME.red,
+              bg: dark ? '#1E293B' : THEME.redSoft,
+              icon: '🚫',
+              glow: THEME.red,
+            },
+            {
+              value: absent,
+              label: 'Absent',
+              color: THEME.red,
+              bg: dark ? '#1E293B' : THEME.redSoft,
+              icon: '✕',
+              glow: THEME.red,
+            },
+            {
+              value: leave,
+              label: 'Leave',
+              color: THEME.blue,
+              bg: dark ? '#1E293B' : THEME.blueSoft,
+              icon: '📅',
+              glow: THEME.blue,
+            },
+          ].map((stat, idx) => (
+            <div
+              key={idx}
+              className="att-fade-in"
+              style={{
+                animationDelay: `${idx * 40}ms`,
+                position: 'relative',
+                background: dark ? '#1E293B' : stat.bg,
+                borderRadius: THEME.radiusLg,
+                padding: '14px 8px 12px',
+                textAlign: 'center',
+                border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : stat.color + '25'}`,
+                boxShadow: dark
+                  ? THEME.shadowDarkSm
+                  : `0 2px 10px ${stat.glow}10, 0 1px 3px rgba(0,0,0,0.03)`,
+                overflow: 'hidden',
+              }}
+            >
+              {/* Top gradient accent bar */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '3px',
+                  background: `linear-gradient(90deg, ${stat.color}00, ${stat.color}, ${stat.color}00)`,
+                  opacity: 0.7,
+                }}
+              />
+
+              {/* Icon circle */}
+              <div
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  margin: '0 auto 6px',
+                  borderRadius: '50%',
+                  background: `${stat.color}15`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '14px',
+                  fontWeight: 900,
+                  color: stat.color,
+                  boxShadow: `0 2px 6px ${stat.color}20`,
+                }}
+              >
+                {stat.icon}
+              </div>
+
+              <div
+                style={{
+                  fontSize: '24px',
+                  fontWeight: 800,
+                  color: stat.color,
+                  lineHeight: 1,
+                  marginBottom: '4px',
+                  letterSpacing: '-0.5px',
+                }}
+              >
+                {stat.value}
+              </div>
+              <div
+                style={{
+                  fontSize: '9px',
+                  fontWeight: 800,
+                  color: dark ? '#94A3B8' : stat.color,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.6px',
+                }}
+              >
+                {stat.label}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ============================================ */}
+      {/* VIEW MODE SEGMENTS (Enhanced) */}
+      {/* ============================================ */}
+      <div style={{ padding: '0 16px 12px' }}>
+        <div
           style={{
-            padding: '10px 20px',
-            borderRadius: '10px 10px 0 0',
-            border: 'none',
-            fontWeight: 700,
-            fontSize: '14px',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            background: activeTab === 'checkinout' ? (theme.dark ? 'rgba(30,41,59,0.6)' : '#FFFFFF') : 'transparent',
-            color: activeTab === 'checkinout' ? '#3B82F6' : (theme.dark ? '#94A3B8' : '#94A3B8'),
-            borderBottom: activeTab === 'checkinout' ? `2px solid #3B82F6` : 'none',
+            display: 'flex',
+            gap: '6px',
+            padding: '5px',
+            background: dark ? '#1E293B' : '#FFFFFF',
+            borderRadius: THEME.radiusLg,
+            border: `1px solid ${border}`,
+            boxShadow: cardShadow,
           }}
         >
-          📍 Check-In/Out History
-        </button>
+          {[
+            { key: 'today', label: 'Today', icon: '📅' },
+            { key: 'month', label: 'Month', icon: '📊' },
+            { key: 'all', label: 'All', icon: '📋' },
+          ].map((v) => {
+            const active = viewMode === v.key;
+            return (
+              <button
+                key={v.key}
+                onClick={() => {
+                  setViewMode(v.key);
+                  setFilterDate('');
+                }}
+                className={active ? 'att-tab-active' : ''}
+                style={{
+                  flex: 1,
+                  padding: '10px 8px',
+                  borderRadius: THEME.radiusMd,
+                  border: 'none',
+                  background: active
+                    ? `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`
+                    : 'transparent',
+                  color: active ? '#FFFFFF' : textSecondary,
+                  fontWeight: 800,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                  boxShadow: active ? THEME.shadowGreen : 'none',
+                  fontFamily: THEME.font,
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '5px',
+                }}
+              >
+                <span style={{ fontSize: '13px' }}>{v.icon}</span>
+                {v.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Results Count */}
-      <div style={{
-        padding: '8px 0',
-        fontSize: '12px',
-        color: theme.dark ? '#94A3B8' : '#94A3B8',
-      }}>
-        {activeTab === 'attendance' ? filteredAttendance.length : filteredCheckin.length} records found
+      {/* ============================================ */}
+      {/* FILTERS (Enhanced) */}
+      {/* ============================================ */}
+      <div style={{ padding: '0 16px 12px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {/* Month dropdown */}
+          <div style={{ flex: 1, minWidth: '90px', position: 'relative' }}>
+            <div
+              style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                fontSize: '12px',
+                pointerEvents: 'none',
+                zIndex: 1,
+              }}
+            >
+              📅
+            </div>
+            <select
+              value={month}
+              onChange={(e) => {
+                setMonth(parseInt(e.target.value));
+                if (viewMode !== 'month') setViewMode('custom');
+              }}
+              style={{
+                width: '100%',
+                padding: '11px 32px 11px 34px',
+                borderRadius: THEME.radiusMd,
+                border: `1px solid ${border}`,
+                background: cardBg,
+                color: textPrimary,
+                fontSize: '12px',
+                fontWeight: 700,
+                outline: 'none',
+                fontFamily: THEME.font,
+                cursor: 'pointer',
+                appearance: 'none',
+                backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 12px center',
+              }}
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m} style={{ color: '#000', background: '#FFF' }}>
+                  {getMonthName(m)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Year dropdown */}
+          <div style={{ flex: 1, minWidth: '80px', position: 'relative' }}>
+            <div
+              style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                fontSize: '12px',
+                pointerEvents: 'none',
+                zIndex: 1,
+              }}
+            >
+              🗓️
+            </div>
+            <select
+              value={year}
+              onChange={(e) => {
+                setYear(parseInt(e.target.value));
+                if (viewMode !== 'month') setViewMode('custom');
+              }}
+              style={{
+                width: '100%',
+                padding: '11px 32px 11px 34px',
+                borderRadius: THEME.radiusMd,
+                border: `1px solid ${border}`,
+                background: cardBg,
+                color: textPrimary,
+                fontSize: '12px',
+                fontWeight: 700,
+                outline: 'none',
+                fontFamily: THEME.font,
+                cursor: 'pointer',
+                appearance: 'none',
+                backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 12px center',
+              }}
+            >
+              {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(
+                (y) => (
+                  <option key={y} value={y} style={{ color: '#000', background: '#FFF' }}>
+                    {y}
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+        </div>
       </div>
 
-      {/* Attendance List */}
-      <div style={{ padding: '12px 0 16px' }}>
+      {/* ============================================ */}
+      {/* MAIN TABS (Enhanced with icons) */}
+      {/* ============================================ */}
+      <div style={{ padding: '0 16px 12px' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '6px',
+            padding: '5px',
+            background: dark ? '#1E293B' : '#FFFFFF',
+            borderRadius: THEME.radiusLg,
+            border: `1px solid ${border}`,
+            boxShadow: cardShadow,
+          }}
+        >
+          {[
+            { key: 'attendance', label: 'Attendance', icon: '📋' },
+            { key: 'checkinout', label: 'Check In/Out', icon: '📍' },
+          ].map((t) => {
+            const active = activeTab === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                className={active ? 'att-tab-active' : ''}
+                style={{
+                  flex: 1,
+                  padding: '10px 8px',
+                  borderRadius: THEME.radiusMd,
+                  border: 'none',
+                  background: active
+                    ? `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`
+                    : 'transparent',
+                  color: active ? '#FFFFFF' : textSecondary,
+                  fontWeight: 800,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                  boxShadow: active ? THEME.shadowGreen : 'none',
+                  fontFamily: THEME.font,
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '5px',
+                }}
+              >
+                <span style={{ fontSize: '13px' }}>{t.icon}</span>
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Results count */}
+      <div
+        style={{
+          padding: '0 16px 8px',
+          fontSize: '11px',
+          color: textMuted,
+          fontWeight: 700,
+          letterSpacing: '0.3px',
+        }}
+      >
+        {activeTab === 'attendance'
+          ? filteredAttendance.length
+          : filteredCheckin.length}{' '}
+        records found
+      </div>
+
+      {/* ============================================ */}
+      {/* LIST (Enhanced Cards) */}
+      {/* ============================================ */}
+      <div style={{ padding: '0 16px 16px' }}>
         {activeTab === 'attendance' ? (
           <>
             {filteredAttendance.length === 0 ? (
-              <div style={{
-                padding: '40px',
-                textAlign: 'center',
-                color: theme.dark ? '#94A3B8' : '#94A3B8',
-                background: theme.dark 
-                  ? 'rgba(30, 41, 59, 0.4)' 
-                  : '#FFFFFF',
-                borderRadius: '14px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-              }}>
-                <div style={{ fontSize: '40px', marginBottom: '8px' }}>📋</div>
-                <p style={{ fontWeight: 600 }}>No attendance records found</p>
-              </div>
+              <EmptyState
+                icon="📋"
+                text="No attendance records found"
+                subtitle="Try adjusting your filters"
+                dark={dark}
+                cardBg={cardBg}
+                textSecondary={textSecondary}
+                textMuted={textMuted}
+              />
             ) : (
               filteredAttendance.map((att, idx) => {
                 const statusColor = getStatusColor(att.status, theme);
                 const statusLabel = getStatusLabel(att.status);
                 const statusIcon = getStatusIcon(att.status);
-                
+
                 const projects = [];
                 for (let i = 1; i <= 6; i++) {
-                  if (att[`project${i}`]) {
-                    projects.push(att[`project${i}`]);
-                  }
+                  if (att[`project${i}`]) projects.push(att[`project${i}`]);
                 }
-                
+
                 return (
                   <div
                     key={idx}
                     onClick={() => handleCardClick(att)}
-                    style={{ 
-                      marginBottom: '8px',
-                      padding: '14px 16px',
-                      background: theme.dark 
-                        ? 'rgba(30, 41, 59, 0.6)' 
-                        : '#FFFFFF',
-                      borderRadius: '12px',
-                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                      boxShadow: theme.dark 
-                        ? '0 2px 12px rgba(0,0,0,0.2)' 
-                        : '0 2px 12px rgba(0,0,0,0.04)',
+                    className="att-fade-in"
+                    style={{
+                      animationDelay: `${idx * 50}ms`,
+                      position: 'relative',
+                      marginBottom: '10px',
+                      padding: '16px 16px 16px 18px',
+                      background: cardBg,
+                      borderRadius: THEME.radiusLg,
+                      border: `1px solid ${border}`,
+                      boxShadow: cardShadow,
                       cursor: 'pointer',
-                      transition: 'all 0.2s ease',
+                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      overflow: 'hidden',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateX(4px)';
-                      e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)';
-                      e.currentTarget.style.borderColor = '#3B82F6';
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = `0 8px 24px ${statusColor}25`;
+                      e.currentTarget.style.borderColor = `${statusColor}40`;
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateX(0)';
-                      e.currentTarget.style.boxShadow = theme.dark 
-                        ? '0 2px 12px rgba(0,0,0,0.2)' 
-                        : '0 2px 12px rgba(0,0,0,0.04)';
-                      e.currentTarget.style.borderColor = theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = cardShadow;
+                      e.currentTarget.style.borderColor = border;
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '15px', fontWeight: 700, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
-                          📅 {formatDate(att.attendance_date)}
+                    {/* Left colored accent bar */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: '4px',
+                        background: `linear-gradient(180deg, ${statusColor}, ${statusColor}80)`,
+                        borderRadius: '4px 0 0 4px',
+                      }}
+                    />
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        marginBottom: '8px',
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: '15px',
+                            fontWeight: 800,
+                            color: textPrimary,
+                            letterSpacing: '-0.2px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: '6px',
+                              height: '6px',
+                              borderRadius: '50%',
+                              background: statusColor,
+                              boxShadow: `0 0 6px ${statusColor}`,
+                            }}
+                          />
+                          {formatDate(att.attendance_date)}
                         </div>
-                        <div style={{ fontSize: '13px', color: theme.dark ? '#94A3B8' : '#64748B', marginTop: '4px' }}>
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            color: textSecondary,
+                            marginTop: '4px',
+                            fontWeight: 600,
+                          }}
+                        >
                           📍 {att.reporting_location || 'N/A'}
-                        </div>
-                        {projects.length > 0 && (
-                          <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                            {projects.slice(0, 2).map((project, i) => (
-                              <span 
-                                key={i}
-                                style={{
-                                  fontSize: '11px',
-                                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                                  padding: '2px 10px',
-                                  borderRadius: '12px',
-                                  color: theme.dark ? '#94A3B8' : '#64748B',
-                                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                                }}
-                              >
-                                📌 {project}
-                              </span>
-                            ))}
-                            {projects.length > 2 && (
-                              <span style={{
-                                fontSize: '11px',
-                                color: theme.dark ? '#94A3B8' : '#94A3B8',
-                              }}>
-                                +{projects.length - 2} more
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        <div style={{
-                          marginTop: '6px',
-                          fontSize: '11px',
-                          color: theme.dark ? '#94A3B8' : '#94A3B8',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}>
-                          <span>👆 Click to view details</span>
                         </div>
                       </div>
                       <span
                         style={{
-                          padding: '4px 14px',
-                          borderRadius: '12px',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          backgroundColor: statusColor + '22',
+                          padding: '5px 14px',
+                          borderRadius: THEME.radiusPill,
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          backgroundColor: statusColor + '18',
                           color: statusColor,
                           flexShrink: 0,
-                          marginLeft: '12px',
-                          whiteSpace: 'nowrap',
+                          marginLeft: '10px',
+                          letterSpacing: '0.3px',
+                          border: `1px solid ${statusColor}40`,
+                          boxShadow: `0 2px 6px ${statusColor}20`,
                         }}
                       >
                         {statusIcon} {statusLabel}
                       </span>
                     </div>
+
+                    {projects.length > 0 && (
+                      <div
+                        style={{
+                          marginTop: '10px',
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '6px',
+                        }}
+                      >
+                        {projects.slice(0, 2).map((project, i) => (
+                          <span
+                            key={i}
+                            style={{
+                              fontSize: '10px',
+                              background: dark
+                                ? 'rgba(16,185,129,0.1)'
+                                : THEME.primarySoft,
+                              padding: '4px 10px',
+                              borderRadius: '8px',
+                              color: THEME.primaryDark,
+                              fontWeight: 700,
+                              border: `1px solid ${THEME.primary}25`,
+                            }}
+                          >
+                            📌 {project}
+                          </span>
+                        ))}
+                        {projects.length > 2 && (
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              color: textMuted,
+                              fontWeight: 700,
+                              alignSelf: 'center',
+                            }}
+                          >
+                            +{projects.length - 2} more
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -1775,70 +964,90 @@ export const Attendance = () => {
         ) : (
           <>
             {filteredCheckin.length === 0 ? (
-              <div style={{
-                padding: '40px',
-                textAlign: 'center',
-                color: theme.dark ? '#94A3B8' : '#94A3B8',
-                background: theme.dark 
-                  ? 'rgba(30, 41, 59, 0.4)' 
-                  : '#FFFFFF',
-                borderRadius: '14px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-              }}>
-                <div style={{ fontSize: '40px', marginBottom: '8px' }}>📍</div>
-                <p style={{ fontWeight: 600 }}>No check-in/out records found</p>
-              </div>
+              <EmptyState
+                icon="📍"
+                text="No check-in/out records found"
+                subtitle="Check in to see your history"
+                dark={dark}
+                cardBg={cardBg}
+                textSecondary={textSecondary}
+                textMuted={textMuted}
+              />
             ) : (
               filteredCheckin.map((item, idx) => {
-                const statusColor = item.status === 'Checked In' ? '#10B981' : 
-                                   item.status === 'Checked Out (Auto)' ? '#F59E0B' : '#8B5CF6';
-                
-                const checkInDate = item.check_in_time ? new Date(item.check_in_time) : null;
-                const checkOutDate = item.check_out_time ? new Date(item.check_out_time) : null;
-                
+                const statusColor =
+                  item.status === 'Checked In'
+                    ? THEME.primary
+                    : item.status === 'Checked Out (Late)'
+                    ? THEME.amber
+                    : THEME.purple;
+
+                const checkInDate = item.check_in_time
+                  ? new Date(item.check_in_time)
+                  : null;
+                const checkOutDate = item.check_out_time
+                  ? new Date(item.check_out_time)
+                  : null;
+
                 return (
                   <div
                     key={idx}
-                    style={{ 
-                      marginBottom: '12px',
-                      padding: '16px',
-                      background: theme.dark 
-                        ? 'rgba(30, 41, 59, 0.6)' 
-                        : '#FFFFFF',
-                      borderRadius: '12px',
-                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                      boxShadow: theme.dark 
-                        ? '0 2px 12px rgba(0,0,0,0.2)' 
-                        : '0 2px 12px rgba(0,0,0,0.04)',
+                    className="att-fade-in"
+                    style={{
+                      animationDelay: `${idx * 50}ms`,
+                      position: 'relative',
+                      marginBottom: '10px',
+                      padding: '16px 16px 16px 18px',
+                      background: cardBg,
+                      borderRadius: THEME.radiusLg,
+                      border: `1px solid ${border}`,
+                      boxShadow: cardShadow,
+                      overflow: 'hidden',
                     }}
                   >
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: '12px',
-                      paddingBottom: '10px',
-                      borderBottom: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                    }}>
-                      <div style={{
-                        fontSize: '15px',
-                        fontWeight: 700,
-                        color: theme.dark ? '#F1F5F9' : '#0F172A',
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: '4px',
+                        background: `linear-gradient(180deg, ${statusColor}, ${statusColor}80)`,
+                        borderRadius: '4px 0 0 4px',
+                      }}
+                    />
+
+                    <div
+                      style={{
                         display: 'flex',
+                        justifyContent: 'space-between',
                         alignItems: 'center',
-                        gap: '8px',
-                      }}>
-                        <span>📅</span>
-                        {formatDate(checkInDate)}
+                        marginBottom: '12px',
+                        paddingBottom: '10px',
+                        borderBottom: `1px solid ${border}`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '14px',
+                          fontWeight: 800,
+                          color: textPrimary,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        📅 {formatDate(checkInDate)}
                       </div>
                       <span
                         style={{
-                          padding: '4px 14px',
-                          borderRadius: '20px',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          backgroundColor: statusColor + '22',
+                          padding: '4px 12px',
+                          borderRadius: THEME.radiusPill,
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          backgroundColor: statusColor + '18',
                           color: statusColor,
+                          border: `1px solid ${statusColor}40`,
                           whiteSpace: 'nowrap',
                         }}
                       >
@@ -1846,122 +1055,83 @@ export const Attendance = () => {
                       </span>
                     </div>
 
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: '12px',
-                      marginBottom: '12px',
-                    }}>
-                      <div style={{
-                        background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                        borderRadius: '10px',
-                        padding: '12px',
-                        border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                        display: 'flex',
-                        flexDirection: 'column',
-                      }}>
-                        <div style={{
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          color: '#10B981',
-                          marginBottom: '6px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}>
-                          <span>✅</span> Check In
-                        </div>
-                        <div style={{
-                          fontSize: '16px',
-                          fontWeight: 700,
-                          color: theme.dark ? '#F1F5F9' : '#0F172A',
-                        }}>
-                          {formatTime(checkInDate)}
-                        </div>
-                        {item.check_in_address && (
-                          <div style={{
-                            fontSize: '11px',
-                            color: theme.dark ? '#94A3B8' : '#64748B',
-                            marginTop: '6px',
-                            lineHeight: '1.4',
-                            wordBreak: 'break-word',
-                          }}>
-                            📍 {item.check_in_address}
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={{
-                        background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                        borderRadius: '10px',
-                        padding: '12px',
-                        border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                        display: 'flex',
-                        flexDirection: 'column',
-                      }}>
-                        <div style={{
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          color: '#EF4444',
-                          marginBottom: '6px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}>
-                          <span>📤</span> Check Out
-                        </div>
-                        <div style={{
-                          fontSize: '16px',
-                          fontWeight: 700,
-                          color: theme.dark ? '#F1F5F9' : '#0F172A',
-                        }}>
-                          {formatTime(checkOutDate)}
-                        </div>
-                        {item.check_out_address && (
-                          <div style={{
-                            fontSize: '11px',
-                            color: theme.dark ? '#94A3B8' : '#64748B',
-                            marginTop: '6px',
-                            lineHeight: '1.4',
-                            wordBreak: 'break-word',
-                          }}>
-                            📍 {item.check_out_address}
-                          </div>
-                        )}
-                      </div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: '10px',
+                        marginBottom: '10px',
+                      }}
+                    >
+                      <InfoBox
+                        dark={dark}
+                        color={THEME.primary}
+                        icon="✓"
+                        label="Check In"
+                        time={formatTime(checkInDate)}
+                        address={item.check_in_address}
+                      />
+                      <InfoBox
+                        dark={dark}
+                        color={THEME.red}
+                        icon="↑"
+                        label="Check Out"
+                        time={formatTime(checkOutDate)}
+                        address={item.check_out_address}
+                      />
                     </div>
 
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'flex-start',
-                      alignItems: 'center',
-                      paddingTop: '10px',
-                      borderTop: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                    }}>
-                      <div style={{
+                    <div
+                      style={{
                         display: 'flex',
+                        justifyContent: 'space-between',
                         alignItems: 'center',
-                        gap: '8px',
-                      }}>
-                        <span style={{
-                          fontSize: '13px',
-                          color: theme.dark ? '#94A3B8' : '#64748B',
-                        }}>
-                          ⏱️ Working Hours:
-                        </span>
-                        <span style={{
+                        paddingTop: '10px',
+                        borderTop: `1px solid ${border}`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          color: textSecondary,
+                          fontWeight: 700,
+                        }}
+                      >
+                        ⏱️ Working Hours
+                      </div>
+                      <div
+                        style={{
                           fontSize: '16px',
                           fontWeight: 800,
-                          color: item.working_hours > 8 ? '#10B981' : item.working_hours > 4 ? '#F59E0B' : '#EF4444',
-                        }}>
-                          {item.working_hours ? `${item.working_hours}h` : '—'}
-                        </span>
+                          color:
+                            item.working_hours > 8
+                              ? THEME.primary
+                              : item.working_hours > 4
+                              ? THEME.amber
+                              : THEME.red,
+                        }}
+                      >
+                        {item.working_hours ? `${item.working_hours}h` : '—'}
                       </div>
                     </div>
+
+                    {item.forgotten_checkout && (
+                      <div
+                        style={{
+                          marginTop: '10px',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          background: THEME.orangeSoft,
+                          color: '#B45309',
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          display: 'inline-block',
+                          border: `1px solid ${THEME.orange}40`,
+                        }}
+                      >
+                        ⚠️ Forgotten check-out
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -1970,7 +1140,9 @@ export const Attendance = () => {
         )}
       </div>
 
-      {/* DETAIL MODAL - FIXED with proper time display */}
+      {/* ============================================ */}
+      {/* DETAIL MODAL (unchanged structure) */}
+      {/* ============================================ */}
       {showDetailModal && selectedRecord && (
         <div
           style={{
@@ -1981,58 +1153,62 @@ export const Attendance = () => {
             justifyContent: 'center',
             padding: '16px',
             background: 'rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(4px)',
+            backdropFilter: 'blur(6px)',
             zIndex: 1000,
-            animation: 'fadeIn 0.2s ease-out',
           }}
           onClick={() => setShowDetailModal(false)}
         >
           <div
             style={{
-              background: theme.dark ? '#1E293B' : '#FFFFFF',
-              borderRadius: '16px',
+              background: cardBg,
+              borderRadius: THEME.radiusXl,
               padding: '24px',
               maxWidth: '420px',
               width: '100%',
               maxHeight: '85vh',
               overflowY: 'auto',
               boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-              animation: 'slideUp 0.3s ease-out',
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-              marginBottom: '16px',
-              paddingBottom: '12px',
-              borderBottom: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-            }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: '16px',
+                paddingBottom: '12px',
+                borderBottom: `1px solid ${border}`,
+              }}
+            >
               <div>
-                <div style={{
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}>
-                  📋 Attendance Details
+                <div
+                  style={{
+                    fontSize: '18px',
+                    fontWeight: 800,
+                    color: textPrimary,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  📋 Details
                 </div>
-                <div style={{
-                  fontSize: '13px',
-                  color: theme.dark ? '#94A3B8' : '#64748B',
-                  marginTop: '2px',
-                }}>
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: textSecondary,
+                    marginTop: '2px',
+                  }}
+                >
                   {formatDate(selectedRecord.attendance_date)}
                 </div>
               </div>
               <button
                 onClick={() => setShowDetailModal(false)}
                 style={{
-                  fontSize: '24px',
-                  color: theme.dark ? '#94A3B8' : '#94A3B8',
+                  fontSize: '22px',
+                  color: textMuted,
                   cursor: 'pointer',
                   background: 'none',
                   border: 'none',
@@ -2044,146 +1220,158 @@ export const Attendance = () => {
               </button>
             </div>
 
-            <div style={{
-              background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-              padding: '12px',
-              borderRadius: '10px',
-              border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-              marginBottom: '16px',
-            }}>
-              <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>Status</div>
-              <div style={{
-                fontSize: '15px',
-                fontWeight: 700,
-                color: getStatusColor(selectedRecord.status, theme),
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}>
-                <span style={{
-                  display: 'inline-block',
-                  width: '10px',
-                  height: '10px',
-                  borderRadius: '50%',
-                  background: getStatusColor(selectedRecord.status, theme),
-                }} />
+            <div
+              style={{
+                background: dark ? '#0F172A' : THEME.primarySoft,
+                padding: '14px',
+                borderRadius: THEME.radiusMd,
+                marginBottom: '14px',
+                border: `1px solid ${THEME.primary}30`,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  color: THEME.primary,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '4px',
+                }}
+              >
+                Status
+              </div>
+              <div
+                style={{
+                  fontSize: '16px',
+                  fontWeight: 800,
+                  color: getStatusColor(selectedRecord.status, theme),
+                }}
+              >
+                {getStatusIcon(selectedRecord.status)}{' '}
                 {getStatusLabel(selectedRecord.status)}
               </div>
             </div>
 
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '12px',
-              marginBottom: '16px',
-            }}>
-              <div style={{
-                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                padding: '12px',
-                borderRadius: '10px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-              }}>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>Date</div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
-                  {formatDate(selectedRecord.attendance_date)}
-                </div>
-              </div>
-              <div style={{
-                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                padding: '12px',
-                borderRadius: '10px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-              }}>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>Reporting Location</div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
-                  📍 {selectedRecord.reporting_location || 'N/A'}
-                </div>
-              </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '10px',
+                marginBottom: '14px',
+              }}
+            >
+              <DetailBox
+                dark={dark}
+                label="Date"
+                value={formatDate(selectedRecord.attendance_date)}
+                cardBg={cardBg}
+                textPrimary={textPrimary}
+                textMuted={textMuted}
+                border={border}
+              />
+              <DetailBox
+                dark={dark}
+                label="Reporting Location"
+                value={`📍 ${selectedRecord.reporting_location || 'N/A'}`}
+                cardBg={cardBg}
+                textPrimary={textPrimary}
+                textMuted={textMuted}
+                border={border}
+              />
             </div>
 
-            {/* FIXED: Time display section with proper formatting */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
-              gap: '12px',
-              marginBottom: '16px',
-            }}>
-              <div style={{
-                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                padding: '12px',
-                borderRadius: '10px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-              }}>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>
-                  Check In
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: '#10B981' }}>
-                  {formatTimeDisplay(selectedRecord.check_in_time)}
-                </div>
-              </div>
-              <div style={{
-                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                padding: '12px',
-                borderRadius: '10px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-              }}>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>
-                  Check Out
-                </div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: '#EF4444' }}>
-                  {formatTimeDisplay(selectedRecord.check_out_time)}
-                </div>
-              </div>
-              <div style={{
-                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                padding: '12px',
-                borderRadius: '10px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-              }}>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: theme.dark ? '#94A3B8' : '#64748B', textTransform: 'uppercase' }}>
-                  Working Hours
-                </div>
-                <div style={{
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  color: selectedRecord.working_hours > 8 ? '#10B981' : selectedRecord.working_hours > 4 ? '#F59E0B' : '#EF4444',
-                }}>
-                  {selectedRecord.working_hours ? `${selectedRecord.working_hours}h` : '0h'}
-                </div>
-              </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr',
+                gap: '10px',
+                marginBottom: '14px',
+              }}
+            >
+              <DetailBox
+                dark={dark}
+                label="Check In"
+                value={formatTimeDisplay(selectedRecord.check_in_time)}
+                valueColor={THEME.primary}
+                cardBg={cardBg}
+                textPrimary={textPrimary}
+                textMuted={textMuted}
+                border={border}
+              />
+              <DetailBox
+                dark={dark}
+                label="Check Out"
+                value={formatTimeDisplay(selectedRecord.check_out_time)}
+                valueColor={THEME.red}
+                cardBg={cardBg}
+                textPrimary={textPrimary}
+                textMuted={textMuted}
+                border={border}
+              />
+              <DetailBox
+                dark={dark}
+                label="Hours"
+                value={`${selectedRecord.working_hours || 0}h`}
+                valueColor={THEME.blue}
+                cardBg={cardBg}
+                textPrimary={textPrimary}
+                textMuted={textMuted}
+                border={border}
+              />
             </div>
 
             {getProjects(selectedRecord).length > 0 && (
-              <div style={{
-                marginBottom: '16px',
-                padding: '12px',
-                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                borderRadius: '10px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-              }}>
-                <div style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  color: theme.dark ? '#94A3B8' : '#64748B',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.3px',
-                  marginBottom: '8px',
-                }}>
+              <div
+                style={{
+                  marginBottom: '14px',
+                  padding: '14px',
+                  background: dark ? '#0F172A' : '#F8FAFC',
+                  borderRadius: THEME.radiusMd,
+                  border: `1px solid ${border}`,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    color: textMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    marginBottom: '10px',
+                  }}
+                >
                   📋 Projects
                 </div>
                 {getProjects(selectedRecord).map((p, i) => (
-                  <div key={i} style={{
-                    padding: '8px 10px',
-                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
-                    borderRadius: '6px',
-                    marginBottom: i < getProjects(selectedRecord).length - 1 ? '6px' : 0,
-                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                  }}>
-                    <div style={{ fontWeight: 600, color: theme.dark ? '#F1F5F9' : '#0F172A', fontSize: '13px' }}>
+                  <div
+                    key={i}
+                    style={{
+                      padding: '10px 12px',
+                      background: cardBg,
+                      borderRadius: '10px',
+                      marginBottom:
+                        i < getProjects(selectedRecord).length - 1 ? '6px' : 0,
+                      border: `1px solid ${border}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        color: textPrimary,
+                        fontSize: '12px',
+                      }}
+                    >
                       📌 {p.name}
                     </div>
                     {p.details && (
-                      <div style={{ fontSize: '12px', color: theme.dark ? '#94A3B8' : '#64748B', marginTop: '2px' }}>
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          color: textSecondary,
+                          marginTop: '3px',
+                        }}
+                      >
                         {p.details}
                       </div>
                     )}
@@ -2193,24 +1381,34 @@ export const Attendance = () => {
             )}
 
             {selectedRecord.remarks && (
-              <div style={{
-                marginBottom: '16px',
-                padding: '12px',
-                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                borderRadius: '10px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-              }}>
-                <div style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  color: theme.dark ? '#94A3B8' : '#64748B',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.3px',
-                  marginBottom: '4px',
-                }}>
+              <div
+                style={{
+                  marginBottom: '16px',
+                  padding: '12px',
+                  background: dark ? '#0F172A' : '#F8FAFC',
+                  borderRadius: THEME.radiusMd,
+                  border: `1px solid ${border}`,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    color: textMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    marginBottom: '4px',
+                  }}
+                >
                   📝 Remarks
                 </div>
-                <div style={{ fontSize: '13px', color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: textPrimary,
+                    lineHeight: 1.4,
+                  }}
+                >
                   {selectedRecord.remarks}
                 </div>
               </div>
@@ -2220,1531 +1418,20 @@ export const Attendance = () => {
               onClick={() => setShowDetailModal(false)}
               style={{
                 width: '100%',
-                padding: '12px',
-                borderRadius: '10px',
+                padding: '13px',
+                borderRadius: THEME.radiusMd,
                 border: 'none',
-                background: 'linear-gradient(135deg, #3B82F6, #6366F1)',
+                background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
                 color: '#FFFFFF',
-                fontWeight: 700,
+                fontWeight: 800,
                 fontSize: '14px',
                 cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                boxShadow: '0 4px 14px rgba(59,130,246,0.3)',
-                fontFamily: 'Inter, sans-serif',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'scale(1.02)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
+                boxShadow: THEME.shadowGreen,
+                fontFamily: THEME.font,
+                letterSpacing: '0.3px',
               }}
             >
               Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ACO FORM MODAL */}
-      {showACOForm && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px',
-          background: 'rgba(0,0,0,0.6)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 1000,
-          animation: 'fadeIn 0.2s ease-out',
-        }} onClick={() => setShowACOForm(false)}>
-          <div style={{
-            background: theme.dark ? '#1E293B' : '#FFFFFF',
-            borderRadius: '16px',
-            padding: '24px',
-            maxWidth: '480px',
-            width: '100%',
-            maxHeight: '85vh',
-            overflowY: 'auto',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-            animation: 'slideUp 0.3s ease-out',
-          }} onClick={(e) => e.stopPropagation()}>
-            
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '16px',
-            }}>
-              <div>
-                <h3 style={{
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                }}>
-                  🔄 Mark ACO Attendance
-                </h3>
-                <p style={{
-                  fontSize: '12px',
-                  color: theme.dark ? '#94A3B8' : '#64748B',
-                  marginTop: '2px',
-                }}>
-                  Fill attendance for days you forgot to check out
-                </p>
-              </div>
-              <button
-                onClick={() => setShowACOForm(false)}
-                style={{
-                  fontSize: '24px',
-                  color: theme.dark ? '#94A3B8' : '#94A3B8',
-                  cursor: 'pointer',
-                  background: 'none',
-                  border: 'none',
-                  padding: '4px',
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{
-              background: '#FEF3C7',
-              padding: '12px 14px',
-              borderRadius: '10px',
-              marginBottom: '16px',
-              border: '1px solid #F59E0B',
-            }}>
-              <p style={{
-                fontSize: '12px',
-                color: '#92400E',
-                lineHeight: '1.5',
-                margin: 0,
-              }}>
-                ⏰ <strong>Deadline Rules:</strong><br/>
-                • Before 10 AM next day → <span style={{ color: '#10B981' }}>Present (P)</span><br/>
-                • 10 AM to 72 hours → <span style={{ color: '#F59E0B' }}>Delayed (D)</span><br/>
-                • After 72 hours → <span style={{ color: '#DC2626' }}>Beyond Delay (B)</span>
-              </p>
-            </div>
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={{ 
-                fontSize: '12px', 
-                fontWeight: 600, 
-                color: theme.dark ? '#94A3B8' : '#64748B',
-                display: 'block',
-                marginBottom: '4px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.3px',
-              }}>
-                Select ACO Date *
-              </label>
-              <select
-                value={selectedACODate}
-                onChange={(e) => {
-                  setSelectedACODate(e.target.value);
-                  loadACODetails(e.target.value);
-                }}
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                  fontSize: '14px',
-                  outline: 'none',
-                  fontFamily: 'Inter, sans-serif',
-                  cursor: 'pointer',
-                }}
-              >
-                <option value="" style={{ color: '#000000', background: '#FFFFFF' }}>Select date...</option>
-                {acoDates.map(date => (
-                  <option key={date} value={date} style={{ color: '#000000', background: '#FFFFFF' }}>
-                    {formatDate(date)}
-                  </option>
-                ))}
-              </select>
-              {acoLoading && (
-                <div style={{ fontSize: '12px', color: '#8B5CF6', marginTop: '4px' }}>
-                  ⏳ Loading details...
-                </div>
-              )}
-              {acoDates.length === 0 && !acoLoading && (
-                <div style={{ fontSize: '12px', color: theme.dark ? '#94A3B8' : '#94A3B8', marginTop: '4px' }}>
-                  No ACO entries available
-                </div>
-              )}
-            </div>
-
-            {selectedACODate && acoDetails && (
-              <>
-                <div style={{
-                  background: '#EDE9FE',
-                  padding: '14px 16px',
-                  borderRadius: '12px',
-                  border: '1px solid #8B5CF6',
-                  marginBottom: '16px',
-                }}>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '10px',
-                  }}>
-                    <div>
-                      <div style={{ fontSize: '10px', fontWeight: 600, color: '#5B21B6', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
-                        ✅ Check In
-                      </div>
-                      <div style={{ fontSize: '15px', fontWeight: 700, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
-                        {formatTime(acoDetails.check_in_time)}
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#5B21B6', marginTop: '2px' }}>
-                        📍 {acoDetails.check_in_address || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '10px', fontWeight: 600, color: '#5B21B6', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
-                        📤 Auto Check Out
-                      </div>
-                      <div style={{ fontSize: '15px', fontWeight: 700, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
-                        {acoDetails.check_out_time ? formatTime(acoDetails.check_out_time) : '11:59 PM'}
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#5B21B6', marginTop: '2px' }}>
-                        📍 {acoDetails.check_out_address || 'Auto captured'}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{
-                    marginTop: '10px',
-                    paddingTop: '10px',
-                    borderTop: '1px solid rgba(139,92,246,0.2)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}>
-                    <span style={{ fontSize: '12px', color: '#5B21B6', fontWeight: 500 }}>
-                      ⏱️ Working Hours:
-                    </span>
-                    <span style={{ fontSize: '16px', fontWeight: 800, color: '#5B21B6' }}>
-                      {acoDetails.working_hours ? `${acoDetails.working_hours}h` : '—'}
-                    </span>
-                  </div>
-                </div>
-
-                <div style={{
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  marginBottom: '16px',
-                  background: acoStatus === 'P' ? '#DCFCE7' : acoStatus === 'D' ? '#FEF3C7' : '#FEE2E2',
-                  border: `1px solid ${acoStatus === 'P' ? '#10B981' : acoStatus === 'D' ? '#F59E0B' : '#DC2626'}`,
-                }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.dark ? '#F1F5F9' : '#0F172A' }}>
-                    Status:
-                    <span style={{
-                      marginLeft: '8px',
-                      fontSize: '15px',
-                      fontWeight: 700,
-                      color: acoStatus === 'P' ? '#10B981' : acoStatus === 'D' ? '#F59E0B' : '#DC2626',
-                    }}>
-                      {acoStatus === 'P' ? '✅ Present' : acoStatus === 'D' ? '⏳ Delayed' : '🚫 Beyond Delay'}
-                    </span>
-                  </div>
-                  <div style={{ 
-                    fontSize: '11px', 
-                    color: acoStatus === 'P' ? '#166534' : acoStatus === 'D' ? '#92400E' : '#991B1B',
-                    marginTop: '2px',
-                  }}>
-                    {acoStatus === 'P' && '✅ Within deadline - Will be marked as Present'}
-                    {acoStatus === 'D' && '⏳ After 10 AM but within 72 hours - Will be marked as Delayed'}
-                    {acoStatus === 'B' && '🚫 After 72 hours - Will be marked as Beyond Delay'}
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '14px' }}>
-                  <label style={{ 
-                    fontSize: '12px', 
-                    fontWeight: 600, 
-                    color: theme.dark ? '#94A3B8' : '#64748B',
-                    display: 'block',
-                    marginBottom: '4px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.3px',
-                  }}>
-                    Reporting Location *
-                  </label>
-                  <select
-                    value={acoFormData.reportingLocation}
-                    onChange={(e) => setAcoFormData({ ...acoFormData, reportingLocation: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: '10px',
-                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                      background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                      color: theme.dark ? '#F1F5F9' : '#0F172A',
-                      fontSize: '14px',
-                      outline: 'none',
-                      fontFamily: 'Inter, sans-serif',
-                    }}
-                  >
-                    <option value="" style={{ color: '#000000', background: '#FFFFFF' }}>Select location...</option>
-                    {locations.map((loc) => (
-                      <option key={loc} value={loc} style={{ color: '#000000', background: '#FFFFFF' }}>
-                        {loc}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{
-                  fontSize: '15px',
-                  fontWeight: 700,
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                  marginBottom: '14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}>
-                  📋 Project Details
-                </div>
-
-                {acoProjectFields.map((field, index) => (
-                  <div key={index} style={{
-                    background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                    borderRadius: '12px',
-                    padding: '14px',
-                    marginBottom: '12px',
-                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                    position: 'relative',
-                  }}>
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: '10px',
-                    }}>
-                      <span style={{
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        color: theme.dark ? '#F1F5F9' : '#0F172A',
-                      }}>
-                        📌 Project {index + 1} {index === 0 && <span style={{ color: '#EF4444' }}>*</span>}
-                      </span>
-                      {acoProjectFields.length > 1 && (
-                        <button
-                          onClick={() => removeAcoProjectField(index)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#EF4444',
-                            cursor: 'pointer',
-                            fontSize: '16px',
-                            padding: '4px 8px',
-                            borderRadius: '6px',
-                          }}
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-
-                    <div style={{ marginBottom: '10px' }}>
-                      <label style={{ 
-                        fontSize: '11px', 
-                        fontWeight: 600, 
-                        color: index === 0 ? '#EF4444' : (theme.dark ? '#94A3B8' : '#64748B'),
-                        display: 'block',
-                        marginBottom: '4px',
-                      }}>
-                        Project Name {index === 0 && '*'}
-                      </label>
-                      <input
-                        type="text"
-                        value={field.project}
-                        onChange={(e) => updateAcoProjectField(index, 'project', e.target.value)}
-                        placeholder="Search project..."
-                        list="projects-list"
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          borderRadius: '10px',
-                          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                          background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                          color: theme.dark ? '#F1F5F9' : '#0F172A',
-                          fontSize: '14px',
-                          outline: 'none',
-                          fontFamily: 'Inter, sans-serif',
-                        }}
-                      />
-                      <datalist id="projects-list">
-                        {projects.map((p) => (
-                          <option key={p} value={p} style={{ color: '#000000', background: '#FFFFFF' }} />
-                        ))}
-                      </datalist>
-                    </div>
-
-                    <div style={{ marginBottom: 0 }}>
-                      <label style={{ 
-                        fontSize: '11px', 
-                        fontWeight: 600, 
-                        color: index === 0 ? '#EF4444' : (theme.dark ? '#94A3B8' : '#64748B'),
-                        display: 'block',
-                        marginBottom: '4px',
-                      }}>
-                        Works Completed {index === 0 && '*'}
-                      </label>
-                      <textarea
-                        value={field.workDone}
-                        onChange={(e) => updateAcoProjectField(index, 'workDone', e.target.value)}
-                        rows="2"
-                        placeholder="Describe work done..."
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px',
-                          borderRadius: '10px',
-                          border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                          background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                          color: theme.dark ? '#F1F5F9' : '#0F172A',
-                          fontSize: '14px',
-                          outline: 'none',
-                          fontFamily: 'Inter, sans-serif',
-                          resize: 'vertical',
-                          minHeight: '40px',
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-
-                {acoProjectFields.length < 6 && (
-                  <button
-                    onClick={addAcoProjectField}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      borderRadius: '10px',
-                      border: `2px dashed ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                      background: 'transparent',
-                      color: theme.dark ? '#94A3B8' : '#94A3B8',
-                      fontWeight: 600,
-                      fontSize: '14px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      marginBottom: '16px',
-                    }}
-                  >
-                    ➕ Add Project
-                  </button>
-                )}
-
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ 
-                    fontSize: '11px', 
-                    fontWeight: 600, 
-                    color: theme.dark ? '#94A3B8' : '#64748B',
-                    display: 'block',
-                    marginBottom: '4px',
-                  }}>
-                    Remarks
-                  </label>
-                  <textarea
-                    value={acoFormData.remarks}
-                    onChange={(e) => setAcoFormData({ ...acoFormData, remarks: e.target.value })}
-                    rows="2"
-                    placeholder="Any additional remarks..."
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '10px',
-                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                      background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                      color: theme.dark ? '#F1F5F9' : '#0F172A',
-                      fontSize: '14px',
-                      outline: 'none',
-                      fontFamily: 'Inter, sans-serif',
-                      resize: 'vertical',
-                      minHeight: '40px',
-                    }}
-                  />
-                </div>
-
-                <button
-                  onClick={handleAcoSubmit}
-                  disabled={acoSubmitting}
-                  style={{
-                    width: '100%',
-                    padding: '14px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: 'linear-gradient(135deg, #8B5CF6, #6D28D9)',
-                    color: '#FFFFFF',
-                    fontSize: '16px',
-                    fontWeight: 700,
-                    cursor: acoSubmitting ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.2s ease',
-                    opacity: acoSubmitting ? 0.7 : 1,
-                    boxShadow: '0 4px 14px rgba(139,92,246,0.3)',
-                    fontFamily: 'Inter, sans-serif',
-                    letterSpacing: '0.5px',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!acoSubmitting) {
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                      e.currentTarget.style.boxShadow = '0 6px 20px rgba(139,92,246,0.4)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!acoSubmitting) {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 4px 14px rgba(139,92,246,0.3)';
-                    }
-                  }}
-                >
-                  {acoSubmitting ? 'Submitting...' : '📤 SUBMIT ACO ATTENDANCE'}
-                </button>
-              </>
-            )}
-
-            {selectedACODate && !acoDetails && !acoLoading && (
-              <div style={{
-                padding: '20px',
-                textAlign: 'center',
-                color: theme.dark ? '#94A3B8' : '#64748B',
-                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                borderRadius: '10px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-              }}>
-                <div style={{ fontSize: '32px', marginBottom: '8px' }}>🔍</div>
-                <p>No ACO record found for this date</p>
-                <p style={{ fontSize: '12px', marginTop: '4px' }}>Please select a different date</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Check In Modal */}
-      {showCheckInModal && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px',
-          background: 'rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 1000,
-          animation: 'fadeIn 0.2s ease-out',
-        }} onClick={() => {
-          setShowCheckInModal(false);
-          setLocationFetched(false);
-        }}>
-          <div style={{
-            background: theme.dark ? '#1E293B' : '#FFFFFF',
-            borderRadius: '16px',
-            padding: '24px',
-            maxWidth: '400px',
-            width: '100%',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-            animation: 'slideUp 0.3s ease-out',
-          }} onClick={(e) => e.stopPropagation()}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '16px',
-            }}>
-              <h3 style={{
-                fontSize: '18px',
-                fontWeight: 700,
-                color: theme.dark ? '#F1F5F9' : '#0F172A',
-              }}>
-                Check In
-              </h3>
-              <button
-                onClick={() => {
-                  setShowCheckInModal(false);
-                  setLocationFetched(false);
-                }}
-                style={{
-                  fontSize: '24px',
-                  color: theme.dark ? '#94A3B8' : '#94A3B8',
-                  cursor: 'pointer',
-                  background: 'none',
-                  border: 'none',
-                  padding: '4px',
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <p style={{
-              fontSize: '13px',
-              color: theme.dark ? '#94A3B8' : '#64748B',
-              marginBottom: '16px',
-            }}>
-              {new Date().toLocaleDateString('en-IN', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric',
-                timeZone: 'Asia/Kolkata'
-              })}
-            </p>
-
-            <div style={{
-              background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-              borderRadius: '12px',
-              padding: '16px',
-              marginBottom: '16px',
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                marginBottom: '8px',
-              }}>
-                <span style={{ fontSize: '18px' }}>📍</span>
-                <span style={{
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                }}>
-                  Current Location
-                </span>
-              </div>
-              
-              {fetchingLocation ? (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'rgba(59,130,246,0.1)',
-                  color: '#1E40AF',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                }}>
-                  <span style={{ display: 'inline-block' }}>⏳</span>
-                  Fetching location...
-                </div>
-              ) : locationError ? (
-                <div style={{
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'rgba(239,68,68,0.1)',
-                  color: '#DC2626',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                }}>
-                  ⚠️ {locationError}
-                </div>
-              ) : location ? (
-                <>
-                  <div style={{
-                    padding: '8px 12px',
-                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
-                    borderRadius: '8px',
-                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                    fontSize: '13px',
-                    color: theme.dark ? '#F1F5F9' : '#0F172A',
-                    wordBreak: 'break-word',
-                  }}>
-                    📍 {address || 'Location captured'}
-                  </div>
-                  <div style={{
-                    fontSize: '11px',
-                    color: theme.dark ? '#94A3B8' : '#94A3B8',
-                    marginTop: '4px',
-                  }}>
-                    Lat: {location.lat.toFixed(6)}, Lng: {location.lng.toFixed(6)}
-                  </div>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    marginTop: '6px',
-                    padding: '6px 12px',
-                    borderRadius: '8px',
-                    background: 'rgba(16,185,129,0.1)',
-                    color: '#10B981',
-                    fontSize: '13px',
-                    fontWeight: 500,
-                  }}>
-                    ✅ Location captured
-                  </div>
-                </>
-              ) : (
-                <div style={{
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'rgba(239,68,68,0.1)',
-                  color: '#DC2626',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                }}>
-                  ⚠️ Click refresh to get location
-                </div>
-              )}
-              
-              <button
-                onClick={async () => {
-                  await getCurrentLocation();
-                }}
-                style={{
-                  marginTop: '12px',
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                  background: 'transparent',
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
-              >
-                🔄 Refresh Location
-              </button>
-            </div>
-
-            <div style={{
-              display: 'flex',
-              gap: '12px',
-            }}>
-              <button
-                onClick={() => {
-                  setShowCheckInModal(false);
-                  setLocationFetched(false);
-                }}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  borderRadius: '10px',
-                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                  background: 'transparent',
-                  color: theme.dark ? '#94A3B8' : '#64748B',
-                  fontWeight: 600,
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCheckIn}
-                disabled={submitting}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  color: '#FFFFFF',
-                  fontWeight: 700,
-                  fontSize: '14px',
-                  cursor: submitting ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                  background: 'linear-gradient(135deg, #059669, #10B981)',
-                  opacity: submitting ? 0.6 : 1,
-                  boxShadow: '0 4px 14px rgba(5,150,105,0.3)',
-                }}
-              >
-                {submitting ? 'Processing...' : 'Confirm Check In'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Check Out Modal */}
-      {showCheckOutModal && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px',
-          background: 'rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 1000,
-          animation: 'fadeIn 0.2s ease-out',
-        }} onClick={() => {
-          setShowCheckOutModal(false);
-          setLocationFetched(false);
-        }}>
-          <div style={{
-            background: theme.dark ? '#1E293B' : '#FFFFFF',
-            borderRadius: '16px',
-            padding: '24px',
-            maxWidth: '400px',
-            width: '100%',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-            animation: 'slideUp 0.3s ease-out',
-          }} onClick={(e) => e.stopPropagation()}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '16px',
-            }}>
-              <h3 style={{
-                fontSize: '18px',
-                fontWeight: 700,
-                color: theme.dark ? '#F1F5F9' : '#0F172A',
-              }}>
-                Check Out
-              </h3>
-              <button
-                onClick={() => {
-                  setShowCheckOutModal(false);
-                  setLocationFetched(false);
-                }}
-                style={{
-                  fontSize: '24px',
-                  color: theme.dark ? '#94A3B8' : '#94A3B8',
-                  cursor: 'pointer',
-                  background: 'none',
-                  border: 'none',
-                  padding: '4px',
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <p style={{
-              fontSize: '13px',
-              color: theme.dark ? '#94A3B8' : '#64748B',
-              marginBottom: '16px',
-            }}>
-              {new Date().toLocaleDateString('en-IN', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric',
-                timeZone: 'Asia/Kolkata'
-              })}
-            </p>
-
-            {checkInStatus && (
-              <div style={{
-                background: '#DCFCE7',
-                padding: '10px 14px',
-                borderRadius: '10px',
-                marginBottom: '16px',
-                border: '1px solid #10B981',
-              }}>
-                <div style={{
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: '#166534',
-                }}>
-                  ✅ Checked in at {formatTime(checkInStatus.check_in_time)}
-                </div>
-                {checkInStatus.check_in_address && (
-                  <div style={{
-                    fontSize: '11px',
-                    color: '#166534AA',
-                    marginTop: '2px',
-                  }}>
-                    📍 {checkInStatus.check_in_address}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div style={{
-              background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-              borderRadius: '12px',
-              padding: '16px',
-              marginBottom: '16px',
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                marginBottom: '8px',
-              }}>
-                <span style={{ fontSize: '18px' }}>📍</span>
-                <span style={{
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                }}>
-                  Check-out Location
-                </span>
-              </div>
-              
-              {fetchingLocation ? (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'rgba(59,130,246,0.1)',
-                  color: '#1E40AF',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                }}>
-                  <span style={{ display: 'inline-block' }}>⏳</span>
-                  Fetching location...
-                </div>
-              ) : locationError ? (
-                <div style={{
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'rgba(239,68,68,0.1)',
-                  color: '#DC2626',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                }}>
-                  ⚠️ {locationError}
-                </div>
-              ) : location ? (
-                <>
-                  <div style={{
-                    padding: '8px 12px',
-                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
-                    borderRadius: '8px',
-                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                    fontSize: '13px',
-                    color: theme.dark ? '#F1F5F9' : '#0F172A',
-                    wordBreak: 'break-word',
-                  }}>
-                    📍 {address || 'Location captured'}
-                  </div>
-                  <div style={{
-                    fontSize: '11px',
-                    color: theme.dark ? '#94A3B8' : '#94A3B8',
-                    marginTop: '4px',
-                  }}>
-                    Lat: {location.lat.toFixed(6)}, Lng: {location.lng.toFixed(6)}
-                  </div>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    marginTop: '6px',
-                    padding: '6px 12px',
-                    borderRadius: '8px',
-                    background: 'rgba(16,185,129,0.1)',
-                    color: '#10B981',
-                    fontSize: '13px',
-                    fontWeight: 500,
-                  }}>
-                    ✅ Location captured
-                  </div>
-                </>
-              ) : (
-                <div style={{
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'rgba(239,68,68,0.1)',
-                  color: '#DC2626',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                }}>
-                  ⚠️ Click refresh to get location
-                </div>
-              )}
-              
-              <button
-                onClick={async () => {
-                  await getCurrentLocation();
-                }}
-                style={{
-                  marginTop: '12px',
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                  background: 'transparent',
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
-              >
-                🔄 Refresh Location
-              </button>
-            </div>
-
-            {checkInStatus && (
-              <div style={{
-                padding: '8px 12px',
-                borderRadius: '8px',
-                background: 'rgba(139,92,246,0.1)',
-                marginBottom: '16px',
-                border: '1px solid rgba(139,92,246,0.2)',
-              }}>
-                <div style={{
-                  fontSize: '12px',
-                  color: '#5B21B6',
-                }}>
-                  ⏱️ Estimated working hours: {(() => {
-                    const now = new Date();
-                    const checkIn = new Date(checkInStatus.check_in_time);
-                    const diff = (now - checkIn) / 3600000;
-                    return diff.toFixed(2) + 'h';
-                  })()}
-                </div>
-              </div>
-            )}
-
-            <div style={{
-              display: 'flex',
-              gap: '12px',
-            }}>
-              <button
-                onClick={() => {
-                  setShowCheckOutModal(false);
-                  setLocationFetched(false);
-                }}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  borderRadius: '10px',
-                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                  background: 'transparent',
-                  color: theme.dark ? '#94A3B8' : '#64748B',
-                  fontWeight: 600,
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCheckOut}
-                disabled={submitting}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  color: '#FFFFFF',
-                  fontWeight: 700,
-                  fontSize: '14px',
-                  cursor: submitting ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                  background: 'linear-gradient(135deg, #DC2626, #EF4444)',
-                  opacity: submitting ? 0.6 : 1,
-                  boxShadow: '0 4px 14px rgba(220,38,38,0.3)',
-                }}
-              >
-                {submitting ? 'Processing...' : 'Confirm Check Out'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Attendance Form Modal */}
-      {showForm && !isAttendanceComplete && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '16px',
-          background: 'rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 1000,
-          animation: 'fadeIn 0.2s ease-out',
-        }} onClick={() => setShowForm(false)}>
-          <div style={{
-            background: theme.dark ? '#1E293B' : '#FFFFFF',
-            borderRadius: '16px',
-            padding: '24px',
-            maxWidth: '480px',
-            width: '100%',
-            maxHeight: '85vh',
-            overflowY: 'auto',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-            animation: 'slideUp 0.3s ease-out',
-          }} onClick={(e) => e.stopPropagation()}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '16px',
-            }}>
-              <div>
-                <h3 style={{
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                }}>
-                  📋 Attendance Form
-                </h3>
-                <p style={{
-                  fontSize: '12px',
-                  color: theme.dark ? '#94A3B8' : '#64748B',
-                  marginTop: '2px',
-                }}>
-                  {new Date().toLocaleDateString('en-IN', { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric',
-                    timeZone: 'Asia/Kolkata'
-                  })}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowForm(false)}
-                style={{
-                  fontSize: '24px',
-                  color: theme.dark ? '#94A3B8' : '#94A3B8',
-                  cursor: 'pointer',
-                  background: 'none',
-                  border: 'none',
-                  padding: '4px',
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{
-              background: '#FEF3C7',
-              padding: '12px 14px',
-              borderRadius: '10px',
-              marginBottom: '16px',
-              border: '1px solid #F59E0B',
-            }}>
-              <p style={{
-                fontSize: '12px',
-                color: '#92400E',
-                lineHeight: '1.5',
-                margin: 0,
-              }}>
-                ⏰ {infoMessage}
-              </p>
-            </div>
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={{ 
-                fontSize: '12px', 
-                fontWeight: 600, 
-                color: theme.dark ? '#94A3B8' : '#64748B',
-                display: 'block',
-                marginBottom: '4px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.3px',
-              }}>
-                Date of Attendance *
-              </label>
-              <input
-                type="date"
-                value={formData.attendanceDate}
-                onChange={(e) => setFormData({ ...formData, attendanceDate: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                  fontSize: '14px',
-                  outline: 'none',
-                  transition: 'all 0.2s ease',
-                  fontFamily: 'Inter, sans-serif',
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={{ 
-                fontSize: '12px', 
-                fontWeight: 600, 
-                color: theme.dark ? '#94A3B8' : '#64748B',
-                display: 'block',
-                marginBottom: '4px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.3px',
-              }}>
-                Reporting Location *
-              </label>
-              <select
-                value={formData.reportingLocation}
-                onChange={(e) => setFormData({ ...formData, reportingLocation: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                  fontSize: '14px',
-                  outline: 'none',
-                  transition: 'all 0.2s ease',
-                  fontFamily: 'Inter, sans-serif',
-                }}
-              >
-                <option value="" style={{ color: '#000000', background: '#FFFFFF' }}>Select location...</option>
-                {locations.map((loc) => (
-                  <option key={loc} value={loc} style={{ color: '#000000', background: '#FFFFFF' }}>
-                    {loc}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '12px',
-              marginBottom: '14px',
-            }}>
-              <div style={{ marginBottom: 0 }}>
-                <label style={{ 
-                  fontSize: '10px', 
-                  fontWeight: 600, 
-                  color: theme.dark ? '#94A3B8' : '#64748B',
-                  display: 'block',
-                  marginBottom: '3px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.3px',
-                }}>
-                  Check-In Time
-                </label>
-                <input
-                  type="text"
-                  value={formData.checkInTime}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '10px',
-                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                    color: theme.dark ? '#F1F5F9' : '#0F172A',
-                    fontSize: '13px',
-                    outline: 'none',
-                    fontFamily: 'Inter, sans-serif',
-                    cursor: 'not-allowed',
-                    opacity: 0.8,
-                  }}
-                  readOnly
-                />
-              </div>
-              <div style={{ marginBottom: 0 }}>
-                <label style={{ 
-                  fontSize: '10px', 
-                  fontWeight: 600, 
-                  color: theme.dark ? '#94A3B8' : '#64748B',
-                  display: 'block',
-                  marginBottom: '3px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.3px',
-                }}>
-                  Check-Out Time
-                </label>
-                <input
-                  type="text"
-                  value={formData.checkOutTime}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '10px',
-                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                    color: theme.dark ? '#F1F5F9' : '#0F172A',
-                    fontSize: '13px',
-                    outline: 'none',
-                    fontFamily: 'Inter, sans-serif',
-                    cursor: 'not-allowed',
-                    opacity: 0.8,
-                  }}
-                  readOnly
-                />
-              </div>
-            </div>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '12px',
-              marginBottom: '16px',
-            }}>
-              <div style={{ marginBottom: 0 }}>
-                <label style={{ 
-                  fontSize: '10px', 
-                  fontWeight: 600, 
-                  color: theme.dark ? '#94A3B8' : '#64748B',
-                  display: 'block',
-                  marginBottom: '3px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.3px',
-                }}>
-                  Check-In Location
-                </label>
-                <input
-                  type="text"
-                  value={formData.checkInLocation}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '10px',
-                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                    color: theme.dark ? '#F1F5F9' : '#0F172A',
-                    fontSize: '13px',
-                    outline: 'none',
-                    fontFamily: 'Inter, sans-serif',
-                    cursor: 'not-allowed',
-                    opacity: 0.8,
-                  }}
-                  readOnly
-                />
-              </div>
-              <div style={{ marginBottom: 0 }}>
-                <label style={{ 
-                  fontSize: '10px', 
-                  fontWeight: 600, 
-                  color: theme.dark ? '#94A3B8' : '#64748B',
-                  display: 'block',
-                  marginBottom: '3px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.3px',
-                }}>
-                  Check-Out Location
-                </label>
-                <input
-                  type="text"
-                  value={formData.checkOutLocation}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '10px',
-                    border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                    background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                    color: theme.dark ? '#F1F5F9' : '#0F172A',
-                    fontSize: '13px',
-                    outline: 'none',
-                    fontFamily: 'Inter, sans-serif',
-                    cursor: 'not-allowed',
-                    opacity: 0.8,
-                  }}
-                  readOnly
-                />
-              </div>
-            </div>
-
-            <div style={{
-              height: '1px',
-              background: theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-              margin: '0 0 16px 0',
-            }} />
-
-            <div style={{
-              fontSize: '15px',
-              fontWeight: 700,
-              color: theme.dark ? '#F1F5F9' : '#0F172A',
-              marginBottom: '14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}>
-              📋 Project Details
-            </div>
-
-            {projectFields.map((field, index) => (
-              <div key={index} style={{
-                background: theme.dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                borderRadius: '12px',
-                padding: '14px',
-                marginBottom: '12px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}`,
-                position: 'relative',
-              }}>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '10px',
-                }}>
-                  <span style={{
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    color: theme.dark ? '#F1F5F9' : '#0F172A',
-                  }}>
-                    📌 Project {index + 1} {index === 0 && <span style={{ color: '#EF4444' }}>*</span>}
-                  </span>
-                  {projectFields.length > 1 && (
-                    <button
-                      onClick={() => removeProjectField(index)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#EF4444',
-                        cursor: 'pointer',
-                        fontSize: '16px',
-                        padding: '4px 8px',
-                        borderRadius: '6px',
-                      }}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-
-                <div style={{ marginBottom: '10px' }}>
-                  <label style={{ 
-                    fontSize: '11px', 
-                    fontWeight: 600, 
-                    color: index === 0 ? '#EF4444' : (theme.dark ? '#94A3B8' : '#64748B'),
-                    display: 'block',
-                    marginBottom: '4px',
-                  }}>
-                    Project Name {index === 0 && '*'}
-                  </label>
-                  <input
-                    type="text"
-                    value={field.project}
-                    onChange={(e) => updateProjectField(index, 'project', e.target.value)}
-                    placeholder="Search project..."
-                    list="projects-list"
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '10px',
-                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                      background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                      color: theme.dark ? '#F1F5F9' : '#0F172A',
-                      fontSize: '14px',
-                      outline: 'none',
-                      fontFamily: 'Inter, sans-serif',
-                    }}
-                  />
-                  <datalist id="projects-list">
-                    {projects.map((p) => (
-                      <option key={p} value={p} style={{ color: '#000000', background: '#FFFFFF' }} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <div style={{ marginBottom: 0 }}>
-                  <label style={{ 
-                    fontSize: '11px', 
-                    fontWeight: 600, 
-                    color: index === 0 ? '#EF4444' : (theme.dark ? '#94A3B8' : '#64748B'),
-                    display: 'block',
-                    marginBottom: '4px',
-                  }}>
-                    Works Completed {index === 0 && '*'}
-                  </label>
-                  <textarea
-                    value={field.workDone}
-                    onChange={(e) => updateProjectField(index, 'workDone', e.target.value)}
-                    rows="2"
-                    placeholder="Describe work done..."
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: '10px',
-                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                      background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                      color: theme.dark ? '#F1F5F9' : '#0F172A',
-                      fontSize: '14px',
-                      outline: 'none',
-                      fontFamily: 'Inter, sans-serif',
-                      resize: 'vertical',
-                      minHeight: '40px',
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-
-            {projectFields.length < 6 && (
-              <button
-                onClick={addProjectField}
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  borderRadius: '10px',
-                  border: `2px dashed ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                  background: 'transparent',
-                  color: theme.dark ? '#94A3B8' : '#94A3B8',
-                  fontWeight: 600,
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  marginBottom: '16px',
-                }}
-              >
-                ➕ Add Project
-              </button>
-            )}
-
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ 
-                fontSize: '11px', 
-                fontWeight: 600, 
-                color: theme.dark ? '#94A3B8' : '#64748B',
-                display: 'block',
-                marginBottom: '4px',
-              }}>
-                Remarks
-              </label>
-              <textarea
-                value={formData.remarks}
-                onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                rows="2"
-                placeholder="Any additional remarks..."
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: '10px',
-                  border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-                  background: theme.dark ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
-                  color: theme.dark ? '#F1F5F9' : '#0F172A',
-                  fontSize: '14px',
-                  outline: 'none',
-                  fontFamily: 'Inter, sans-serif',
-                  resize: 'vertical',
-                  minHeight: '40px',
-                }}
-              />
-            </div>
-
-            <button
-              onClick={handleSubmit}
-              disabled={submitting}
-              style={{
-                width: '100%',
-                padding: '14px',
-                borderRadius: '10px',
-                border: 'none',
-                background: 'linear-gradient(135deg, #1E40AF, #3B82F6)',
-                color: '#FFFFFF',
-                fontSize: '16px',
-                fontWeight: 700,
-                cursor: submitting ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s ease',
-                opacity: submitting ? 0.7 : 1,
-                boxShadow: '0 4px 14px rgba(30,64,175,0.3)',
-                fontFamily: 'Inter, sans-serif',
-                letterSpacing: '0.5px',
-              }}
-            >
-              {submitting ? 'Submitting...' : '📤 SUBMIT ATTENDANCE'}
             </button>
           </div>
         </div>
@@ -3754,3 +1441,146 @@ export const Attendance = () => {
     </div>
   );
 };
+
+// ============================================
+// HELPERS
+// ============================================
+const EmptyState = ({ icon, text, subtitle, dark, cardBg, textSecondary, textMuted }) => (
+  <div
+    style={{
+      padding: '48px 24px',
+      textAlign: 'center',
+      background: cardBg,
+      borderRadius: THEME.radiusLg,
+      border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : THEME.border}`,
+    }}
+  >
+    <div style={{ fontSize: '44px', marginBottom: '12px' }}>{icon}</div>
+    <p
+      style={{
+        fontSize: '14px',
+        fontWeight: 700,
+        color: textSecondary,
+        margin: 0,
+      }}
+    >
+      {text}
+    </p>
+    {subtitle && (
+      <p
+        style={{
+          fontSize: '12px',
+          color: textMuted,
+          marginTop: '6px',
+          margin: 0,
+        }}
+      >
+        {subtitle}
+      </p>
+    )}
+  </div>
+);
+
+const InfoBox = ({ dark, color, icon, label, time, address }) => (
+  <div
+    style={{
+      background: dark ? '#0F172A' : '#F8FAFC',
+      borderRadius: THEME.radiusMd,
+      padding: '12px',
+      border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : THEME.border}`,
+      position: 'relative',
+    }}
+  >
+    <div
+      style={{
+        fontSize: '10px',
+        fontWeight: 800,
+        textTransform: 'uppercase',
+        color: color,
+        marginBottom: '6px',
+        letterSpacing: '0.4px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+      }}
+    >
+      <span
+        style={{
+          width: '16px',
+          height: '16px',
+          borderRadius: '50%',
+          background: color + '20',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '10px',
+          fontWeight: 900,
+          color: color,
+        }}
+      >
+        {icon}
+      </span>
+      {label}
+    </div>
+    <div
+      style={{
+        fontSize: '15px',
+        fontWeight: 800,
+        color: dark ? '#F1F5F9' : THEME.text,
+        letterSpacing: '-0.2px',
+      }}
+    >
+      {time}
+    </div>
+    {address && (
+      <div
+        style={{
+          fontSize: '10px',
+          color: dark ? '#94A3B8' : THEME.textMuted,
+          marginTop: '6px',
+          lineHeight: 1.4,
+          wordBreak: 'break-word',
+          fontWeight: 500,
+        }}
+      >
+        📍 {address.slice(0, 45)}
+        {address.length > 45 ? '…' : ''}
+      </div>
+    )}
+  </div>
+);
+
+const DetailBox = ({ dark, label, value, valueColor, cardBg, textPrimary, textMuted, border }) => (
+  <div
+    style={{
+      background: dark ? '#0F172A' : '#F8FAFC',
+      padding: '10px 12px',
+      borderRadius: THEME.radiusMd,
+      border: `1px solid ${border}`,
+    }}
+  >
+    <div
+      style={{
+        fontSize: '9px',
+        fontWeight: 800,
+        color: textMuted,
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px',
+        marginBottom: '4px',
+      }}
+    >
+      {label}
+    </div>
+    <div
+      style={{
+        fontSize: '12px',
+        fontWeight: 700,
+        color: valueColor || textPrimary,
+      }}
+    >
+      {value}
+    </div>
+  </div>
+);
+
+export default Attendance;
