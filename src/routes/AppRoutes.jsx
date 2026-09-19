@@ -17,6 +17,8 @@ import { AdminAttendanceHistory } from '../pages/admin/AttendanceHistory';
 import { AdminCheckinHistory } from '../pages/admin/CheckinHistory';
 import { Employees } from '../pages/admin/Employees';
 import { AdminLeaves } from '../pages/admin/Leaves';
+import { ForgotTracker } from '../pages/admin/ForgotTracker';       // ✅ NEW
+import { SalaryCalculator } from '../pages/admin/SalaryCalculator'; // ✅ NEW
 
 // Auth Pages
 import { Login } from '../pages/auth/Login';
@@ -129,6 +131,24 @@ const AppRoutes = () => {
         element={
           <ProtectedRoute adminOnly={true}>
             <AdminLeaves />
+          </ProtectedRoute>
+        }
+      />
+      {/* ✅ NEW: Forgot Check-Out Tracker */}
+      <Route
+        path="/admin/forgot-tracker"
+        element={
+          <ProtectedRoute adminOnly={true}>
+            <ForgotTracker />
+          </ProtectedRoute>
+        }
+      />
+      {/* ✅ NEW: Salary Calculator */}
+      <Route
+        path="/admin/salary-calculator"
+        element={
+          <ProtectedRoute adminOnly={true}>
+            <SalaryCalculator />
           </ProtectedRoute>
         }
       />
