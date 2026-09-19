@@ -2,90 +2,186 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    
-    <!-- Use your logo as favicon -->
-    <link rel="icon" type="image/png" href="/icon-base.png" />
-    
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+    <!-- Favicon — Vision Earth logo -->
+    <link rel="icon" type="image/png" href="/vision-earth-logo.png" />
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+
+    <!-- Primary Meta -->
+    <title>Vision Earth HRMS</title>
+    <meta
+      name="description"
+      content="Smart Attendance for a Better Tomorrow — Vision Earth HRMS"
+    />
+
+    <!-- Theme Color (Android Chrome) — Vision Earth green -->
+    <meta name="theme-color" content="#10B981" />
+
+    <!-- iOS PWA Support -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="HRMS" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="VE HRMS" />
+
+    <!-- Android PWA Support -->
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="theme-color" content="#3B82F6" />
-    
-    <!-- PWA Icons - Use your logo -->
-    <link rel="apple-touch-icon" href="/icon-base.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-base.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/icon-base.png" />
-    
+
+    <!-- Microsoft Tiles -->
+    <meta name="msapplication-TileColor" content="#10B981" />
+    <meta name="msapplication-tap-highlight" content="no" />
+
+    <!-- PWA Icons — Vision Earth logo -->
+    <link rel="apple-touch-icon" href="/vision-earth-logo.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/vision-earth-logo.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/vision-earth-logo.png" />
+    <link rel="apple-touch-icon" sizes="167x167" href="/vision-earth-logo.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/vision-earth-logo.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/vision-earth-logo.png" />
+
+    <!-- Manifest -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    
-    <title>HRMS - Human Resource Management</title>
-    
-    <!-- PWA Installation Banner -->
+
+    <!-- Preconnect for fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- PWA Install Banner — Vision Earth styled -->
     <style>
       .pwa-install-banner {
         position: fixed;
-        bottom: 80px;
+        bottom: 90px;
         left: 50%;
         transform: translateX(-50%);
-        background: #3B82F6;
+        background: linear-gradient(135deg, #10B981, #059669);
         color: white;
-        padding: 12px 24px;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(59,130,246,0.4);
+        padding: 12px 20px;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);
         z-index: 9999;
         display: none;
         align-items: center;
         gap: 12px;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
         cursor: pointer;
         animation: slideUp 0.3s ease-out;
+        max-width: 380px;
+        width: calc(100% - 32px);
       }
       .pwa-install-banner.show {
         display: flex;
       }
-      .pwa-install-banner button {
+      .pwa-install-banner button#pwa-install-btn {
         background: white;
         border: none;
-        color: #3B82F6;
-        padding: 6px 16px;
-        border-radius: 8px;
-        font-weight: 700;
+        color: #059669;
+        padding: 8px 18px;
+        border-radius: 10px;
+        font-weight: 800;
         cursor: pointer;
         font-size: 13px;
+        letter-spacing: 0.3px;
+        font-family: 'Inter', sans-serif;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        white-space: nowrap;
+      }
+      .pwa-install-banner button#pwa-close-btn {
+        background: transparent;
+        border: none;
+        color: rgba(255, 255, 255, 0.8);
+        padding: 4px 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 700;
       }
       .pwa-install-banner img {
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: white;
+        padding: 4px;
+        object-fit: contain;
+        flex-shrink: 0;
+      }
+      .pwa-install-banner .pwa-text {
+        flex: 1;
+        min-width: 0;
+      }
+      .pwa-install-banner .pwa-title {
+        font-weight: 800;
+        font-size: 13px;
+        letter-spacing: 0.2px;
+        line-height: 1.2;
+      }
+      .pwa-install-banner .pwa-sub {
+        font-size: 11px;
+        opacity: 0.85;
+        margin-top: 2px;
+        font-weight: 500;
       }
       @keyframes slideUp {
-        from { transform: translateX(-50%) translateY(20px); opacity: 0; }
-        to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        from {
+          transform: translateX(-50%) translateY(20px);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(-50%) translateY(0);
+          opacity: 1;
+        }
+      }
+      @media (max-width: 360px) {
+        .pwa-install-banner {
+          padding: 10px 14px;
+          gap: 8px;
+        }
+        .pwa-install-banner img {
+          width: 34px;
+          height: 34px;
+        }
+        .pwa-install-banner .pwa-title {
+          font-size: 12px;
+        }
+        .pwa-install-banner .pwa-sub {
+          font-size: 10px;
+        }
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- PWA Install Banner -->
     <div id="pwa-install-banner" class="pwa-install-banner">
-      <img src="/icon-base.png" alt="HRMS Logo" />
-      <span>Install HRMS App</span>
+      <img src="/vision-earth-logo.png" alt="Vision Earth HRMS" />
+      <div class="pwa-text">
+        <div class="pwa-title">Install VE HRMS</div>
+        <div class="pwa-sub">Add to home screen for quick access</div>
+      </div>
       <button id="pwa-install-btn">Install</button>
-      <button id="pwa-close-btn" style="background:transparent;color:white;padding:4px;">✕</button>
+      <button id="pwa-close-btn">✕</button>
     </div>
+
     <script type="module" src="/src/main.jsx"></script>
-    
+
     <script>
       let deferredPrompt = null;
       const banner = document.getElementById('pwa-install-banner');
       const installBtn = document.getElementById('pwa-install-btn');
       const closeBtn = document.getElementById('pwa-close-btn');
 
+      // Check if user has dismissed the banner before
+      const bannerDismissed = localStorage.getItem('pwa_banner_dismissed');
+
       window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         deferredPrompt = e;
-        banner.classList.add('show');
+
+        // Only show if user hasn't dismissed recently
+        if (!bannerDismissed) {
+          banner.classList.add('show');
+        }
       });
 
       installBtn?.addEventListener('click', async () => {
@@ -94,6 +190,7 @@
           const result = await deferredPrompt.userChoice;
           if (result.outcome === 'accepted') {
             banner.classList.remove('show');
+            console.log('✅ PWA installed');
           }
           deferredPrompt = null;
         }
@@ -101,11 +198,13 @@
 
       closeBtn?.addEventListener('click', () => {
         banner.classList.remove('show');
+        // Remember dismissal for 7 days
+        localStorage.setItem('pwa_banner_dismissed', Date.now().toString());
       });
 
       window.addEventListener('appinstalled', () => {
         banner.classList.remove('show');
-        console.log('🎉 HRMS App installed successfully!');
+        console.log('🎉 Vision Earth HRMS installed successfully!');
       });
     </script>
   </body>
