@@ -1,7 +1,7 @@
 // src/pages/employee/Report.jsx
 //
 // Vision Earth HRMS — Premium Attendance Report
-// Month/Year selects, color-coded stats, table + chart view, ACO removed.
+// Attractive stat cards with colored accent bars and glow dots.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -88,7 +88,7 @@ export const Report = () => {
   const border = dark ? THEME.dark.border : THEME.border;
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
-  // IST-safe day
+  // IST-safe day extractor
   const getISTDay = (isoString) => {
     if (!isoString) return null;
     try {
@@ -178,14 +178,12 @@ export const Report = () => {
 
         const days = {};
 
-        // Attendance → P/D/B/A/L
         empAttendance.forEach((a) => {
           if (!a.attendance_date) return;
           const day = parseInt(a.attendance_date.split('-')[2], 10);
           if (day) days[day] = a.status;
         });
 
-        // Forgotten overlay
         empForgotten.forEach((f) => {
           const day = getISTDay(f.check_in_time);
           if (!day) return;
@@ -480,7 +478,7 @@ export const Report = () => {
               zIndex: 1,
             }}
           >
-            📊 Attendance analytics for {getMonthName(month)} {year}
+            Attendance analytics for {getMonthName(month)} {year}
           </div>
         </div>
       </div>
@@ -513,7 +511,11 @@ export const Report = () => {
             }}
           >
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <option key={m} value={m} style={{ color: '#000', background: '#FFF' }}>
+              <option
+                key={m}
+                value={m}
+                style={{ color: '#000', background: '#FFF' }}
+              >
                 {getMonthName(m)}
               </option>
             ))}
@@ -558,7 +560,7 @@ export const Report = () => {
         </div>
       </div>
 
-      {/* STATS GRID */}
+      {/* STATS GRID — ATTRACTIVE */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -572,113 +574,111 @@ export const Report = () => {
               value: stats.present,
               label: 'Present',
               color: THEME.primary,
-              bg: dark ? 'rgba(16,185,129,0.08)' : THEME.primarySoft,
-              icon: '✓',
+              accent: THEME.primary,
             },
             {
               value: stats.delayed,
               label: 'Delayed',
               color: THEME.amber,
-              bg: dark ? 'rgba(245,158,11,0.08)' : THEME.amberSoft,
-              icon: '⏳',
+              accent: THEME.amber,
             },
             {
               value: stats.beyondDelay,
               label: 'Beyond',
               color: THEME.red,
-              bg: dark ? 'rgba(239,68,68,0.08)' : THEME.redSoft,
-              icon: '🚫',
+              accent: THEME.red,
             },
             {
               value: stats.absent,
               label: 'Absent',
               color: THEME.red,
-              bg: dark ? 'rgba(239,68,68,0.08)' : THEME.redSoft,
-              icon: '✕',
+              accent: THEME.red,
             },
             {
               value: stats.leave,
               label: 'Leave',
               color: THEME.blue,
-              bg: dark ? 'rgba(59,130,246,0.08)' : THEME.blueSoft,
-              icon: '📅',
+              accent: THEME.blue,
             },
             {
               value: stats.forgotten,
               label: 'Forgot Out',
               color: THEME.orange,
-              bg: dark ? 'rgba(249,115,22,0.08)' : THEME.orangeSoft,
-              icon: '⚠️',
+              accent: THEME.orange,
             },
           ].map((stat, idx) => (
             <div
               key={idx}
               style={{
-                background: cardBg,
-                borderRadius: THEME.radiusLg,
-                padding: '14px 10px',
-                border: `1px solid ${border}`,
-                boxShadow: cardShadow,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
+                background: dark
+                  ? `linear-gradient(145deg, ${stat.accent}15 0%, #1E293B 60%)`
+                  : `linear-gradient(145deg, ${stat.accent}10 0%, #FFFFFF 60%)`,
+                borderRadius: THEME.radiusMd,
+                padding: '18px 10px 16px',
+                textAlign: 'center',
+                border: `1px solid ${
+                  dark ? 'rgba(255,255,255,0.05)' : stat.accent + '25'
+                }`,
+                boxShadow: dark
+                  ? '0 4px 12px rgba(0,0,0,0.25)'
+                  : `0 4px 12px ${stat.accent}10`,
                 position: 'relative',
                 overflow: 'hidden',
+                transition: 'all 0.2s ease',
               }}
             >
+              {/* Top accent bar */}
               <div
                 style={{
-                  width: '3px',
-                  height: '60%',
-                  borderRadius: '4px',
-                  background: `linear-gradient(180deg, ${stat.color}, ${stat.color}66)`,
                   position: 'absolute',
-                  left: '10px',
-                  top: '20%',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '3px',
+                  background: `linear-gradient(90deg, ${stat.accent}, ${stat.accent}80)`,
+                  opacity: 0.9,
                 }}
               />
+
+              {/* Corner dot */}
               <div
                 style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '10px',
-                  background: stat.bg,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '15px',
+                  position: 'absolute',
+                  top: '10px',
+                  right: '10px',
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: stat.accent,
+                  boxShadow: `0 0 8px ${stat.accent}80`,
+                }}
+              />
+
+              <div
+                style={{
+                  fontSize: '28px',
+                  fontWeight: 900,
                   color: stat.color,
-                  flexShrink: 0,
-                  marginLeft: '6px',
-                  fontWeight: 800,
+                  lineHeight: 1,
+                  marginBottom: '8px',
+                  letterSpacing: '-1px',
+                  fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                {stat.icon}
+                {stat.value}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: '20px',
-                    fontWeight: 800,
-                    color: stat.color,
-                    lineHeight: 1,
-                    letterSpacing: '-0.5px',
-                  }}
-                >
-                  {stat.value}
-                </div>
-                <div
-                  style={{
-                    fontSize: '9px',
-                    fontWeight: 700,
-                    color: textMuted,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    marginTop: '3px',
-                  }}
-                >
-                  {stat.label}
-                </div>
+
+              <div
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.7px',
+                  lineHeight: 1,
+                }}
+              >
+                {stat.label}
               </div>
             </div>
           ))}
@@ -694,12 +694,14 @@ export const Report = () => {
             padding: '4px',
             background: dark ? 'rgba(255,255,255,0.03)' : '#F1F5F9',
             borderRadius: THEME.radiusPill,
-            border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'}`,
+            border: `1px solid ${
+              dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'
+            }`,
           }}
         >
           {[
-            { key: 'table', label: 'Table View', icon: '📋' },
-            { key: 'chart', label: 'Chart View', icon: '📊' },
+            { key: 'table', label: 'Table View' },
+            { key: 'chart', label: 'Chart View' },
           ].map((v) => {
             const active = view === v.key;
             return (
@@ -723,13 +725,8 @@ export const Report = () => {
                   transition: 'all 0.2s ease',
                   boxShadow: active ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
                   fontFamily: THEME.font,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '5px',
                 }}
               >
-                <span style={{ fontSize: '12px' }}>{v.icon}</span>
                 {v.label}
               </button>
             );
@@ -782,7 +779,7 @@ export const Report = () => {
                         borderRight: `1px solid ${border}`,
                       }}
                     >
-                      👤 Employee
+                      Employee
                     </th>
                     {[
                       { label: 'Total', color: textSecondary, min: '40px' },
@@ -1090,7 +1087,7 @@ export const Report = () => {
                   margin: 0,
                 }}
               >
-                📊 Monthly Summary
+                Monthly Summary
               </h4>
               <span
                 style={{
@@ -1180,7 +1177,7 @@ export const Report = () => {
                     margin: 0,
                   }}
                 >
-                  📊 Distribution
+                  Distribution
                 </h4>
                 <span
                   style={{

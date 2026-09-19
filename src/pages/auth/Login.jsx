@@ -1,7 +1,7 @@
 // src/pages/auth/Login.jsx
 //
 // Vision Earth HRMS — Premium Login
-// Green gradient, decorative circles, Remember Me, no demo creds.
+// Green gradient, decorative circles, Remember Me, contact admin mailto.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -23,6 +23,34 @@ export const Login = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+
+  // ✅ CONFIG: Change these to your admin/HR details
+  const ADMIN_EMAIL = 'visionearthcare.com'; // ← UPDATE THIS
+  const ADMIN_SUBJECT = 'HRMS Access Request';
+  const ADMIN_BODY = `Hello Vision Earth HRMS Team,
+
+I need help with my HRMS account access.
+
+My details:
+- Name: 
+- Employee ID: 
+- Email: 
+- Issue: 
+
+Please assist at your earliest convenience.
+
+Thank you,
+`;
+
+  // ============================================
+  // OPEN MAIL CLIENT
+  // ============================================
+  const handleContactAdmin = () => {
+    const mailtoLink = `mailto:${ADMIN_EMAIL}?subject=${encodeURIComponent(
+      ADMIN_SUBJECT
+    )}&body=${encodeURIComponent(ADMIN_BODY)}`;
+    window.location.href = mailtoLink;
+  };
 
   // ============================================
   // RESTORE REMEMBERED EMAIL
@@ -64,7 +92,7 @@ export const Login = () => {
     setError('');
 
     try {
-      // 🔒 Remember Me handling
+      // Remember Me
       try {
         if (rememberMe) {
           localStorage.setItem('ve_login_email', trimmedEmail);
@@ -73,7 +101,7 @@ export const Login = () => {
         }
       } catch {}
 
-      // 🔍 Check demo users first (logic preserved)
+      // Check demo users
       const found = DEMO_EMPLOYEES.find(
         (emp) =>
           emp.email.toLowerCase() === trimmedEmail.toLowerCase() &&
@@ -89,14 +117,12 @@ export const Login = () => {
         return;
       }
 
-      // 🔐 Try Supabase login (logic preserved)
+      // Supabase login
       const result = await login(trimmedEmail, trimmedPassword);
 
       if (result.ok && result.employee) {
         const userData = {
-          id:
-            result.employee.id ||
-            'EMP' + Date.now().toString().slice(-6),
+          id: result.employee.id || 'EMP' + Date.now().toString().slice(-6),
           employee_id:
             result.employee.employee_id ||
             'EMP' + Date.now().toString().slice(-6),
@@ -154,9 +180,7 @@ export const Login = () => {
         fontFamily: THEME.font,
       }}
     >
-      {/* ============================================ */}
       {/* DECORATIVE CIRCLES */}
-      {/* ============================================ */}
       <div
         style={{
           position: 'absolute',
@@ -183,23 +207,8 @@ export const Login = () => {
           pointerEvents: 'none',
         }}
       />
-      <div
-        style={{
-          position: 'absolute',
-          top: '30%',
-          left: '-80px',
-          width: '160px',
-          height: '160px',
-          borderRadius: '50%',
-          background:
-            'radial-gradient(circle, rgba(52,211,153,0.15) 0%, transparent 70%)',
-          pointerEvents: 'none',
-        }}
-      />
 
-      {/* ============================================ */}
       {/* CONTAINER */}
-      {/* ============================================ */}
       <div
         style={{
           width: '100%',
@@ -210,11 +219,8 @@ export const Login = () => {
           animation: 'fadeIn 0.5s ease-out',
         }}
       >
-        {/* ============================================ */}
         {/* LOGO HEADER */}
-        {/* ============================================ */}
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          {/* Logo card */}
           <div
             style={{
               width: '88px',
@@ -245,7 +251,6 @@ export const Login = () => {
             />
           </div>
 
-          {/* Title */}
           <h1
             style={{
               fontSize: '26px',
@@ -282,9 +287,7 @@ export const Login = () => {
           </p>
         </div>
 
-        {/* ============================================ */}
         {/* LOGIN CARD */}
-        {/* ============================================ */}
         <div
           style={{
             background: cardBg,
@@ -297,7 +300,6 @@ export const Login = () => {
             backdropFilter: 'blur(20px)',
           }}
         >
-          {/* Card header */}
           <div style={{ marginBottom: '22px' }}>
             <h2
               style={{
@@ -322,7 +324,6 @@ export const Login = () => {
             </p>
           </div>
 
-          {/* Error banner */}
           {error && (
             <div
               style={{
@@ -355,9 +356,7 @@ export const Login = () => {
           )}
 
           <form onSubmit={handleLogin}>
-            {/* ============================================ */}
             {/* EMAIL */}
-            {/* ============================================ */}
             <div style={{ marginBottom: '16px' }}>
               <label
                 style={{
@@ -418,9 +417,7 @@ export const Login = () => {
               </div>
             </div>
 
-            {/* ============================================ */}
             {/* PASSWORD */}
-            {/* ============================================ */}
             <div style={{ marginBottom: '14px' }}>
               <label
                 style={{
@@ -502,9 +499,7 @@ export const Login = () => {
               </div>
             </div>
 
-            {/* ============================================ */}
             {/* REMEMBER ME */}
-            {/* ============================================ */}
             <div
               style={{
                 display: 'flex',
@@ -555,16 +550,13 @@ export const Login = () => {
                   fontSize: '13px',
                   fontWeight: 600,
                   color: textSecondary,
-                  transition: 'color 0.2s ease',
                 }}
               >
                 Remember me
               </span>
             </div>
 
-            {/* ============================================ */}
-            {/* SUBMIT BUTTON */}
-            {/* ============================================ */}
+            {/* SUBMIT */}
             <button
               type="submit"
               disabled={loading}
@@ -629,9 +621,7 @@ export const Login = () => {
             </button>
           </form>
 
-          {/* ============================================ */}
-          {/* CONTACT ADMIN */}
-          {/* ============================================ */}
+          {/* CONTACT ADMIN — Clickable mailto */}
           <div
             style={{
               marginTop: '20px',
@@ -640,12 +630,14 @@ export const Login = () => {
               textAlign: 'center',
             }}
           >
-            <div
+            <button
+              type="button"
+              onClick={handleContactAdmin}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '8px',
-                padding: '8px 14px',
+                padding: '10px 16px',
                 background: dark
                   ? 'rgba(16,185,129,0.08)'
                   : THEME.primarySoft,
@@ -653,26 +645,55 @@ export const Login = () => {
                 border: `1px solid ${
                   dark ? 'rgba(16,185,129,0.2)' : '#A7F3D0'
                 }`,
+                cursor: 'pointer',
+                fontFamily: THEME.font,
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = dark
+                  ? 'rgba(16,185,129,0.15)'
+                  : '#D1FAE5';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow =
+                  '0 4px 12px rgba(16,185,129,0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = dark
+                  ? 'rgba(16,185,129,0.08)'
+                  : THEME.primarySoft;
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              <span style={{ fontSize: '12px' }}>💬</span>
+              <span style={{ fontSize: '14px' }}>✉️</span>
               <span
                 style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
+                  fontSize: '12px',
+                  fontWeight: 800,
                   color: dark ? THEME.primaryLight : THEME.primaryDeep,
                   letterSpacing: '0.3px',
                 }}
               >
                 Contact admin for access
               </span>
-            </div>
+            </button>
+
+            <p
+              style={{
+                fontSize: '10px',
+                color: textMuted,
+                marginTop: '8px',
+                fontWeight: 500,
+                fontStyle: 'italic',
+                margin: '8px 0 0',
+              }}
+            >
+              Opens your email app
+            </p>
           </div>
         </div>
 
-        {/* ============================================ */}
         {/* FOOTER */}
-        {/* ============================================ */}
         <div
           style={{
             textAlign: 'center',

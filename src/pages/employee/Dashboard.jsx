@@ -1,7 +1,8 @@
 // src/pages/employee/Dashboard.jsx
 //
 // Vision Earth HRMS — Premium Dashboard
-// (Recent Activity removed)
+// Attractive stat cards with colored accent bars and glow dots.
+// Cool & clean quick action icons.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -15,30 +16,13 @@ import AttendanceFormModal from '../../components/AttendanceFormModal';
 import ForgotCheckoutBanner from '../../components/ForgotCheckoutBanner';
 import useCheckInOut from '../../hooks/useCheckInOut';
 import { getTopQuote, getBottomQuote } from '../../utils/quotes';
-
-// ============================================
-// THEME TOKENS
-// ============================================
-const THEME = {
-  primary: '#10B981',
-  primaryDark: '#059669',
-  primaryDeep: '#047857',
-  primaryLight: '#34D399',
-  greenBg: '#F8FAFC',
-  text: '#0F172A',
-  textSecondary: '#64748B',
-  textMuted: '#94A3B8',
-  amber: '#F59E0B',
-  red: '#EF4444',
-  purple: '#8B5CF6',
-  blue: '#3B82F6',
-  border: '#E2E8F0',
-};
+import { THEME, isDark } from '../../utils/designTokens';
 
 export const Dashboard = () => {
   const navigate = useNavigate();
   const { theme, toggleDark } = useTheme();
   const { user } = useAuth();
+  const dark = isDark(theme);
 
   const {
     todayRecord,
@@ -68,6 +52,15 @@ export const Dashboard = () => {
 
   const topQuote = getTopQuote();
   const bottomQuote = getBottomQuote();
+
+  // Theme helpers
+  const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
+  const cardBg = dark ? THEME.dark.card : THEME.cardBg;
+  const textPrimary = dark ? THEME.dark.text : THEME.text;
+  const textSecondary = dark ? THEME.dark.textSecondary : THEME.textSecondary;
+  const textMuted = dark ? THEME.dark.textMuted : THEME.textMuted;
+  const border = dark ? THEME.dark.border : THEME.border;
+  const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
   // ============================================
   // FETCH DASHBOARD DATA
@@ -284,7 +277,7 @@ export const Dashboard = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: theme.dark ? '#0F172A' : THEME.greenBg,
+          backgroundColor: pageBg,
         }}
       >
         <div style={{ textAlign: 'center' }}>
@@ -302,7 +295,7 @@ export const Dashboard = () => {
           <p
             style={{
               marginTop: '16px',
-              color: THEME.textSecondary,
+              color: textSecondary,
               fontSize: '14px',
             }}
           >
@@ -340,13 +333,6 @@ export const Dashboard = () => {
     statusIcon = '📌';
   }
 
-  const quickActions = [
-    { icon: '📋', label: 'Attendance', path: '/attendance', color: '#10B981' },
-    { icon: '📊', label: 'Report', path: '/report', color: '#3B82F6' },
-    { icon: '📅', label: 'Leave', path: '/leave', color: '#F59E0B' },
-    { icon: '👤', label: 'Profile', path: '/profile', color: '#8B5CF6' },
-  ];
-
   const todayDate = new Date().toLocaleDateString('en-IN', {
     weekday: 'short',
     day: '2-digit',
@@ -356,14 +342,18 @@ export const Dashboard = () => {
 
   const firstName = (user?.name || 'User').split(' ')[0] || user?.name;
 
+  // ============================================
+  // RENDER
+  // ============================================
   return (
     <div
       style={{
         maxWidth: '480px',
         margin: '0 auto',
         minHeight: '100vh',
-        backgroundColor: theme.dark ? '#0F172A' : THEME.greenBg,
-        paddingBottom: '100px',
+        backgroundColor: pageBg,
+        paddingBottom: '120px',
+        fontFamily: THEME.font,
       }}
     >
       {/* ============================================ */}
@@ -372,17 +362,13 @@ export const Dashboard = () => {
       <div style={{ padding: '16px 16px 8px' }}>
         <div
           style={{
-            background:
-              theme.dark
-                ? 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)'
-                : 'linear-gradient(135deg, #FFFFFF 0%, #F0FDF4 100%)',
-            borderRadius: '24px',
+            background: dark
+              ? 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)'
+              : 'linear-gradient(135deg, #FFFFFF 0%, #F0FDF4 100%)',
+            borderRadius: THEME.radius2xl,
             padding: '22px 20px 20px',
-            boxShadow:
-              theme.dark
-                ? '0 8px 32px rgba(0,0,0,0.4)'
-                : '0 8px 32px rgba(16,185,129,0.08), 0 1px 2px rgba(0,0,0,0.04)',
-            border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : '#E6F5EE'}`,
+            boxShadow: dark ? THEME.shadowDark : THEME.shadowLg,
+            border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : '#E6F5EE'}`,
             position: 'relative',
             overflow: 'hidden',
           }}
@@ -402,7 +388,7 @@ export const Dashboard = () => {
             }}
           />
 
-          {/* Top row: Logo + Theme toggle */}
+          {/* Top row */}
           <div
             style={{
               display: 'flex',
@@ -418,8 +404,8 @@ export const Dashboard = () => {
                 style={{
                   width: '52px',
                   height: '52px',
-                  borderRadius: '14px',
-                  background: theme.dark ? '#0F172A' : '#FFFFFF',
+                  borderRadius: THEME.radiusMd,
+                  background: dark ? '#0F172A' : '#FFFFFF',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -431,11 +417,7 @@ export const Dashboard = () => {
                 <img
                   src="/vision-earth-logo.png"
                   alt="Vision Earth"
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
-                  }}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                 />
               </div>
               <div>
@@ -443,7 +425,7 @@ export const Dashboard = () => {
                   style={{
                     fontSize: '16px',
                     fontWeight: 800,
-                    color: theme.dark ? '#F1F5F9' : THEME.text,
+                    color: textPrimary,
                     letterSpacing: '0.5px',
                     lineHeight: 1.1,
                   }}
@@ -471,10 +453,9 @@ export const Dashboard = () => {
                 height: '40px',
                 borderRadius: '50%',
                 border: 'none',
-                background:
-                  theme.dark
-                    ? 'rgba(255,255,255,0.08)'
-                    : 'linear-gradient(135deg, #FEF3C7, #FDE68A)',
+                background: dark
+                  ? 'rgba(255,255,255,0.08)'
+                  : 'linear-gradient(135deg, #FEF3C7, #FDE68A)',
                 fontSize: '16px',
                 cursor: 'pointer',
                 display: 'flex',
@@ -483,7 +464,7 @@ export const Dashboard = () => {
                 boxShadow: '0 4px 12px rgba(245,158,11,0.2)',
               }}
             >
-              {theme.dark ? '☀️' : '🌙'}
+              {dark ? '☀️' : '🌙'}
             </button>
           </div>
 
@@ -491,7 +472,7 @@ export const Dashboard = () => {
           <div
             style={{
               fontSize: '11px',
-              color: theme.dark ? '#64748B' : THEME.textMuted,
+              color: textMuted,
               letterSpacing: '0.8px',
               fontWeight: 500,
               marginBottom: '18px',
@@ -507,7 +488,7 @@ export const Dashboard = () => {
             <div
               style={{
                 fontSize: '13px',
-                color: theme.dark ? '#94A3B8' : THEME.textSecondary,
+                color: textSecondary,
                 fontWeight: 500,
                 marginBottom: '4px',
               }}
@@ -518,7 +499,7 @@ export const Dashboard = () => {
               style={{
                 fontSize: '26px',
                 fontWeight: 800,
-                color: theme.dark ? '#F1F5F9' : THEME.text,
+                color: textPrimary,
                 lineHeight: 1.1,
                 letterSpacing: '-0.5px',
                 display: 'flex',
@@ -535,12 +516,11 @@ export const Dashboard = () => {
           <div
             style={{
               padding: '10px 14px',
-              background:
-                theme.dark
-                  ? 'rgba(16,185,129,0.08)'
-                  : 'linear-gradient(135deg, #ECFDF5, #D1FAE5)',
+              background: dark
+                ? 'rgba(16,185,129,0.08)'
+                : 'linear-gradient(135deg, #ECFDF5, #D1FAE5)',
               borderRadius: '12px',
-              border: `1px solid ${theme.dark ? 'rgba(16,185,129,0.2)' : '#A7F3D0'}`,
+              border: `1px solid ${dark ? 'rgba(16,185,129,0.2)' : '#A7F3D0'}`,
               marginBottom: '14px',
               display: 'flex',
               alignItems: 'center',
@@ -554,7 +534,7 @@ export const Dashboard = () => {
               style={{
                 fontSize: '12px',
                 fontStyle: 'italic',
-                color: theme.dark ? THEME.primaryLight : THEME.primaryDeep,
+                color: dark ? THEME.primaryLight : THEME.primaryDeep,
                 fontWeight: 500,
                 lineHeight: 1.3,
               }}
@@ -570,10 +550,10 @@ export const Dashboard = () => {
               alignItems: 'center',
               gap: '6px',
               padding: '6px 14px',
-              background: theme.dark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
+              background: dark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
               borderRadius: '20px',
               border: `1px solid ${
-                theme.dark ? 'rgba(255,255,255,0.08)' : '#E2E8F0'
+                dark ? 'rgba(255,255,255,0.08)' : '#E2E8F0'
               }`,
               position: 'relative',
               zIndex: 1,
@@ -585,7 +565,7 @@ export const Dashboard = () => {
               style={{
                 fontSize: '11px',
                 fontWeight: 700,
-                color: theme.dark ? '#CBD5E1' : THEME.text,
+                color: dark ? '#CBD5E1' : THEME.text,
                 letterSpacing: '0.2px',
               }}
             >
@@ -614,21 +594,20 @@ export const Dashboard = () => {
         <div
           style={{
             padding: '18px 18px',
-            background:
-              isCheckedIn
-                ? theme.dark
-                  ? 'linear-gradient(135deg, #064E3B 0%, #065F46 100%)'
-                  : 'linear-gradient(135deg, #10B981 0%, #059669 100%)'
-                : theme.dark
-                ? 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)'
-                : 'linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)',
-            borderRadius: '20px',
+            background: isCheckedIn
+              ? dark
+                ? 'linear-gradient(135deg, #064E3B 0%, #065F46 100%)'
+                : 'linear-gradient(135deg, #10B981 0%, #059669 100%)'
+              : dark
+              ? 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)'
+              : 'linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)',
+            borderRadius: THEME.radiusXl,
             border: isCheckedIn
               ? 'none'
-              : `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : THEME.border}`,
+              : `1px solid ${dark ? 'rgba(255,255,255,0.05)' : THEME.border}`,
             boxShadow: isCheckedIn
               ? '0 8px 24px rgba(16,185,129,0.35)'
-              : theme.dark
+              : dark
               ? '0 4px 20px rgba(0,0,0,0.3)'
               : '0 4px 20px rgba(0,0,0,0.05)',
             display: 'flex',
@@ -662,9 +641,7 @@ export const Dashboard = () => {
                 fontSize: '11px',
                 color: isCheckedIn
                   ? 'rgba(255,255,255,0.75)'
-                  : theme.dark
-                  ? '#94A3B8'
-                  : THEME.textSecondary,
+                  : textSecondary,
                 marginBottom: '2px',
                 fontWeight: 600,
                 letterSpacing: '0.3px',
@@ -683,11 +660,7 @@ export const Dashboard = () => {
               style={{
                 fontSize: '18px',
                 fontWeight: 800,
-                color: isCheckedIn
-                  ? '#FFFFFF'
-                  : theme.dark
-                  ? '#F1F5F9'
-                  : THEME.text,
+                color: isCheckedIn ? '#FFFFFF' : textPrimary,
                 lineHeight: 1.2,
                 letterSpacing: '-0.3px',
               }}
@@ -699,9 +672,7 @@ export const Dashboard = () => {
                 fontSize: '12px',
                 color: isCheckedIn
                   ? 'rgba(255,255,255,0.85)'
-                  : theme.dark
-                  ? '#94A3B8'
-                  : THEME.textSecondary,
+                  : textSecondary,
                 marginTop: '3px',
                 fontWeight: 500,
               }}
@@ -725,7 +696,7 @@ export const Dashboard = () => {
                 cursor: 'pointer',
                 boxShadow: '0 4px 14px rgba(16,185,129,0.4)',
                 whiteSpace: 'nowrap',
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: THEME.font,
                 letterSpacing: '0.3px',
               }}
             >
@@ -747,7 +718,7 @@ export const Dashboard = () => {
                 cursor: 'pointer',
                 boxShadow: '0 4px 14px rgba(239,68,68,0.4)',
                 whiteSpace: 'nowrap',
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: THEME.font,
                 letterSpacing: '0.3px',
               }}
             >
@@ -774,20 +745,21 @@ export const Dashboard = () => {
       </div>
 
       {/* ============================================ */}
-      {/* QUICK ACTIONS */}
+      {/* QUICK ACTIONS — CLEAN & COOL */}
       {/* ============================================ */}
       <div style={{ padding: '0 16px 16px' }}>
         <h3
           style={{
             fontSize: '15px',
             fontWeight: 800,
-            color: theme.dark ? '#F1F5F9' : THEME.text,
+            color: textPrimary,
             marginBottom: '12px',
             letterSpacing: '-0.2px',
           }}
         >
           Quick Actions
         </h3>
+
         <div
           style={{
             display: 'grid',
@@ -795,60 +767,156 @@ export const Dashboard = () => {
             gap: '10px',
           }}
         >
-          {quickActions.map((action, idx) => (
+          {[
+            {
+              label: 'Attendance',
+              path: '/attendance',
+              gradient: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+              tint: 'rgba(16, 185, 129, 0.25)',
+              accent: '#10B981',
+              icon: (
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="4" y="4.5" width="16" height="16" rx="3.5" />
+                  <path d="M8.5 2.5v4M15.5 2.5v4M4 10h16" />
+                  <path d="M9 15l2 2 4-4" strokeWidth="2.4" />
+                </svg>
+              ),
+            },
+            {
+              label: 'Report',
+              path: '/report',
+              gradient: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
+              tint: 'rgba(59, 130, 246, 0.25)',
+              accent: '#3B82F6',
+              icon: (
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M4 20V11" />
+                  <path d="M10 20V5" />
+                  <path d="M16 20v-6" />
+                  <path d="M22 20H2" />
+                </svg>
+              ),
+            },
+            {
+              label: 'Leave',
+              path: '/leave',
+              gradient: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
+              tint: 'rgba(245, 158, 11, 0.25)',
+              accent: '#F59E0B',
+              icon: (
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="5" width="18" height="16" rx="3" />
+                  <path d="M3 10h18M8 2.5v4M16 2.5v4" />
+                  <circle cx="12" cy="15.5" r="2" fill="#FFFFFF" stroke="none" />
+                </svg>
+              ),
+            },
+            {
+              label: 'Profile',
+              path: '/profile',
+              gradient: 'linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)',
+              tint: 'rgba(139, 92, 246, 0.25)',
+              accent: '#8B5CF6',
+              icon: (
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="8" r="4.2" />
+                  <path d="M4 21c0-4.4 3.6-7.5 8-7.5s8 3.1 8 7.5" />
+                </svg>
+              ),
+            },
+          ].map((action, idx) => (
             <button
               key={idx}
               onClick={() => navigate(action.path)}
               style={{
-                background: theme.dark ? '#1E293B' : '#FFFFFF',
-                border: `1px solid ${
-                  theme.dark ? 'rgba(255,255,255,0.05)' : THEME.border
-                }`,
+                background: cardBg,
+                border: `1px solid ${border}`,
                 borderRadius: '16px',
                 padding: '14px 6px 12px',
                 textAlign: 'center',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                boxShadow: theme.dark
-                  ? '0 2px 8px rgba(0,0,0,0.2)'
-                  : '0 2px 8px rgba(0,0,0,0.03)',
+                boxShadow: cardShadow,
+                fontFamily: THEME.font,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '10px',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-3px)';
-                e.currentTarget.style.boxShadow = `0 8px 20px ${action.color}25`;
-                e.currentTarget.style.borderColor = action.color + '40';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = dark
+                  ? '0 8px 20px rgba(0,0,0,0.35)'
+                  : '0 8px 20px rgba(15,23,42,0.08)';
+                e.currentTarget.style.borderColor = action.accent + '40';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = theme.dark
-                  ? '0 2px 8px rgba(0,0,0,0.2)'
-                  : '0 2px 8px rgba(0,0,0,0.03)';
-                e.currentTarget.style.borderColor = theme.dark
-                  ? 'rgba(255,255,255,0.05)'
-                  : THEME.border;
+                e.currentTarget.style.boxShadow = cardShadow;
+                e.currentTarget.style.borderColor = border;
               }}
             >
+              {/* Icon chip — clean flat gradient */}
               <div
                 style={{
-                  width: '40px',
-                  height: '40px',
-                  margin: '0 auto 8px',
-                  borderRadius: '12px',
-                  background: `${action.color}15`,
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '14px',
+                  background: action.gradient,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: '20px',
+                  boxShadow: dark
+                    ? '0 4px 10px rgba(0,0,0,0.3)'
+                    : `0 4px 10px ${action.tint}`,
                 }}
               >
                 {action.icon}
               </div>
+
               <div
                 style={{
                   fontSize: '10px',
                   fontWeight: 700,
-                  color: theme.dark ? '#E2E8F0' : THEME.text,
-                  letterSpacing: '0.2px',
+                  color: dark ? '#E2E8F0' : THEME.text,
+                  letterSpacing: '0.3px',
+                  textTransform: 'uppercase',
                 }}
               >
                 {action.label}
@@ -859,7 +927,7 @@ export const Dashboard = () => {
       </div>
 
       {/* ============================================ */}
-      {/* THIS MONTH */}
+      {/* THIS MONTH — ATTRACTIVE STAT CARDS */}
       {/* ============================================ */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
@@ -874,11 +942,11 @@ export const Dashboard = () => {
             style={{
               fontSize: '15px',
               fontWeight: 800,
-              color: theme.dark ? '#F1F5F9' : THEME.text,
+              color: textPrimary,
               letterSpacing: '-0.2px',
             }}
           >
-            📊 This Month
+            This Month
           </h3>
           <button
             onClick={() => navigate('/report')}
@@ -889,7 +957,7 @@ export const Dashboard = () => {
               fontSize: '12px',
               fontWeight: 700,
               cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: THEME.font,
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
@@ -911,88 +979,110 @@ export const Dashboard = () => {
               value: dashboardData?.present || 0,
               label: 'Present',
               color: THEME.primary,
-              bg: '#ECFDF5',
-              icon: '✓',
+              accent: THEME.primary,
             },
             {
               value: dashboardData?.delayed || 0,
               label: 'Delayed',
               color: THEME.amber,
-              bg: '#FFFBEB',
-              icon: '⏳',
+              accent: THEME.amber,
             },
             {
               value: dashboardData?.beyondDelay || 0,
               label: 'Beyond',
               color: THEME.red,
-              bg: '#FEF2F2',
-              icon: '🚫',
+              accent: THEME.red,
             },
             {
               value: dashboardData?.leave || 0,
               label: 'Leave',
               color: THEME.blue,
-              bg: '#EFF6FF',
-              icon: '📅',
+              accent: THEME.blue,
             },
             {
               value: dashboardData?.absent || 0,
               label: 'Absent',
               color: THEME.red,
-              bg: '#FEF2F2',
-              icon: '✕',
+              accent: THEME.red,
             },
             {
               value: forgottenCount || 0,
               label: 'Forgot',
-              color: '#F97316',
-              bg: '#FFF7ED',
-              icon: '⚠️',
+              color: THEME.orange,
+              accent: THEME.orange,
             },
           ].map((stat, idx) => (
             <div
               key={idx}
               style={{
-                background: theme.dark ? '#1E293B' : stat.bg,
-                borderRadius: '14px',
-                padding: '14px 8px 12px',
+                background: dark
+                  ? `linear-gradient(145deg, ${stat.accent}15 0%, #1E293B 60%)`
+                  : `linear-gradient(145deg, ${stat.accent}10 0%, #FFFFFF 60%)`,
+                borderRadius: THEME.radiusMd,
+                padding: '18px 10px 16px',
                 textAlign: 'center',
                 border: `1px solid ${
-                  theme.dark ? 'rgba(255,255,255,0.05)' : stat.color + '20'
+                  dark ? 'rgba(255,255,255,0.05)' : stat.accent + '25'
                 }`,
-                boxShadow: theme.dark
-                  ? '0 2px 8px rgba(0,0,0,0.2)'
-                  : '0 2px 8px rgba(0,0,0,0.02)',
+                boxShadow: dark
+                  ? '0 4px 12px rgba(0,0,0,0.25)'
+                  : `0 4px 12px ${stat.accent}10`,
+                position: 'relative',
+                overflow: 'hidden',
+                transition: 'all 0.2s ease',
               }}
             >
+              {/* Top accent bar */}
               <div
                 style={{
-                  fontSize: '14px',
-                  marginBottom: '4px',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '3px',
+                  background: `linear-gradient(90deg, ${stat.accent}, ${stat.accent}80)`,
                   opacity: 0.9,
                 }}
-              >
-                {stat.icon}
-              </div>
+              />
+
+              {/* Corner dot */}
               <div
                 style={{
-                  fontSize: '24px',
-                  fontWeight: 800,
+                  position: 'absolute',
+                  top: '10px',
+                  right: '10px',
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: stat.accent,
+                  boxShadow: `0 0 8px ${stat.accent}80`,
+                }}
+              />
+
+              {/* Number */}
+              <div
+                style={{
+                  fontSize: '28px',
+                  fontWeight: 900,
                   color: stat.color,
                   lineHeight: 1,
-                  marginBottom: '4px',
-                  letterSpacing: '-0.5px',
+                  marginBottom: '8px',
+                  letterSpacing: '-1px',
+                  fontVariantNumeric: 'tabular-nums',
                 }}
               >
                 {stat.value}
               </div>
+
+              {/* Label */}
               <div
                 style={{
-                  fontSize: '9px',
-                  fontWeight: 700,
-                  color: theme.dark ? '#94A3B8' : stat.color,
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: textMuted,
                   textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
+                  letterSpacing: '0.7px',
+                  lineHeight: 1,
                 }}
               >
                 {stat.label}
@@ -1009,13 +1099,12 @@ export const Dashboard = () => {
         <div
           style={{
             padding: '16px 18px',
-            background:
-              theme.dark
-                ? 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.05))'
-                : 'linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)',
-            borderRadius: '16px',
+            background: dark
+              ? 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.05))'
+              : 'linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)',
+            borderRadius: THEME.radiusLg,
             border: `1px solid ${
-              theme.dark ? 'rgba(16,185,129,0.2)' : '#A7F3D0'
+              dark ? 'rgba(16,185,129,0.2)' : '#A7F3D0'
             }`,
             display: 'flex',
             alignItems: 'center',
@@ -1041,7 +1130,7 @@ export const Dashboard = () => {
             style={{
               fontSize: '12px',
               fontStyle: 'italic',
-              color: theme.dark ? THEME.primaryLight : THEME.primaryDeep,
+              color: dark ? THEME.primaryLight : THEME.primaryDeep,
               fontWeight: 600,
               lineHeight: 1.4,
             }}
@@ -1075,8 +1164,8 @@ export const Dashboard = () => {
         >
           <div
             style={{
-              background: theme.dark ? '#1E293B' : '#FFFFFF',
-              borderRadius: '20px',
+              background: cardBg,
+              borderRadius: THEME.radiusXl,
               padding: '24px',
               maxWidth: '400px',
               width: '100%',
@@ -1096,7 +1185,7 @@ export const Dashboard = () => {
                 style={{
                   fontSize: '18px',
                   fontWeight: 800,
-                  color: theme.dark ? '#F1F5F9' : THEME.text,
+                  color: textPrimary,
                 }}
               >
                 Check In
@@ -1109,7 +1198,7 @@ export const Dashboard = () => {
                 }}
                 style={{
                   fontSize: '24px',
-                  color: THEME.textMuted,
+                  color: textMuted,
                   cursor: 'pointer',
                   background: 'none',
                   border: 'none',
@@ -1121,13 +1210,11 @@ export const Dashboard = () => {
 
             <div
               style={{
-                background: theme.dark
-                  ? 'rgba(255,255,255,0.03)'
-                  : '#F8FAFC',
-                borderRadius: '14px',
+                background: dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
+                borderRadius: THEME.radiusMd,
                 padding: '16px',
                 marginBottom: '16px',
-                border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : THEME.border}`,
+                border: `1px solid ${border}`,
               }}
             >
               <div
@@ -1143,7 +1230,7 @@ export const Dashboard = () => {
                   style={{
                     fontSize: '13px',
                     fontWeight: 700,
-                    color: theme.dark ? '#F1F5F9' : THEME.text,
+                    color: textPrimary,
                   }}
                 >
                   Current Location
@@ -1181,14 +1268,12 @@ export const Dashboard = () => {
                   <div
                     style={{
                       padding: '10px 12px',
-                      background: theme.dark
-                        ? 'rgba(255,255,255,0.05)'
-                        : '#FFFFFF',
+                      background: dark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
                       borderRadius: '10px',
                       fontSize: '12px',
-                      color: theme.dark ? '#F1F5F9' : THEME.text,
+                      color: textPrimary,
                       wordBreak: 'break-word',
-                      border: `1px solid ${theme.dark ? 'rgba(255,255,255,0.05)' : THEME.border}`,
+                      border: `1px solid ${border}`,
                     }}
                   >
                     📍 {address || 'Location captured'}
@@ -1196,7 +1281,7 @@ export const Dashboard = () => {
                   <div
                     style={{
                       fontSize: '10px',
-                      color: THEME.textMuted,
+                      color: textMuted,
                       marginTop: '6px',
                       fontWeight: 500,
                     }}
@@ -1227,14 +1312,13 @@ export const Dashboard = () => {
                   marginTop: '12px',
                   padding: '9px 16px',
                   borderRadius: '10px',
-                  border: `1px solid ${
-                    theme.dark ? 'rgba(255,255,255,0.1)' : THEME.border
-                  }`,
+                  border: `1px solid ${border}`,
                   background: 'transparent',
-                  color: theme.dark ? '#F1F5F9' : THEME.text,
+                  color: textPrimary,
                   fontSize: '12px',
                   fontWeight: 700,
                   cursor: fetchingLocation ? 'not-allowed' : 'pointer',
+                  fontFamily: THEME.font,
                 }}
               >
                 {fetchingLocation ? '⏳ Fetching...' : '🔄 Refresh Location'}
@@ -1251,16 +1335,14 @@ export const Dashboard = () => {
                 style={{
                   flex: 1,
                   padding: '12px',
-                  borderRadius: '12px',
-                  border: `1px solid ${
-                    theme.dark ? 'rgba(255,255,255,0.1)' : THEME.border
-                  }`,
+                  borderRadius: THEME.radiusMd,
+                  border: `1px solid ${border}`,
                   background: 'transparent',
-                  color: theme.dark ? '#94A3B8' : THEME.textSecondary,
+                  color: textSecondary,
                   fontWeight: 700,
                   fontSize: '14px',
                   cursor: 'pointer',
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: THEME.font,
                 }}
               >
                 Cancel
@@ -1273,7 +1355,7 @@ export const Dashboard = () => {
                 style={{
                   flex: 1,
                   padding: '12px',
-                  borderRadius: '12px',
+                  borderRadius: THEME.radiusMd,
                   border: 'none',
                   color: '#FFFFFF',
                   fontWeight: 800,
@@ -1299,7 +1381,7 @@ export const Dashboard = () => {
                     fetchingLocation
                       ? 0.6
                       : 1,
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: THEME.font,
                   boxShadow:
                     submitting ||
                     !locationFetched ||

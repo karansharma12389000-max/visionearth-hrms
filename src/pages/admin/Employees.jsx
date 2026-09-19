@@ -1,7 +1,7 @@
 // src/pages/admin/Employees.jsx
 //
 // Vision Earth HRMS — Premium Employee Management
-// Search, add (with Company field), delete employees.
+// Now with click-to-view employee details + inline edit.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -25,6 +25,13 @@ export const Employees = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // ✅ NEW: Detail modal state
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState({});
+  const [saving, setSaving] = useState(false);
+
   const [formData, setFormData] = useState({
     employee_id: '',
     name: '',
@@ -44,7 +51,13 @@ export const Employees = () => {
     emergency_contact: '',
   });
 
-  const locations = ['Head Office', 'Branch Office', 'Client Site', 'Work From Home', 'Field Work'];
+  const locations = [
+    'Head Office',
+    'Branch Office',
+    'Client Site',
+    'Work From Home',
+    'Field Work',
+  ];
   const roles = ['Employee', 'Admin', 'HR'];
   const companies = [
     'VISION EARTH CARE',
@@ -62,7 +75,7 @@ export const Employees = () => {
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
   // ============================================
-  // FETCH
+  // FETCH EMPLOYEES
   // ============================================
   const fetchEmployees = async () => {
     try {
@@ -106,7 +119,6 @@ export const Employees = () => {
     }
 
     try {
-      // Check email
       const { data: existingEmail } = await supabase
         .from('employees')
         .select('email')
@@ -119,7 +131,6 @@ export const Employees = () => {
         return;
       }
 
-      // Employee ID
       let empId = formData.employee_id;
       if (!empId) {
         const { data: lastEmployee } = await supabase
@@ -230,12 +241,91 @@ export const Employees = () => {
 
       toast.success(`✅ ${employee.name} deleted successfully!`);
       setShowDeleteModal(null);
+      setShowDetailModal(false);
+      setSelectedEmployee(null);
       fetchEmployees();
     } catch (error) {
       console.error('Error deleting employee:', error);
       toast.error(error.message || 'Failed to delete employee');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ============================================
+  // ✅ NEW: OPEN DETAIL MODAL
+  // ============================================
+  const handleEmployeeClick = (employee) => {
+    setSelectedEmployee(employee);
+    setEditData({
+      name: employee.name || '',
+      company: employee.company || '',
+      department: employee.department || '',
+      designation: employee.designation || '',
+      role: employee.role || 'Employee',
+      phone: employee.phone || '',
+      reporting_location: employee.reporting_location || 'Head Office',
+      address: employee.address || '',
+      city: employee.city || '',
+      state: employee.state || '',
+      pincode: employee.pincode || '',
+      date_of_joining: employee.date_of_joining || '',
+      emergency_contact: employee.emergency_contact || '',
+      is_active: employee.is_active !== false,
+    });
+    setIsEditing(false);
+    setShowDetailModal(true);
+  };
+
+  // ============================================
+  // ✅ NEW: SAVE EDIT
+  // ============================================
+  const handleSaveEdit = async () => {
+    if (!selectedEmployee?.id) return;
+
+    try {
+      setSaving(true);
+
+      const updateData = {
+        name: editData.name,
+        company: editData.company,
+        department: editData.department || 'N/A',
+        designation: editData.designation || 'N/A',
+        role: editData.role,
+        phone: editData.phone || '',
+        reporting_location: editData.reporting_location || 'Head Office',
+        address: editData.address || '',
+        city: editData.city || '',
+        state: editData.state || '',
+        pincode: editData.pincode || '',
+        date_of_joining: editData.date_of_joining || null,
+        emergency_contact: editData.emergency_contact || '',
+        is_active: editData.is_active,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('employees')
+        .update(updateData)
+        .eq('id', selectedEmployee.id);
+
+      if (error) throw error;
+
+      toast.success('✅ Employee updated successfully!');
+
+      // Update local state
+      const updatedEmployee = { ...selectedEmployee, ...updateData };
+      setSelectedEmployee(updatedEmployee);
+      setEmployees((prev) =>
+        prev.map((e) => (e.id === updatedEmployee.id ? updatedEmployee : e))
+      );
+
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Error updating employee:', error);
+      toast.error(error.message || 'Failed to update employee');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -254,7 +344,6 @@ export const Employees = () => {
     );
   });
 
-  // Stats
   const totalCount = employees.length;
   const activeCount = employees.filter((e) => e.is_active !== false).length;
   const adminCount = employees.filter(
@@ -326,9 +415,7 @@ export const Employees = () => {
         fontFamily: THEME.font,
       }}
     >
-      {/* ============================================ */}
-      {/* PREMIUM HEADER */}
-      {/* ============================================ */}
+      {/* HEADER */}
       <div style={{ padding: '16px 16px 8px' }}>
         <div
           style={{
@@ -433,7 +520,7 @@ export const Employees = () => {
                 letterSpacing: '0.3px',
               }}
             >
-              <span style={{ fontSize: '14px' }}>➕</span>
+              <span style={{ fontSize: '14px' }}>+</span>
               Add
             </button>
           </div>
@@ -447,14 +534,12 @@ export const Employees = () => {
               zIndex: 1,
             }}
           >
-            👥 {totalCount} employees · {activeCount} active
+            {totalCount} employees · {activeCount} active
           </div>
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* STATS GRID */}
-      {/* ============================================ */}
+      {/* STATS GRID — Attractive */}
       <div style={{ padding: '0 16px 12px' }}>
         <div
           style={{
@@ -464,29 +549,50 @@ export const Employees = () => {
           }}
         >
           {[
-            { value: totalCount, label: 'Total', color: THEME.blue },
-            { value: activeCount, label: 'Active', color: THEME.primary },
-            { value: adminCount, label: 'Admins', color: THEME.amber },
-            { value: empCount, label: 'Staff', color: THEME.purple },
+            { value: totalCount, label: 'Total', color: THEME.blue, accent: THEME.blue },
+            { value: activeCount, label: 'Active', color: THEME.primary, accent: THEME.primary },
+            { value: adminCount, label: 'Admins', color: THEME.amber, accent: THEME.amber },
+            { value: empCount, label: 'Staff', color: THEME.purple, accent: THEME.purple },
           ].map((stat, idx) => (
             <div
               key={idx}
               style={{
-                background: cardBg,
+                background: dark
+                  ? `linear-gradient(145deg, ${stat.accent}15 0%, #1E293B 60%)`
+                  : `linear-gradient(145deg, ${stat.accent}10 0%, #FFFFFF 60%)`,
                 borderRadius: THEME.radiusMd,
-                padding: '12px 8px',
+                padding: '12px 6px 10px',
                 textAlign: 'center',
-                border: `1px solid ${border}`,
-                boxShadow: cardShadow,
+                border: `1px solid ${
+                  dark ? 'rgba(255,255,255,0.05)' : stat.accent + '25'
+                }`,
+                boxShadow: dark
+                  ? '0 4px 12px rgba(0,0,0,0.25)'
+                  : `0 4px 12px ${stat.accent}10`,
+                position: 'relative',
+                overflow: 'hidden',
               }}
             >
               <div
                 style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '3px',
+                  background: `linear-gradient(90deg, ${stat.accent}, ${stat.accent}80)`,
+                  opacity: 0.9,
+                }}
+              />
+              <div
+                style={{
                   fontSize: '20px',
-                  fontWeight: 800,
+                  fontWeight: 900,
                   color: stat.color,
                   lineHeight: 1,
+                  marginBottom: '4px',
                   letterSpacing: '-0.5px',
+                  fontVariantNumeric: 'tabular-nums',
                 }}
               >
                 {stat.value}
@@ -494,11 +600,10 @@ export const Employees = () => {
               <div
                 style={{
                   fontSize: '9px',
-                  fontWeight: 700,
+                  fontWeight: 800,
                   color: textMuted,
                   textTransform: 'uppercase',
-                  letterSpacing: '0.4px',
-                  marginTop: '4px',
+                  letterSpacing: '0.5px',
                 }}
               >
                 {stat.label}
@@ -508,9 +613,7 @@ export const Employees = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
       {/* SEARCH */}
-      {/* ============================================ */}
       <div style={{ padding: '0 16px 12px' }}>
         <div style={{ position: 'relative' }}>
           <span
@@ -548,9 +651,7 @@ export const Employees = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
       {/* EMPLOYEE LIST */}
-      {/* ============================================ */}
       <div style={{ padding: '0 16px 16px' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
@@ -590,12 +691,12 @@ export const Employees = () => {
           </div>
         ) : (
           filteredEmployees.map((emp) => {
-            const isAdminRole =
-              emp.role === 'Admin' || emp.role === 'admin';
+            const isAdminRole = emp.role === 'Admin' || emp.role === 'admin';
 
             return (
               <div
                 key={emp.id}
+                onClick={() => handleEmployeeClick(emp)}
                 style={{
                   background: cardBg,
                   borderRadius: THEME.radiusLg,
@@ -606,6 +707,20 @@ export const Employees = () => {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = dark
+                    ? '0 8px 20px rgba(0,0,0,0.35)'
+                    : '0 8px 20px rgba(15,23,42,0.08)';
+                  e.currentTarget.style.borderColor = THEME.primary + '40';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = cardShadow;
+                  e.currentTarget.style.borderColor = border;
                 }}
               >
                 {/* Avatar */}
@@ -655,9 +770,9 @@ export const Employees = () => {
                       marginBottom: '4px',
                     }}
                   >
-                    <span>🆔 {emp.employee_id}</span>
+                    <span>{emp.employee_id}</span>
                     <span>·</span>
-                    <span>🏢 {emp.department || 'N/A'}</span>
+                    <span>{emp.department || 'N/A'}</span>
                   </div>
 
                   {emp.company && (
@@ -675,7 +790,7 @@ export const Employees = () => {
                           letterSpacing: '0.3px',
                         }}
                       >
-                        🏛️ {emp.company}
+                        {emp.company}
                       </span>
                     </div>
                   )}
@@ -690,7 +805,7 @@ export const Employees = () => {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    📧 {emp.email}
+                    {emp.email}
                   </div>
                 </div>
 
@@ -723,31 +838,15 @@ export const Employees = () => {
                     {emp.role || 'Employee'}
                   </span>
 
-                  {emp.id !== user?.id && (
-                    <button
-                      onClick={() => setShowDeleteModal(emp)}
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        background: THEME.red + '12',
-                        color: THEME.red,
-                        fontSize: '10px',
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        fontFamily: THEME.font,
-                        transition: 'all 0.2s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = THEME.red + '25';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = THEME.red + '12';
-                      }}
-                    >
-                      Remove
-                    </button>
-                  )}
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      color: textMuted,
+                      fontWeight: 700,
+                    }}
+                  >
+                    View →
+                  </span>
                 </div>
               </div>
             );
@@ -756,7 +855,631 @@ export const Employees = () => {
       </div>
 
       {/* ============================================ */}
-      {/* ADD EMPLOYEE MODAL */}
+      {/* ✅ EMPLOYEE DETAIL MODAL */}
+      {/* ============================================ */}
+      {showDetailModal && selectedEmployee && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(6px)',
+            zIndex: 1000,
+          }}
+          onClick={() => {
+            setShowDetailModal(false);
+            setSelectedEmployee(null);
+            setIsEditing(false);
+          }}
+        >
+          <div
+            style={{
+              background: cardBg,
+              borderRadius: THEME.radiusXl,
+              padding: '0',
+              maxWidth: '440px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header with Avatar */}
+            <div
+              style={{
+                background: dark
+                  ? `linear-gradient(135deg, ${THEME.primary}20, #0F172A)`
+                  : `linear-gradient(135deg, ${THEME.primarySoft}, #FFFFFF)`,
+                padding: '22px 20px 18px',
+                borderBottom: `1px solid ${border}`,
+                position: 'relative',
+              }}
+            >
+              <button
+                onClick={() => {
+                  setShowDetailModal(false);
+                  setSelectedEmployee(null);
+                  setIsEditing(false);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: '14px',
+                  right: '14px',
+                  fontSize: '20px',
+                  color: textMuted,
+                  cursor: 'pointer',
+                  background: 'none',
+                  border: 'none',
+                  padding: '4px 8px',
+                  lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div
+                  style={{
+                    width: '64px',
+                    height: '64px',
+                    borderRadius: '50%',
+                    background:
+                      selectedEmployee.role === 'Admin'
+                        ? `linear-gradient(135deg, ${THEME.amber}, #D97706)`
+                        : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '26px',
+                    fontWeight: 800,
+                    color: '#FFFFFF',
+                    flexShrink: 0,
+                    boxShadow: '0 6px 16px rgba(16,185,129,0.3)',
+                    border: '3px solid #FFFFFF',
+                  }}
+                >
+                  {selectedEmployee.name?.charAt(0).toUpperCase() || '?'}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: '18px',
+                      fontWeight: 800,
+                      color: textPrimary,
+                      lineHeight: 1.2,
+                      marginBottom: '4px',
+                    }}
+                  >
+                    {selectedEmployee.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: textSecondary,
+                      fontWeight: 600,
+                      marginBottom: '6px',
+                    }}
+                  >
+                    {selectedEmployee.employee_id}
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '6px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: THEME.radiusPill,
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        background:
+                          selectedEmployee.role === 'Admin'
+                            ? THEME.amber + '20'
+                            : THEME.blue + '20',
+                        color:
+                          selectedEmployee.role === 'Admin'
+                            ? THEME.amber
+                            : THEME.blue,
+                        letterSpacing: '0.3px',
+                      }}
+                    >
+                      {selectedEmployee.role || 'Employee'}
+                    </span>
+                    <span
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: THEME.radiusPill,
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        background:
+                          selectedEmployee.is_active !== false
+                            ? THEME.primary + '20'
+                            : THEME.red + '20',
+                        color:
+                          selectedEmployee.is_active !== false
+                            ? THEME.primary
+                            : THEME.red,
+                        letterSpacing: '0.3px',
+                      }}
+                    >
+                      {selectedEmployee.is_active !== false
+                        ? 'Active'
+                        : 'Inactive'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '20px' }}>
+              {!isEditing ? (
+                <>
+                  {/* Basic Info Section */}
+                  <SectionLabel text="Basic Info" dark={dark} border={border} />
+                  <DetailRow
+                    label="Employee ID"
+                    value={selectedEmployee.employee_id || '—'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                    locked
+                  />
+                  <DetailRow
+                    label="Company"
+                    value={selectedEmployee.company || '—'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                  />
+                  <DetailRow
+                    label="Department"
+                    value={selectedEmployee.department || 'N/A'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                  />
+                  <DetailRow
+                    label="Designation"
+                    value={selectedEmployee.designation || 'N/A'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                  />
+                  <DetailRow
+                    label="Role"
+                    value={selectedEmployee.role || 'Employee'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                  />
+                  <DetailRow
+                    label="Email"
+                    value={selectedEmployee.email || '—'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                    locked
+                  />
+                  <DetailRow
+                    label="Phone"
+                    value={selectedEmployee.phone || '—'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                  />
+
+                  {/* Location Section */}
+                  <SectionLabel
+                    text="Location"
+                    dark={dark}
+                    border={border}
+                  />
+                  <DetailRow
+                    label="Reporting Location"
+                    value={selectedEmployee.reporting_location || '—'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                  />
+                  <DetailRow
+                    label="Address"
+                    value={selectedEmployee.address || '—'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                  />
+                  <DetailRow
+                    label="City"
+                    value={selectedEmployee.city || '—'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                  />
+                  <DetailRow
+                    label="State"
+                    value={selectedEmployee.state || '—'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                  />
+                  <DetailRow
+                    label="Pincode"
+                    value={selectedEmployee.pincode || '—'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                  />
+
+                  {/* Other Section */}
+                  <SectionLabel text="Other" dark={dark} border={border} />
+                  <DetailRow
+                    label="Date of Joining"
+                    value={
+                      selectedEmployee.date_of_joining
+                        ? new Date(
+                            selectedEmployee.date_of_joining
+                          ).toLocaleDateString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })
+                        : '—'
+                    }
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                  />
+                  <DetailRow
+                    label="Emergency Contact"
+                    value={selectedEmployee.emergency_contact || '—'}
+                    dark={dark}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    border={border}
+                    isLast
+                  />
+
+                  {/* Action Buttons */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '10px',
+                      marginTop: '20px',
+                    }}
+                  >
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      style={{
+                        flex: 1,
+                        padding: '13px',
+                        borderRadius: THEME.radiusMd,
+                        border: 'none',
+                        background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+                        color: '#FFFFFF',
+                        fontWeight: 800,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        boxShadow: THEME.shadowGreen,
+                        fontFamily: THEME.font,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        letterSpacing: '0.3px',
+                      }}
+                    >
+                      ✏️ Edit
+                    </button>
+                    {selectedEmployee.id !== user?.id && (
+                      <button
+                        onClick={() => setShowDeleteModal(selectedEmployee)}
+                        style={{
+                          flex: 1,
+                          padding: '13px',
+                          borderRadius: THEME.radiusMd,
+                          border: 'none',
+                          background: `linear-gradient(135deg, ${THEME.red}, #DC2626)`,
+                          color: '#FFFFFF',
+                          fontWeight: 800,
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 14px rgba(239,68,68,0.35)',
+                          fontFamily: THEME.font,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          letterSpacing: '0.3px',
+                        }}
+                      >
+                        🗑️ Delete
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* EDIT MODE */}
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: THEME.primary,
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      marginBottom: '14px',
+                      padding: '6px 12px',
+                      background: THEME.primarySoft,
+                      borderRadius: '8px',
+                      textAlign: 'center',
+                    }}
+                  >
+                    Editing Mode
+                  </div>
+
+                  <EditInput
+                    label="Name"
+                    value={editData.name}
+                    onChange={(v) => setEditData({ ...editData, name: v })}
+                    dark={dark}
+                    cardBg={cardBg}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
+                    border={border}
+                  />
+
+                  <EditSelect
+                    label="Company"
+                    value={editData.company}
+                    onChange={(v) => setEditData({ ...editData, company: v })}
+                    options={['', ...companies]}
+                    dark={dark}
+                    cardBg={cardBg}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
+                    border={border}
+                  />
+
+                  <EditInput
+                    label="Department"
+                    value={editData.department}
+                    onChange={(v) => setEditData({ ...editData, department: v })}
+                    dark={dark}
+                    cardBg={cardBg}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
+                    border={border}
+                  />
+
+                  <EditInput
+                    label="Designation"
+                    value={editData.designation}
+                    onChange={(v) =>
+                      setEditData({ ...editData, designation: v })
+                    }
+                    dark={dark}
+                    cardBg={cardBg}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
+                    border={border}
+                  />
+
+                  <EditSelect
+                    label="Role"
+                    value={editData.role}
+                    onChange={(v) => setEditData({ ...editData, role: v })}
+                    options={roles}
+                    dark={dark}
+                    cardBg={cardBg}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
+                    border={border}
+                  />
+
+                  <EditInput
+                    label="Phone"
+                    value={editData.phone}
+                    onChange={(v) => setEditData({ ...editData, phone: v })}
+                    type="tel"
+                    dark={dark}
+                    cardBg={cardBg}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
+                    border={border}
+                  />
+
+                  <EditSelect
+                    label="Reporting Location"
+                    value={editData.reporting_location}
+                    onChange={(v) =>
+                      setEditData({ ...editData, reporting_location: v })
+                    }
+                    options={locations}
+                    dark={dark}
+                    cardBg={cardBg}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
+                    border={border}
+                  />
+
+                  <EditInput
+                    label="Address"
+                    value={editData.address}
+                    onChange={(v) => setEditData({ ...editData, address: v })}
+                    dark={dark}
+                    cardBg={cardBg}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
+                    border={border}
+                  />
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '10px',
+                    }}
+                  >
+                    <EditInput
+                      label="City"
+                      value={editData.city}
+                      onChange={(v) => setEditData({ ...editData, city: v })}
+                      dark={dark}
+                      cardBg={cardBg}
+                      textPrimary={textPrimary}
+                      textMuted={textMuted}
+                      border={border}
+                    />
+                    <EditInput
+                      label="State"
+                      value={editData.state}
+                      onChange={(v) => setEditData({ ...editData, state: v })}
+                      dark={dark}
+                      cardBg={cardBg}
+                      textPrimary={textPrimary}
+                      textMuted={textMuted}
+                      border={border}
+                    />
+                  </div>
+
+                  <EditInput
+                    label="Pincode"
+                    value={editData.pincode}
+                    onChange={(v) => setEditData({ ...editData, pincode: v })}
+                    dark={dark}
+                    cardBg={cardBg}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
+                    border={border}
+                  />
+
+                  <EditInput
+                    label="Date of Joining"
+                    value={editData.date_of_joining}
+                    onChange={(v) =>
+                      setEditData({ ...editData, date_of_joining: v })
+                    }
+                    type="date"
+                    dark={dark}
+                    cardBg={cardBg}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
+                    border={border}
+                  />
+
+                  <EditInput
+                    label="Emergency Contact"
+                    value={editData.emergency_contact}
+                    onChange={(v) =>
+                      setEditData({ ...editData, emergency_contact: v })
+                    }
+                    dark={dark}
+                    cardBg={cardBg}
+                    textPrimary={textPrimary}
+                    textMuted={textMuted}
+                    border={border}
+                  />
+
+                  {/* Save/Cancel */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '10px',
+                      marginTop: '16px',
+                    }}
+                  >
+                    <button
+                      onClick={() => {
+                        setIsEditing(false);
+                        setEditData({
+                          name: selectedEmployee.name || '',
+                          company: selectedEmployee.company || '',
+                          department: selectedEmployee.department || '',
+                          designation: selectedEmployee.designation || '',
+                          role: selectedEmployee.role || 'Employee',
+                          phone: selectedEmployee.phone || '',
+                          reporting_location:
+                            selectedEmployee.reporting_location || 'Head Office',
+                          address: selectedEmployee.address || '',
+                          city: selectedEmployee.city || '',
+                          state: selectedEmployee.state || '',
+                          pincode: selectedEmployee.pincode || '',
+                          date_of_joining: selectedEmployee.date_of_joining || '',
+                          emergency_contact:
+                            selectedEmployee.emergency_contact || '',
+                          is_active: selectedEmployee.is_active !== false,
+                        });
+                      }}
+                      disabled={saving}
+                      style={{
+                        flex: 1,
+                        padding: '12px',
+                        borderRadius: THEME.radiusMd,
+                        border: `1px solid ${border}`,
+                        background: 'transparent',
+                        color: textSecondary,
+                        fontWeight: 700,
+                        fontSize: '13px',
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                        fontFamily: THEME.font,
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveEdit}
+                      disabled={saving}
+                      style={{
+                        flex: 1,
+                        padding: '12px',
+                        borderRadius: THEME.radiusMd,
+                        border: 'none',
+                        background: saving
+                          ? '#94A3B8'
+                          : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+                        color: '#FFFFFF',
+                        fontWeight: 800,
+                        fontSize: '13px',
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                        boxShadow: saving ? 'none' : THEME.shadowGreen,
+                        fontFamily: THEME.font,
+                        letterSpacing: '0.3px',
+                      }}
+                    >
+                      {saving ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================ */}
+      {/* ADD EMPLOYEE MODAL (unchanged) */}
       {/* ============================================ */}
       {showAddModal && (
         <div
@@ -803,7 +1526,7 @@ export const Employees = () => {
                   margin: 0,
                 }}
               >
-                ➕ Add Employee
+                Add Employee
               </h3>
               <button
                 onClick={() => setShowAddModal(false)}
@@ -822,7 +1545,7 @@ export const Employees = () => {
             </div>
 
             <form onSubmit={handleAddEmployee}>
-              <ModalInput
+              <EditInput
                 label="Employee ID (Optional)"
                 value={formData.employee_id}
                 onChange={(v) => setFormData({ ...formData, employee_id: v })}
@@ -834,7 +1557,7 @@ export const Employees = () => {
                 border={border}
               />
 
-              <ModalInput
+              <EditInput
                 label="Full Name *"
                 value={formData.name}
                 onChange={(v) => setFormData({ ...formData, name: v })}
@@ -846,7 +1569,7 @@ export const Employees = () => {
                 border={border}
               />
 
-              <ModalInput
+              <EditInput
                 label="Email *"
                 value={formData.email}
                 onChange={(v) => setFormData({ ...formData, email: v })}
@@ -859,7 +1582,7 @@ export const Employees = () => {
                 border={border}
               />
 
-              <ModalInput
+              <EditInput
                 label="Password *"
                 value={formData.password}
                 onChange={(v) => setFormData({ ...formData, password: v })}
@@ -871,58 +1594,20 @@ export const Employees = () => {
                 border={border}
               />
 
-              {/* Company */}
-              <div style={{ marginBottom: '14px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    color: textMuted,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    marginBottom: '6px',
-                  }}
-                >
-                  Company *
-                </label>
-                <select
-                  value={formData.company}
-                  onChange={(e) =>
-                    setFormData({ ...formData, company: e.target.value })
-                  }
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: THEME.radiusMd,
-                    border: `1px solid ${border}`,
-                    background: cardBg,
-                    color: textPrimary,
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    outline: 'none',
-                    fontFamily: THEME.font,
-                    cursor: 'pointer',
-                    appearance: 'none',
-                    backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 14px center',
-                    backgroundSize: '16px',
-                    paddingRight: '40px',
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  <option value="">— Select Company —</option>
-                  {companies.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <EditSelect
+                label="Company *"
+                value={formData.company}
+                onChange={(v) => setFormData({ ...formData, company: v })}
+                options={['', ...companies]}
+                dark={dark}
+                cardBg={cardBg}
+                textPrimary={textPrimary}
+                textMuted={textMuted}
+                border={border}
+                placeholder="— Select Company —"
+              />
 
-              <ModalInput
+              <EditInput
                 label="Department"
                 value={formData.department}
                 onChange={(v) => setFormData({ ...formData, department: v })}
@@ -934,7 +1619,7 @@ export const Employees = () => {
                 border={border}
               />
 
-              <ModalInput
+              <EditInput
                 label="Designation"
                 value={formData.designation}
                 onChange={(v) => setFormData({ ...formData, designation: v })}
@@ -946,8 +1631,7 @@ export const Employees = () => {
                 border={border}
               />
 
-              {/* Role select */}
-              <ModalSelect
+              <EditSelect
                 label="Role"
                 value={formData.role}
                 onChange={(v) => setFormData({ ...formData, role: v })}
@@ -959,7 +1643,7 @@ export const Employees = () => {
                 border={border}
               />
 
-              <ModalInput
+              <EditInput
                 label="Phone"
                 value={formData.phone}
                 onChange={(v) => setFormData({ ...formData, phone: v })}
@@ -972,7 +1656,7 @@ export const Employees = () => {
                 border={border}
               />
 
-              <ModalSelect
+              <EditSelect
                 label="Reporting Location"
                 value={formData.reporting_location}
                 onChange={(v) =>
@@ -986,10 +1670,12 @@ export const Employees = () => {
                 border={border}
               />
 
-              <ModalInput
+              <EditInput
                 label="Date of Joining"
                 value={formData.date_of_joining}
-                onChange={(v) => setFormData({ ...formData, date_of_joining: v })}
+                onChange={(v) =>
+                  setFormData({ ...formData, date_of_joining: v })
+                }
                 type="date"
                 dark={dark}
                 cardBg={cardBg}
@@ -998,7 +1684,7 @@ export const Employees = () => {
                 border={border}
               />
 
-              <ModalInput
+              <EditInput
                 label="Address"
                 value={formData.address}
                 onChange={(v) => setFormData({ ...formData, address: v })}
@@ -1017,7 +1703,7 @@ export const Employees = () => {
                   gap: '10px',
                 }}
               >
-                <ModalInput
+                <EditInput
                   label="City"
                   value={formData.city}
                   onChange={(v) => setFormData({ ...formData, city: v })}
@@ -1028,7 +1714,7 @@ export const Employees = () => {
                   textMuted={textMuted}
                   border={border}
                 />
-                <ModalInput
+                <EditInput
                   label="State"
                   value={formData.state}
                   onChange={(v) => setFormData({ ...formData, state: v })}
@@ -1041,7 +1727,7 @@ export const Employees = () => {
                 />
               </div>
 
-              <ModalInput
+              <EditInput
                 label="Pincode"
                 value={formData.pincode}
                 onChange={(v) => setFormData({ ...formData, pincode: v })}
@@ -1053,7 +1739,7 @@ export const Employees = () => {
                 border={border}
               />
 
-              <ModalInput
+              <EditInput
                 label="Emergency Contact"
                 value={formData.emergency_contact}
                 onChange={(v) =>
@@ -1095,9 +1781,7 @@ export const Employees = () => {
         </div>
       )}
 
-      {/* ============================================ */}
       {/* DELETE MODAL */}
-      {/* ============================================ */}
       {showDeleteModal && (
         <div
           style={{
@@ -1109,7 +1793,7 @@ export const Employees = () => {
             padding: '16px',
             background: 'rgba(0,0,0,0.6)',
             backdropFilter: 'blur(6px)',
-            zIndex: 1000,
+            zIndex: 1100,
           }}
           onClick={() => setShowDeleteModal(null)}
         >
@@ -1125,7 +1809,13 @@ export const Employees = () => {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <span style={{ fontSize: '48px', display: 'block', marginBottom: '12px' }}>
+            <span
+              style={{
+                fontSize: '48px',
+                display: 'block',
+                marginBottom: '12px',
+              }}
+            >
               ⚠️
             </span>
             <h3
@@ -1147,7 +1837,10 @@ export const Employees = () => {
               }}
             >
               Are you sure you want to delete{' '}
-              <strong style={{ color: textPrimary }}>{showDeleteModal.name}</strong>?
+              <strong style={{ color: textPrimary }}>
+                {showDeleteModal.name}
+              </strong>
+              ?
               <br />
               <span style={{ fontSize: '11px', color: THEME.red }}>
                 This action cannot be undone.
@@ -1186,7 +1879,9 @@ export const Employees = () => {
                   fontWeight: 800,
                   fontSize: '13px',
                   cursor: submitting ? 'not-allowed' : 'pointer',
-                  boxShadow: submitting ? 'none' : '0 4px 14px rgba(239,68,68,0.4)',
+                  boxShadow: submitting
+                    ? 'none'
+                    : '0 4px 14px rgba(239,68,68,0.4)',
                   fontFamily: THEME.font,
                   letterSpacing: '0.3px',
                 }}
@@ -1204,9 +1899,85 @@ export const Employees = () => {
 };
 
 // ============================================
-// SHARED HELPERS
+// HELPER COMPONENTS
 // ============================================
-const ModalInput = ({
+const SectionLabel = ({ text, dark, border }) => (
+  <div
+    style={{
+      fontSize: '10px',
+      fontWeight: 800,
+      color: dark ? '#94A3B8' : THEME.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: '0.6px',
+      marginTop: '4px',
+      marginBottom: '8px',
+      paddingBottom: '4px',
+      borderBottom: `1px solid ${border}`,
+    }}
+  >
+    {text}
+  </div>
+);
+
+const DetailRow = ({
+  label,
+  value,
+  dark,
+  textPrimary,
+  textSecondary,
+  border,
+  locked,
+  isLast,
+}) => (
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '10px 0',
+      borderBottom: isLast ? 'none' : `1px solid ${border}`,
+      gap: '12px',
+    }}
+  >
+    <div
+      style={{
+        fontSize: '11px',
+        fontWeight: 700,
+        color: textSecondary,
+        flexShrink: 0,
+      }}
+    >
+      {label}
+    </div>
+    <div
+      style={{
+        fontSize: '12px',
+        fontWeight: 700,
+        color: textPrimary,
+        textAlign: 'right',
+        wordBreak: 'break-word',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+      }}
+    >
+      {value}
+      {locked && (
+        <span
+          style={{
+            fontSize: '10px',
+            color: dark ? '#64748B' : '#94A3B8',
+          }}
+          title="Read-only"
+        >
+          🔒
+        </span>
+      )}
+    </div>
+  </div>
+);
+
+const EditInput = ({
   label,
   value,
   onChange,
@@ -1222,7 +1993,7 @@ const ModalInput = ({
     <label
       style={{
         display: 'block',
-        fontSize: '11px',
+        fontSize: '10px',
         fontWeight: 700,
         color: textMuted,
         textTransform: 'uppercase',
@@ -1239,7 +2010,7 @@ const ModalInput = ({
       placeholder={placeholder}
       style={{
         width: '100%',
-        padding: '12px 14px',
+        padding: '11px 14px',
         borderRadius: THEME.radiusMd,
         border: `1px solid ${border}`,
         background: cardBg,
@@ -1254,7 +2025,7 @@ const ModalInput = ({
   </div>
 );
 
-const ModalSelect = ({
+const EditSelect = ({
   label,
   value,
   onChange,
@@ -1264,12 +2035,13 @@ const ModalSelect = ({
   textPrimary,
   textMuted,
   border,
+  placeholder,
 }) => (
   <div style={{ marginBottom: '14px' }}>
     <label
       style={{
         display: 'block',
-        fontSize: '11px',
+        fontSize: '10px',
         fontWeight: 700,
         color: textMuted,
         textTransform: 'uppercase',
@@ -1284,7 +2056,7 @@ const ModalSelect = ({
       onChange={(e) => onChange(e.target.value)}
       style={{
         width: '100%',
-        padding: '12px 14px',
+        padding: '11px 14px',
         borderRadius: THEME.radiusMd,
         border: `1px solid ${border}`,
         background: cardBg,
@@ -1297,15 +2069,15 @@ const ModalSelect = ({
         appearance: 'none',
         backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
         backgroundRepeat: 'no-repeat',
-        backgroundPosition: 'right 14px center',
+        backgroundPosition: 'right 12px center',
         backgroundSize: '16px',
-        paddingRight: '40px',
+        paddingRight: '38px',
         boxSizing: 'border-box',
       }}
     >
-      {options.map((opt) => (
-        <option key={opt} value={opt}>
-          {opt}
+      {options.map((opt, i) => (
+        <option key={i} value={opt}>
+          {opt === '' && placeholder ? placeholder : opt}
         </option>
       ))}
     </select>
