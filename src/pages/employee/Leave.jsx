@@ -2,6 +2,7 @@
 //
 // Vision Earth HRMS — Premium Leave Management
 // (Balance tab removed)
+// ✅ Edit + Revoke + Cancel Revoke with admin-approval flow
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -28,6 +29,8 @@ export const Leave = () => {
   const [activeTab, setActiveTab] = useState('apply');
   const [submitting, setSubmitting] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [editingLeaveId, setEditingLeaveId] = useState(null);
+  const [editingWasApproved, setEditingWasApproved] = useState(false);
 
   const [formData, setFormData] = useState({
     leaveType: 'Casual Leave',
@@ -80,7 +83,7 @@ export const Leave = () => {
   }, [user]);
 
   // ============================================
-  // SUBMIT LEAVE
+  // SUBMIT NEW LEAVE
   // ============================================
   const handleSubmit = async () => {
     if (!formData.fromDate || !formData.toDate) {
@@ -128,6 +131,179 @@ export const Leave = () => {
   };
 
   // ============================================
+  // OPEN EDIT
+  // ============================================
+  const handleEditLeave = (leave) => {
+    setFormData({
+      leaveType: leave.leave_type || 'Casual Leave',
+      fromDate: leave.leave_start_date || '',
+      toDate: leave.leave_end_date || '',
+      reason: leave.reason || '',
+    });
+    setEditingLeaveId(leave.id);
+    setEditingWasApproved(leave.status === 'Approved');
+    setActiveTab('apply');
+  };
+
+  // ============================================
+  // SAVE EDIT
+  // ============================================
+  const handleSaveEdit = async () => {
+    if (!editingLeaveId) return;
+
+    if (!formData.fromDate || !formData.toDate) {
+      toast.error('Please select start and end dates');
+      return;
+    }
+
+    const from = new Date(formData.fromDate);
+    const to = new Date(formData.toDate);
+    if (to < from) {
+      toast.error('End date cannot be before start date');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+
+      const { error } = await supabase
+        .from('leave_requests')
+        .update({
+          leave_type: formData.leaveType,
+          leave_start_date: formData.fromDate,
+          leave_end_date: formData.toDate,
+          reason: formData.reason || null,
+          status: 'Pending',
+          updated_at: new Date().toISOString(),
+          approved_by: null,
+          rejection_reason: null,
+        })
+        .eq('id', editingLeaveId)
+        .eq('employee_id', user?.id);
+
+      if (error) throw error;
+
+      if (editingWasApproved) {
+        toast.success('✅ Leave updated · re-approval pending');
+      } else {
+        toast.success('✅ Leave updated successfully!');
+      }
+
+      setEditingLeaveId(null);
+      setEditingWasApproved(false);
+      setFormData({
+        leaveType: 'Casual Leave',
+        fromDate: '',
+        toDate: '',
+        reason: '',
+      });
+      fetchLeaves();
+      setActiveTab('my');
+      setStatusFilter('all');
+    } catch (error) {
+      console.error('Error updating leave:', error);
+      toast.error(error.message || 'Failed to update leave');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ============================================
+  // CANCEL EDIT
+  // ============================================
+  const handleCancelEdit = () => {
+    setEditingLeaveId(null);
+    setEditingWasApproved(false);
+    setFormData({
+      leaveType: 'Casual Leave',
+      fromDate: '',
+      toDate: '',
+      reason: '',
+    });
+  };
+
+  // ============================================
+  // REVOKE
+  // ============================================
+  const handleRevokeLeave = async (leave) => {
+    const isApproved = leave.status === 'Approved';
+
+    const message = isApproved
+      ? `Request to revoke this APPROVED leave?\n\n${leave.leave_type}\nFrom ${leave.leave_start_date} to ${leave.leave_end_date}\n\nAn admin must approve the revoke.`
+      : `Revoke this leave request?\n\n${leave.leave_type}\nFrom ${leave.leave_start_date} to ${leave.leave_end_date}\n\nThis will be deleted immediately.`;
+
+    const confirmed = window.confirm(message);
+    if (!confirmed) return;
+
+    try {
+      setSubmitting(true);
+
+      if (isApproved) {
+        const { error } = await supabase
+          .from('leave_requests')
+          .update({
+            status: 'Revoke Requested',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', leave.id)
+          .eq('employee_id', user?.id);
+
+        if (error) throw error;
+        toast.success('✅ Revoke request sent to admin');
+      } else {
+        const { error } = await supabase
+          .from('leave_requests')
+          .delete()
+          .eq('id', leave.id)
+          .eq('employee_id', user?.id);
+
+        if (error) throw error;
+        toast.success('✅ Leave request revoked');
+      }
+
+      fetchLeaves();
+    } catch (error) {
+      console.error('Error revoking leave:', error);
+      toast.error(error.message || 'Failed to revoke leave');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ============================================
+  // ✅ NEW: CANCEL REVOKE (restore to Approved)
+  // ============================================
+  const handleCancelRevoke = async (leave) => {
+    const confirmed = window.confirm(
+      `Cancel the revoke request?\n\n${leave.leave_type}\nFrom ${leave.leave_start_date} to ${leave.leave_end_date}\n\nThe leave will go back to "Approved".`
+    );
+    if (!confirmed) return;
+
+    try {
+      setSubmitting(true);
+
+      const { error } = await supabase
+        .from('leave_requests')
+        .update({
+          status: 'Approved',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', leave.id)
+        .eq('employee_id', user?.id);
+
+      if (error) throw error;
+
+      toast.success('✅ Revoke cancelled — leave restored to Approved');
+      fetchLeaves();
+    } catch (error) {
+      console.error('Error cancelling revoke:', error);
+      toast.error(error.message || 'Failed to cancel revoke');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ============================================
   // HELPERS
   // ============================================
   const getStatusFilteredLeaves = () => {
@@ -137,12 +313,17 @@ export const Leave = () => {
       return leaves.filter((l) => l.status === 'Approved' || l.status === 'approved');
     if (statusFilter === 'rejected')
       return leaves.filter((l) => l.status === 'Rejected' || l.status === 'rejected');
+    if (statusFilter === 'revoke')
+      return leaves.filter((l) => l.status === 'Revoke Requested');
     return leaves;
   };
 
   const filteredLeaves = getStatusFilteredLeaves();
   const pendingCount = leaves.filter(
     (l) => l.status === 'Pending' || l.status === 'pending'
+  ).length;
+  const revokeRequestedCount = leaves.filter(
+    (l) => l.status === 'Revoke Requested'
   ).length;
 
   const getLeaveTypeStyle = (type) => {
@@ -157,9 +338,11 @@ export const Leave = () => {
 
   const calculateDays = () => {
     if (!formData.fromDate || !formData.toDate) return 0;
-    const from = new Date(formData.fromDate);
-    const to = new Date(formData.toDate);
-    return Math.max(0, Math.ceil((to - from) / (1000 * 60 * 60 * 24)) + 1);
+    const from = new Date(formData.fromDate + 'T00:00:00+05:30');
+    const to = new Date(formData.toDate + 'T00:00:00+05:30');
+    if (isNaN(from.getTime()) || isNaN(to.getTime())) return 0;
+    const diffDays = Math.round((to - from) / (1000 * 60 * 60 * 24));
+    return Math.max(0, diffDays + 1);
   };
 
   // ============================================
@@ -212,9 +395,7 @@ export const Leave = () => {
         fontFamily: THEME.font,
       }}
     >
-      {/* ============================================ */}
-      {/* PREMIUM HEADER */}
-      {/* ============================================ */}
+      {/* HEADER */}
       <div style={{ padding: '16px 16px 8px' }}>
         <div
           style={{
@@ -337,9 +518,7 @@ export const Leave = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* SEGMENTED TABS (Apply / My Leaves) */}
-      {/* ============================================ */}
+      {/* TABS */}
       <div style={{ padding: '0 16px 12px' }}>
         <div
           style={{
@@ -409,15 +588,17 @@ export const Leave = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
       {/* TAB: APPLY */}
-      {/* ============================================ */}
       {activeTab === 'apply' && (
         <div style={{ padding: '0 16px 16px' }}>
           {/* Info banner */}
           <div
             style={{
-              background: dark
+              background: editingLeaveId
+                ? dark
+                  ? 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(245,158,11,0.05))'
+                  : 'linear-gradient(135deg, #FEF3C7, #FDE68A)'
+                : dark
                 ? 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(59,130,246,0.05))'
                 : 'linear-gradient(135deg, #EFF6FF, #DBEAFE)',
               borderRadius: THEME.radiusLg,
@@ -426,7 +607,15 @@ export const Leave = () => {
               display: 'flex',
               alignItems: 'center',
               gap: '12px',
-              border: `1px solid ${dark ? 'rgba(59,130,246,0.2)' : '#BFDBFE'}`,
+              border: `1px solid ${
+                editingLeaveId
+                  ? dark
+                    ? 'rgba(245,158,11,0.3)'
+                    : '#FBBF24'
+                  : dark
+                  ? 'rgba(59,130,246,0.2)'
+                  : '#BFDBFE'
+              }`,
             }}
           >
             <div
@@ -434,37 +623,55 @@ export const Leave = () => {
                 width: '38px',
                 height: '38px',
                 borderRadius: '12px',
-                background: THEME.blue,
+                background: editingLeaveId ? THEME.amber : THEME.blue,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: '18px',
                 flexShrink: 0,
-                boxShadow: '0 4px 10px rgba(59,130,246,0.3)',
+                boxShadow: editingLeaveId
+                  ? '0 4px 10px rgba(245,158,11,0.3)'
+                  : '0 4px 10px rgba(59,130,246,0.3)',
               }}
             >
-              📝
+              {editingLeaveId ? '✏️' : '📝'}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
                   fontSize: '13px',
                   fontWeight: 800,
-                  color: dark ? '#DBEAFE' : '#1E40AF',
+                  color: editingLeaveId
+                    ? dark
+                      ? '#FDE68A'
+                      : '#92400E'
+                    : dark
+                    ? '#DBEAFE'
+                    : '#1E40AF',
                   marginBottom: '2px',
                 }}
               >
-                Apply for Leave
+                {editingLeaveId ? 'Editing Leave Request' : 'Apply for Leave'}
               </div>
               <div
                 style={{
                   fontSize: '11px',
-                  color: dark ? '#93C5FD' : '#3B82F6',
+                  color: editingLeaveId
+                    ? dark
+                      ? '#FCD34D'
+                      : '#78350F'
+                    : dark
+                    ? '#93C5FD'
+                    : '#3B82F6',
                   fontWeight: 500,
                   lineHeight: 1.3,
                 }}
               >
-                Fill in the details to apply for leave
+                {editingLeaveId
+                  ? editingWasApproved
+                    ? 'Saving will send it back to admin for re-approval'
+                    : 'Change the details and save'
+                  : 'Fill in the details to apply for leave'}
               </div>
             </div>
           </div>
@@ -672,9 +879,9 @@ export const Leave = () => {
             />
           </div>
 
-          {/* Submit */}
+          {/* Submit / Save Edit */}
           <button
-            onClick={handleSubmit}
+            onClick={editingLeaveId ? handleSaveEdit : handleSubmit}
             disabled={submitting}
             style={{
               width: '100%',
@@ -683,12 +890,18 @@ export const Leave = () => {
               border: 'none',
               background: submitting
                 ? '#94A3B8'
+                : editingWasApproved
+                ? `linear-gradient(135deg, ${THEME.amber}, #D97706)`
                 : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
               color: '#FFFFFF',
               fontWeight: 800,
               fontSize: '14px',
               cursor: submitting ? 'not-allowed' : 'pointer',
-              boxShadow: submitting ? 'none' : THEME.shadowGreen,
+              boxShadow: submitting
+                ? 'none'
+                : editingWasApproved
+                ? '0 4px 14px rgba(245,158,11,0.4)'
+                : THEME.shadowGreen,
               fontFamily: THEME.font,
               display: 'flex',
               alignItems: 'center',
@@ -697,9 +910,38 @@ export const Leave = () => {
               letterSpacing: '0.3px',
             }}
           >
-            <span>📤</span>
-            {submitting ? 'Submitting...' : 'Submit Leave Request'}
+            <span>{editingLeaveId ? '💾' : '📤'}</span>
+            {submitting
+              ? 'Saving...'
+              : editingLeaveId
+              ? editingWasApproved
+                ? 'Save & Request Re-Approval'
+                : 'Save Changes'
+              : 'Submit Leave Request'}
           </button>
+
+          {/* Cancel Edit */}
+          {editingLeaveId && (
+            <button
+              onClick={handleCancelEdit}
+              disabled={submitting}
+              style={{
+                width: '100%',
+                padding: '12px',
+                marginTop: '10px',
+                borderRadius: THEME.radiusMd,
+                border: `1px solid ${border}`,
+                background: 'transparent',
+                color: textSecondary,
+                fontWeight: 700,
+                fontSize: '13px',
+                cursor: submitting ? 'not-allowed' : 'pointer',
+                fontFamily: THEME.font,
+              }}
+            >
+              Cancel Edit
+            </button>
+          )}
 
           {/* Leave Types Reference */}
           <div style={{ marginTop: '20px' }}>
@@ -773,9 +1015,7 @@ export const Leave = () => {
         </div>
       )}
 
-      {/* ============================================ */}
       {/* TAB: MY LEAVES */}
-      {/* ============================================ */}
       {activeTab === 'my' && (
         <div style={{ padding: '0 16px 16px' }}>
           {/* Status filter pills */}
@@ -798,20 +1038,32 @@ export const Leave = () => {
                 {
                   key: 'pending',
                   label: 'Pending',
-                  count: leaves.filter((l) => l.status === 'Pending').length,
+                  count: leaves.filter(
+                    (l) => l.status === 'Pending' || l.status === 'pending'
+                  ).length,
                   color: THEME.amber,
                 },
                 {
                   key: 'approved',
                   label: 'Approved',
-                  count: leaves.filter((l) => l.status === 'Approved').length,
+                  count: leaves.filter(
+                    (l) => l.status === 'Approved' || l.status === 'approved'
+                  ).length,
                   color: THEME.primary,
                 },
                 {
                   key: 'rejected',
                   label: 'Rejected',
-                  count: leaves.filter((l) => l.status === 'Rejected').length,
+                  count: leaves.filter(
+                    (l) => l.status === 'Rejected' || l.status === 'rejected'
+                  ).length,
                   color: THEME.red,
+                },
+                {
+                  key: 'revoke',
+                  label: 'Revoke Req.',
+                  count: revokeRequestedCount,
+                  color: THEME.orange,
                 },
               ].map((f) => {
                 const active = statusFilter === f.key;
@@ -823,9 +1075,7 @@ export const Leave = () => {
                       padding: '6px 12px',
                       borderRadius: THEME.radiusPill,
                       border: `1px solid ${active ? f.color + '50' : border}`,
-                      background: active
-                        ? f.color + '15'
-                        : cardBg,
+                      background: active ? f.color + '15' : cardBg,
                       color: active ? f.color : textSecondary,
                       fontSize: '10px',
                       fontWeight: 800,
@@ -882,6 +1132,12 @@ export const Leave = () => {
               const statusColor = getStatusColor(leave.status, theme);
               const statusLabel = getStatusLabel(leave.status);
               const typeStyle = getLeaveTypeStyle(leave.leave_type);
+
+              const canEdit =
+                leave.status === 'Pending' || leave.status === 'Approved';
+              const canRevoke =
+                leave.status === 'Pending' || leave.status === 'Approved';
+              const canCancelRevoke = leave.status === 'Revoke Requested';
 
               return (
                 <div
@@ -1075,6 +1331,111 @@ export const Leave = () => {
                       }}
                     >
                       <strong>Rejected:</strong> {leave.rejection_reason}
+                    </div>
+                  )}
+
+                  {/* Revoke Requested Info + Cancel Revoke */}
+                  {canCancelRevoke && (
+                    <>
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          color: THEME.orange,
+                          padding: '10px 12px',
+                          background: THEME.orangeSoft,
+                          borderRadius: '10px',
+                          marginTop: '10px',
+                          borderLeft: `3px solid ${THEME.orange}`,
+                          lineHeight: 1.4,
+                          fontWeight: 600,
+                        }}
+                      >
+                        ⏳ Revoke request sent to admin — awaiting approval
+                      </div>
+
+                      <button
+                        onClick={() => handleCancelRevoke(leave)}
+                        disabled={submitting}
+                        style={{
+                          width: '100%',
+                          padding: '10px',
+                          marginTop: '10px',
+                          borderRadius: THEME.radiusMd,
+                          border: `1px solid ${THEME.primary}30`,
+                          background: THEME.primary + '10',
+                          color: THEME.primary,
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          cursor: submitting ? 'not-allowed' : 'pointer',
+                          fontFamily: THEME.font,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          letterSpacing: '0.3px',
+                          opacity: submitting ? 0.6 : 1,
+                        }}
+                      >
+                        ↩️ Cancel Revoke Request
+                      </button>
+                    </>
+                  )}
+
+                  {/* Edit + Revoke buttons */}
+                  {canEdit && canRevoke && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '8px',
+                        marginTop: '12px',
+                      }}
+                    >
+                      <button
+                        onClick={() => handleEditLeave(leave)}
+                        disabled={submitting}
+                        style={{
+                          flex: 1,
+                          padding: '10px',
+                          borderRadius: THEME.radiusMd,
+                          border: `1px solid ${THEME.primary}30`,
+                          background: THEME.primary + '10',
+                          color: THEME.primary,
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          cursor: submitting ? 'not-allowed' : 'pointer',
+                          fontFamily: THEME.font,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          letterSpacing: '0.3px',
+                        }}
+                      >
+                        ✏️ Edit
+                      </button>
+                      <button
+                        onClick={() => handleRevokeLeave(leave)}
+                        disabled={submitting}
+                        style={{
+                          flex: 1,
+                          padding: '10px',
+                          borderRadius: THEME.radiusMd,
+                          border: `1px solid ${THEME.red}30`,
+                          background: THEME.red + '10',
+                          color: THEME.red,
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          cursor: submitting ? 'not-allowed' : 'pointer',
+                          fontFamily: THEME.font,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          letterSpacing: '0.3px',
+                        }}
+                      >
+                        {leave.status === 'Approved' ? '🚫 Request Revoke' : '🗑️ Revoke'}
+                      </button>
                     </div>
                   )}
                 </div>

@@ -17,7 +17,7 @@ import { THEME, isDark } from '../../utils/designTokens';
 export const Profile = () => {
   const navigate = useNavigate();
   const { theme, toggleDark } = useTheme();
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, updateUser } = useAuth();
   const dark = isDark(theme);
 
   // ============================================
@@ -209,10 +209,27 @@ export const Profile = () => {
       toast.success('Profile updated successfully!');
       setIsEditing(false);
 
-      const updatedUser = { ...user, ...editData };
-      localStorage.setItem('ve_session', JSON.stringify(updatedUser));
-
-      window.location.reload();
+      // ✅ FIX: update the AuthContext session in-place instead of reloading.
+      //    This makes the header, avatar, and profile card re-render instantly
+      //    with the new data, and persists to localStorage.
+      if (typeof updateUser === 'function') {
+        updateUser({
+          name: editData.name,
+          phone: editData.phone,
+          address: editData.address,
+          city: editData.city,
+          state: editData.state,
+          pincode: editData.pincode,
+          emergency_contact: editData.emergency_contact,
+        });
+      } else {
+        // Fallback for older AuthContext that doesn't yet expose updateUser
+        const updatedUser = { ...user, ...editData };
+        try {
+          localStorage.setItem('ve_session', JSON.stringify(updatedUser));
+        } catch {}
+        window.location.reload();
+      }
     } catch (error) {
       console.error('Error updating profile:', error);
       toast.error(error.message || 'Failed to update profile');

@@ -4,7 +4,7 @@
 // Attractive stat cards with colored accent bars and glow dots.
 // Cool & clean quick action icons.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -68,14 +68,25 @@ export const Dashboard = () => {
   const fetchDashboardStats = async () => {
     try {
       setLoading(true);
-      const currentMonth = new Date().getMonth() + 1;
-      const currentYear = new Date().getFullYear();
-      const startDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
-      const endDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${new Date(
-        currentYear,
-        currentMonth,
-        0
-      ).getDate()}`;
+      // ✅ FIX: derive current IST month and year
+      const now = new Date();
+      const currentMonth = parseInt(
+        now.toLocaleDateString('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          month: '2-digit',
+        })
+      );
+      const currentYear = parseInt(
+        now.toLocaleDateString('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+        })
+      );
+      const mm = String(currentMonth).padStart(2, '0');
+      const lastDay = new Date(currentYear, currentMonth, 0).getDate();
+      const dd = String(lastDay).padStart(2, '0');
+      const startDate = `${currentYear}-${mm}-01`;
+      const endDate = `${currentYear}-${mm}-${dd}`;
 
       const { data: attData, error } = await supabase
         .from('attendance')
@@ -112,12 +123,24 @@ export const Dashboard = () => {
     }
   };
 
+  // ✅ FIX: avoid the duplicate fetch on mount.
+  //    The original two effects both fired their callback on initial render,
+  //    producing two identical API calls. We keep both triggers but skip the
+  //    very first invocation of the check-in effect, since the user effect
+  //    already covers it. Subsequent check-in state changes still refetch.
+  const hasInitialFetchedRef = useRef(false);
+
   useEffect(() => {
     if (user?.id) fetchDashboardStats();
   }, [user]);
 
   useEffect(() => {
-    if (user?.id) fetchDashboardStats();
+    if (!user?.id) return;
+    if (!hasInitialFetchedRef.current) {
+      hasInitialFetchedRef.current = true;
+      return; // skip the initial trigger — user effect already fetched
+    }
+    fetchDashboardStats();
   }, [isCheckedIn, isCheckedOut]);
 
   // ============================================
@@ -338,6 +361,7 @@ export const Dashboard = () => {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+    timeZone: 'Asia/Kolkata',
   });
 
   const firstName = (user?.name || 'User').split(' ')[0] || user?.name;

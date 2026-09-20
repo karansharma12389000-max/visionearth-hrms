@@ -104,7 +104,12 @@ export const AttendanceFormModal = ({
   // ============================================
   // CLOSE DROPDOWN ON OUTSIDE CLICK
   // ============================================
+  // ✅ FIX: attach click-outside listener only while the modal is open.
+  //    When isOpen is false, this effect does nothing, so we don't
+  //    leak a document-level listener across the app's lifetime.
   useEffect(() => {
+    if (!isOpen) return;
+
     const handleClickOutside = (e) => {
       const clickedInsideAny = dropdownRefs.current.some(
         (ref) => ref && ref.contains(e.target)
@@ -115,7 +120,7 @@ export const AttendanceFormModal = ({
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [isOpen]);
 
   // ============================================
   // PROJECT FIELD HELPERS

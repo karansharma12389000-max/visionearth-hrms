@@ -116,7 +116,7 @@ export const getStatusColor = (status, theme) => {
     L: '#3B82F6',
     Leave: '#3B82F6',
 
-    // ✅ Forgotten / Forgot Out (NEW)
+    // Forgotten / Forgot Out
     F: '#F97316',
     Forgotten: '#F97316',
     'Forgot Out': '#F97316',
@@ -125,6 +125,9 @@ export const getStatusColor = (status, theme) => {
     Pending: '#F59E0B',
     Approved: '#10B981',
     Rejected: '#EF4444',
+
+    // ✅ NEW: Revoke Requested
+    'Revoke Requested': '#F97316',
   };
   return colors[status] || theme?.colors?.textSecondary || '#64748B';
 };
@@ -154,7 +157,7 @@ export const getStatusLabel = (status) => {
     L: 'Leave',
     Leave: 'Leave',
 
-    // ✅ Forgotten / Forgot Out (NEW)
+    // Forgotten / Forgot Out
     F: 'Forgot Out',
     Forgotten: 'Forgot Out',
     'Forgot Out': 'Forgot Out',
@@ -163,6 +166,9 @@ export const getStatusLabel = (status) => {
     Pending: 'Pending',
     Approved: 'Approved',
     Rejected: 'Rejected',
+
+    // ✅ NEW: Revoke Requested
+    'Revoke Requested': 'Revoke Req.',
   };
   return labels[status] || status || 'N/A';
 };
@@ -192,7 +198,7 @@ export const getStatusIcon = (status) => {
     L: '📅',
     Leave: '📅',
 
-    // ✅ Forgotten / Forgot Out (NEW)
+    // Forgotten / Forgot Out
     F: '⚠️',
     Forgotten: '⚠️',
     'Forgot Out': '⚠️',
@@ -201,6 +207,9 @@ export const getStatusIcon = (status) => {
     Pending: '⏳',
     Approved: '✅',
     Rejected: '❌',
+
+    // ✅ NEW: Revoke Requested
+    'Revoke Requested': '🚫',
   };
   return icons[status] || '📌';
 };

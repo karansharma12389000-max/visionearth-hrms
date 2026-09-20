@@ -42,3 +42,5 @@ export const ToastProvider = ({ children }) => {
     </>
   );
 };
+
+export default ToastProvider;   // ✅ ADD THIS

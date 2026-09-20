@@ -6,6 +6,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { THEME, isDark } from '../utils/designTokens';
 
 // ============================================
@@ -106,10 +107,15 @@ const Icons = {
   ),
 };
 
-export const BottomNavigation = ({ theme }) => {
+export const BottomNavigation = ({ theme: themeProp }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAdmin } = useAuth();
+  const { theme: themeFromContext } = useTheme();
+
+  // ✅ FIX: prefer the context theme (guaranteed source of truth);
+  //    fall back to the passed prop for backwards compatibility.
+  const theme = themeFromContext || themeProp;
   const dark = isDark(theme);
 
   const tabs = [

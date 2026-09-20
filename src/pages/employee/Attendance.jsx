@@ -18,6 +18,7 @@ import {
   getStatusIcon,
   getMonthName,
 } from '../../utils/helpers';
+import { getISTDateFromTimestamp } from '../../utils/timeUtils';
 import BottomNavigation from '../../components/BottomNavigation';
 import { THEME, isDark } from '../../utils/designTokens';
 
@@ -53,7 +54,7 @@ export const Attendance = () => {
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
   // ============================================
-  // FETCH
+  // FETCH (✅ no more applyFilters inside — prevents race)
   // ============================================
   const fetchAttendance = async () => {
     try {
@@ -66,7 +67,6 @@ export const Attendance = () => {
 
       if (error) throw error;
       setAttendance(data || []);
-      applyFilters(data || [], checkinHistory);
     } catch (err) {
       console.error('Error fetching attendance:', err);
       toast.error('Failed to load attendance');
@@ -85,7 +85,6 @@ export const Attendance = () => {
 
       if (error) throw error;
       setCheckinHistory(data || []);
-      applyFilters(attendance, data || []);
     } catch (err) {
       console.error('Error fetching history:', err);
     }
@@ -100,7 +99,8 @@ export const Attendance = () => {
       fAtt = fAtt.filter((a) => a.attendance_date === today);
       fCheck = fCheck.filter((c) => {
         if (!c.check_in_time) return false;
-        const d = new Date(c.check_in_time).toISOString().split('T')[0];
+        // ✅ FIX: extract IST calendar date, not UTC
+        const d = getISTDateFromTimestamp(c.check_in_time);
         return d === today;
       });
     } else if (viewMode === 'month') {
@@ -108,7 +108,8 @@ export const Attendance = () => {
       fAtt = fAtt.filter((a) => a.attendance_date?.startsWith(monthStr));
       fCheck = fCheck.filter((c) => {
         if (!c.check_in_time) return false;
-        const d = new Date(c.check_in_time).toISOString().split('T')[0];
+        // ✅ FIX: extract IST calendar date, not UTC
+        const d = getISTDateFromTimestamp(c.check_in_time);
         return d?.startsWith(monthStr);
       });
     }
@@ -117,7 +118,8 @@ export const Attendance = () => {
       fAtt = fAtt.filter((a) => a.attendance_date === filterDate);
       fCheck = fCheck.filter((c) => {
         if (!c.check_in_time) return false;
-        const d = new Date(c.check_in_time).toISOString().split('T')[0];
+        // ✅ FIX: extract IST calendar date, not UTC
+        const d = getISTDateFromTimestamp(c.check_in_time);
         return d === filterDate;
       });
     }

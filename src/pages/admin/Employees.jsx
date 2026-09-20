@@ -22,7 +22,9 @@ export const Employees = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(null);
+  // ✅ FIX: split into boolean + object (was: showDeleteModal held the object)
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [employeeToDelete, setEmployeeToDelete] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   // ✅ NEW: Detail modal state
@@ -133,19 +135,17 @@ export const Employees = () => {
 
       let empId = formData.employee_id;
       if (!empId) {
-        const { data: lastEmployee } = await supabase
+        // ✅ FIX: fetch all IDs and pick the highest NUMBER (not string sort)
+        const { data: allEmps } = await supabase
           .from('employees')
-          .select('employee_id')
-          .order('employee_id', { ascending: false })
-          .limit(1);
+          .select('employee_id');
 
-        if (lastEmployee && lastEmployee.length > 0) {
-          const lastId = lastEmployee[0].employee_id;
-          const num = parseInt(lastId.replace('EMP', '')) + 1;
-          empId = `EMP${String(num).padStart(3, '0')}`;
-        } else {
-          empId = `EMP${String(employees.length + 1).padStart(3, '0')}`;
-        }
+        const maxNum = (allEmps || []).reduce((max, e) => {
+          const n = parseInt((e.employee_id || '').replace('EMP', ''), 10);
+          return Number.isFinite(n) && n > max ? n : max;
+        }, 0);
+
+        empId = `EMP${String(maxNum + 1).padStart(3, '0')}`;
       } else {
         const { data: existingId } = await supabase
           .from('employees')
@@ -240,7 +240,8 @@ export const Employees = () => {
       if (error) throw error;
 
       toast.success(`✅ ${employee.name} deleted successfully!`);
-      setShowDeleteModal(null);
+      setShowDeleteModal(false);
+      setEmployeeToDelete(null);
       setShowDetailModal(false);
       setSelectedEmployee(null);
       fetchEmployees();
@@ -1143,6 +1144,7 @@ export const Employees = () => {
                             day: '2-digit',
                             month: 'short',
                             year: 'numeric',
+                            timeZone: 'Asia/Kolkata',
                           })
                         : '—'
                     }
@@ -1193,8 +1195,12 @@ export const Employees = () => {
                       ✏️ Edit
                     </button>
                     {selectedEmployee.id !== user?.id && (
+                      // ✅ FIX: set bool + object
                       <button
-                        onClick={() => setShowDeleteModal(selectedEmployee)}
+                        onClick={() => {
+                          setEmployeeToDelete(selectedEmployee);
+                          setShowDeleteModal(true);
+                        }}
                         style={{
                           flex: 1,
                           padding: '13px',
@@ -1782,7 +1788,7 @@ export const Employees = () => {
       )}
 
       {/* DELETE MODAL */}
-      {showDeleteModal && (
+      {showDeleteModal && employeeToDelete && (
         <div
           style={{
             position: 'fixed',
@@ -1795,7 +1801,10 @@ export const Employees = () => {
             backdropFilter: 'blur(6px)',
             zIndex: 1100,
           }}
-          onClick={() => setShowDeleteModal(null)}
+          onClick={() => {
+            setShowDeleteModal(false);
+            setEmployeeToDelete(null);
+          }}
         >
           <div
             style={{
@@ -1838,7 +1847,7 @@ export const Employees = () => {
             >
               Are you sure you want to delete{' '}
               <strong style={{ color: textPrimary }}>
-                {showDeleteModal.name}
+                {employeeToDelete.name}
               </strong>
               ?
               <br />
@@ -1848,7 +1857,10 @@ export const Employees = () => {
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
-                onClick={() => setShowDeleteModal(null)}
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setEmployeeToDelete(null);
+                }}
                 style={{
                   flex: 1,
                   padding: '12px',
@@ -1865,7 +1877,7 @@ export const Employees = () => {
                 Cancel
               </button>
               <button
-                onClick={() => handleDeleteEmployee(showDeleteModal)}
+                onClick={() => handleDeleteEmployee(employeeToDelete)}
                 disabled={submitting}
                 style={{
                   flex: 1,

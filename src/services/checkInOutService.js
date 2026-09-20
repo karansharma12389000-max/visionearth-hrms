@@ -151,13 +151,16 @@ export const getPendingCheckOut = async (userId) => {
   if (!userId) return null;
 
   const today = getTodayIST();
+  // ✅ FIX: pending = check-in BEFORE today's IST midnight
+  //    today 00:00 IST in UTC = previous day 18:30 UTC
+  const todayStartIST = new Date(`${today}T00:00:00+05:30`).toISOString();
 
   const { data, error } = await supabase
     .from('check_in_out')
     .select('*')
     .eq('employee_id', userId)
     .is('check_out_time', null)
-    .lt('check_in_time', today + 'T00:00:00.000Z')
+    .lt('check_in_time', todayStartIST)
     .order('check_in_time', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -177,13 +180,16 @@ export const getTodayCheckIn = async (userId) => {
   if (!userId) return null;
 
   const today = getTodayIST();
+  // ✅ FIX: use IST-anchored UTC bounds covering the full IST day
+  const dayStartUTC = new Date(`${today}T00:00:00+05:30`).toISOString();
+  const dayEndUTC = new Date(`${today}T23:59:59.999+05:30`).toISOString();
 
   const { data, error } = await supabase
     .from('check_in_out')
     .select('*')
     .eq('employee_id', userId)
-    .gte('check_in_time', today + 'T00:00:00.000Z')
-    .lte('check_in_time', today + 'T23:59:59.999Z')
+    .gte('check_in_time', dayStartUTC)
+    .lte('check_in_time', dayEndUTC)
     .order('check_in_time', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -287,11 +293,9 @@ export const checkOut = async (
   const checkOutDayStr = getISTDateString(checkOutTime);
   const forgottenCheckout = checkInDayStr !== checkOutDayStr;
 
-  // 5. Calculate checkout delay in hours (based on IST day boundaries)
-  const checkoutDelayHours = getISTDaysDiff(
-    record.check_in_time,
-    checkOutTime
-  ) * 24;
+  // ✅ FIX: use real hours (ms diff), not whole-day multiples
+  const checkoutDelayHours =
+    Math.round(((checkOutDate - checkInDate) / 3600000) * 100) / 100;
 
   // 6. Calculate status (IST-safe)
   const status = calculateStatus(attendanceDate, checkOutTime);
@@ -376,11 +380,15 @@ export const getForgottenCount = async (userId, month, year) => {
     .eq('forgotten_checkout', true);
 
   if (month && year) {
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`;
-    const endDate = new Date(year, month, 0).toISOString();
+    // ✅ FIX: IST-anchored month range
+    const mm = String(month).padStart(2, '0');
+    const lastDay = new Date(year, month, 0).getDate();
+    const dd = String(lastDay).padStart(2, '0');
+    const monthStartUTC = new Date(`${year}-${mm}-01T00:00:00+05:30`).toISOString();
+    const monthEndUTC = new Date(`${year}-${mm}-${dd}T23:59:59.999+05:30`).toISOString();
     query = query
-      .gte('check_in_time', startDate)
-      .lte('check_in_time', endDate);
+      .gte('check_in_time', monthStartUTC)
+      .lte('check_in_time', monthEndUTC);
   }
 
   const { count, error } = await query;

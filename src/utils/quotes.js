@@ -24,11 +24,19 @@ const BOTTOM_QUOTES = [
 ];
 
 const getDailyIndex = (array, seed = 0) => {
-  const today = new Date();
+  // ✅ Read the current date AS INDIA SEES IT (IST)
+  const istDateStr = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Kolkata',
+  }); // "YYYY-MM-DD"
+  const [istYear, istMonth, istDay] = istDateStr.split('-').map(Number);
+
+  // ✅ Day-of-year computed from the IST calendar date
+  const startOfISTYear = Date.UTC(istYear, 0, 0); // Jan 0 = Dec 31 prev year
+  const currentISTDay = Date.UTC(istYear, istMonth - 1, istDay);
   const dayOfYear =
-    Math.floor(
-      (today - new Date(today.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24)
-    ) + seed;
+    Math.floor((currentISTDay - startOfISTYear) / (1000 * 60 * 60 * 24)) +
+    seed;
+
   return dayOfYear % array.length;
 };
 

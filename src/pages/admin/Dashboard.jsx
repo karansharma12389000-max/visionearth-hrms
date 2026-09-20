@@ -88,6 +88,13 @@ export const AdminDashboard = () => {
       color: '#059669',
       desc: 'Calculate monthly salary from attendance',
     },
+    {
+      icon: '🎉',
+      label: 'Holiday Management',
+      path: '/admin/holidays',
+      color: '#8B5CF6',
+      desc: 'Add and manage company holidays',
+    },
   ];
 
   // ============================================
@@ -101,7 +108,10 @@ export const AdminDashboard = () => {
         .from('employees')
         .select('*', { count: 'exact', head: true });
 
-      const today = new Date().toISOString().split('T')[0];
+      // ✅ FIX: use IST calendar date, not UTC
+      const today = new Date().toLocaleDateString('en-CA', {
+        timeZone: 'Asia/Kolkata',
+      });
 
       const { data: todayAttendance } = await supabase
         .from('attendance')
@@ -122,10 +132,15 @@ export const AdminDashboard = () => {
         .select('*', { count: 'exact', head: true })
         .eq('status', 'Pending');
 
+      // ✅ FIX: IST-anchored UTC bounds covering the full IST day
+      const dayStartUTC = new Date(`${today}T00:00:00+05:30`).toISOString();
+      const dayEndUTC = new Date(`${today}T23:59:59.999+05:30`).toISOString();
+
       const { data: todayCheckins } = await supabase
         .from('check_in_out')
         .select('*')
-        .gte('check_in_time', today);
+        .gte('check_in_time', dayStartUTC)
+        .lte('check_in_time', dayEndUTC);
 
       setStats({
         totalEmployees: totalEmployees || 0,
@@ -192,6 +207,7 @@ export const AdminDashboard = () => {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+    timeZone: 'Asia/Kolkata',
   });
 
   const firstName = (user?.name || 'Admin').split(' ')[0] || user?.name;
@@ -209,9 +225,7 @@ export const AdminDashboard = () => {
       }}
     >
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {/* ============================================ */}
         {/* HEADER */}
-        {/* ============================================ */}
         <div style={{ padding: '16px 16px 8px' }}>
           <div
             style={{
@@ -361,9 +375,7 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* ============================================ */}
         {/* STATS GRID */}
-        {/* ============================================ */}
         <div style={{ padding: '0 16px 16px' }}>
           <div
             style={{
@@ -469,9 +481,7 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* ============================================ */}
         {/* ADMIN TOOLS */}
-        {/* ============================================ */}
         <div style={{ padding: '0 16px 16px' }}>
           <div
             style={{
@@ -599,9 +609,7 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* ============================================ */}
         {/* FOOTER QUOTE */}
-        {/* ============================================ */}
         <div style={{ padding: '0 16px 16px' }}>
           <div
             style={{
@@ -647,11 +655,9 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* FLEXIBLE SPACER */}
         <div style={{ flex: 1, minHeight: '20px' }} />
       </div>
 
-      {/* Fixed spacer for bottom nav */}
       <div style={{ height: '20px', flexShrink: 0 }} />
 
       <BottomNavigation theme={theme} />

@@ -29,6 +29,7 @@ export const AdminAttendanceReport = () => {
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [companies, setCompanies] = useState([]);
+  const [holidaysMap, setHolidaysMap] = useState({});
 
   // Theme helpers
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
@@ -116,12 +117,12 @@ export const AdminAttendanceReport = () => {
     try {
       setLoading(true);
 
-      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-      const endDate = `${year}-${String(month).padStart(2, '0')}-${new Date(
-        year,
-        month,
-        0
-      ).getDate()}`;
+      // ✅ FIX: zero-padded last day
+      const mm = String(month).padStart(2, '0');
+      const lastDay = new Date(year, month, 0).getDate();
+      const dd = String(lastDay).padStart(2, '0');
+      const startDate = `${year}-${mm}-01`;
+      const endDate = `${year}-${mm}-${dd}`;
 
       // Filter employees
       let empQuery = supabase
@@ -147,13 +148,16 @@ export const AdminAttendanceReport = () => {
 
       if (attError) throw attError;
 
-      // Forgotten records
+      // ✅ FIX: IST-anchored UTC bounds for the forgotten-records query
+      const monthStartUTC = new Date(`${startDate}T00:00:00+05:30`).toISOString();
+      const monthEndUTC = new Date(`${endDate}T23:59:59.999+05:30`).toISOString();
+
       const { data: forgottenData, error: forgottenError } = await supabase
         .from('check_in_out')
         .select('id, employee_id, check_in_time, check_out_time, forgotten_checkout')
         .eq('forgotten_checkout', true)
-        .gte('check_in_time', startDate + 'T00:00:00.000Z')
-        .lte('check_in_time', endDate + 'T23:59:59.999Z');
+        .gte('check_in_time', monthStartUTC)
+        .lte('check_in_time', monthEndUTC);
 
       if (forgottenError) {
         console.warn('Forgotten column missing:', forgottenError.message);
@@ -243,6 +247,26 @@ export const AdminAttendanceReport = () => {
   }, [month, year, selectedEmployee, selectedDepartment, selectedCompany]);
 
   // ============================================
+  // FETCH HOLIDAYS
+  // ============================================
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase
+        .from('holidays')
+        .select('holiday_date, name')
+        .gte('holiday_date', `${year}-01-01`)
+        .lte('holiday_date', `${year}-12-31`);
+
+      const map = {};
+      (data || []).forEach((h) => {
+        map[h.holiday_date] = h.name;
+      });
+      setHolidaysMap(map);
+    };
+    load();
+  }, [year]);
+
+  // ============================================
   // AGGREGATE STATS
   // ============================================
   const getStats = () => {
@@ -272,9 +296,37 @@ export const AdminAttendanceReport = () => {
   const daysInMonth = new Date(year, month, 0).getDate();
 
   // ============================================
-  // BADGE HELPER
+  // BADGE HELPER (with holiday support)
   // ============================================
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (status, day) => {
+    // Holiday overrides everything
+    if (day) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const holidayName = holidaysMap[dateStr];
+      if (holidayName) {
+        return (
+          <span
+            title={holidayName}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '26px',
+              height: '26px',
+              borderRadius: '7px',
+              background: '#8B5CF618',
+              color: '#8B5CF6',
+              fontWeight: 800,
+              fontSize: '10px',
+              border: '1px solid #8B5CF630',
+            }}
+          >
+            H
+          </span>
+        );
+      }
+    }
+
     if (!status || status === '-') {
       return (
         <span
@@ -471,7 +523,6 @@ export const AdminAttendanceReport = () => {
 
       {/* FILTERS */}
       <div style={{ padding: '0 16px 12px' }}>
-        {/* Month/Year */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
           <select
             value={month}
@@ -537,7 +588,6 @@ export const AdminAttendanceReport = () => {
           </select>
         </div>
 
-        {/* Company filter */}
         {companies.length > 0 && (
           <select
             value={selectedCompany}
@@ -576,7 +626,6 @@ export const AdminAttendanceReport = () => {
           </select>
         )}
 
-        {/* Department + Employee */}
         <div style={{ display: 'flex', gap: '8px' }}>
           <select
             value={selectedDepartment}
@@ -993,7 +1042,7 @@ export const AdminAttendanceReport = () => {
                               fontSize: '11px',
                             }}
                           >
-                            {getStatusBadge(emp.days?.[day])}
+                            {getStatusBadge(emp.days?.[day], day)}
                           </td>
                         )
                       )}
@@ -1027,6 +1076,7 @@ export const AdminAttendanceReport = () => {
             { color: '#F59E0B', label: 'D - Delayed' },
             { color: '#DC2626', label: 'B - Beyond' },
             { color: '#3B82F6', label: 'L - Leave' },
+            { color: '#8B5CF6', label: 'H - Holiday' },
           ].map((item, i) => (
             <div
               key={i}

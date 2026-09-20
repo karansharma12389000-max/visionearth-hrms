@@ -33,8 +33,22 @@ export const AdminAttendanceHistory = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
 
   const [viewMode, setViewMode] = useState('today');
-  const [month, setMonth] = useState(new Date().getMonth() + 1);
-  const [year, setYear] = useState(new Date().getFullYear());
+  // ✅ FIX: derive initial month/year from IST calendar
+  const _istNow = new Date();
+  const _istMonth = parseInt(
+    _istNow.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      month: '2-digit',
+    })
+  );
+  const _istYear = parseInt(
+    _istNow.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+    })
+  );
+  const [month, setMonth] = useState(_istMonth);
+  const [year, setYear] = useState(_istYear);
   const [filterDate, setFilterDate] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState('all');
   const [employees, setEmployees] = useState([]);
@@ -155,9 +169,12 @@ export const AdminAttendanceHistory = () => {
       fetchAttendanceHistory(today, today);
       setFilterDate('');
     } else if (mode === 'month') {
-      const monthStr = `${year}-${String(month).padStart(2, '0')}`;
-      const startDate = monthStr + '-01';
-      const endDate = monthStr + '-' + new Date(year, month, 0).getDate();
+      // ✅ FIX: zero-padded last day
+      const mm = String(month).padStart(2, '0');
+      const lastDay = new Date(year, month, 0).getDate();
+      const dd = String(lastDay).padStart(2, '0');
+      const startDate = `${year}-${mm}-01`;
+      const endDate = `${year}-${mm}-${dd}`;
       fetchAttendanceHistory(startDate, endDate);
       setFilterDate('');
     } else if (mode === 'all') {
@@ -170,9 +187,12 @@ export const AdminAttendanceHistory = () => {
     setMonth(newMonth);
     setYear(newYear);
     if (viewMode === 'month') {
-      const monthStr = `${newYear}-${String(newMonth).padStart(2, '0')}`;
-      const startDate = monthStr + '-01';
-      const endDate = monthStr + '-' + new Date(newYear, newMonth, 0).getDate();
+      // ✅ FIX: zero-padded last day
+      const mm = String(newMonth).padStart(2, '0');
+      const lastDay = new Date(newYear, newMonth, 0).getDate();
+      const dd = String(lastDay).padStart(2, '0');
+      const startDate = `${newYear}-${mm}-01`;
+      const endDate = `${newYear}-${mm}-${dd}`;
       fetchAttendanceHistory(startDate, endDate);
     }
   };
@@ -519,7 +539,7 @@ export const AdminAttendanceHistory = () => {
               boxSizing: 'border-box',
             }}
           >
-            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(
+            {Array.from({ length: 5 }, (_, i) => _istYear - i).map(
               (y) => (
                 <option key={y} value={y}>
                   {y}

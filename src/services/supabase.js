@@ -94,6 +94,12 @@ export const changePassword = async (email, oldPassword, newPassword) => {
       return { ok: false, message: 'Employee not found' }
     }
     
+    // ✅ FIX: verify the current password before allowing the change
+    if (employee.password_hash !== oldPassword) {
+      console.log('❌ Old password mismatch for:', email)
+      return { ok: false, message: 'Current password is incorrect' }
+    }
+    
     const { error: updateError } = await supabase
       .from('employees')
       .update({ password_hash: newPassword })
@@ -261,6 +267,9 @@ export const checkIn = async (email, gps, ip, locationName) => {
     console.log('✅ Employee found:', employee.name, 'ID:', employee.id)
     
     const now = new Date()
+    // ✅ FIX: derive IST date and time directly from IST calendar
+    const istDate = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) // "YYYY-MM-DD"
+    const istTime = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false }) // "HH:MM:SS"
     
     // Insert into check_in_out
     const { data, error } = await supabase
@@ -284,13 +293,12 @@ export const checkIn = async (email, gps, ip, locationName) => {
     console.log('✅ Check-in record created')
     
     // Also create attendance record
-    const today = now.toISOString().split('T')[0]
     const { error: attError } = await supabase
       .from('attendance')
       .insert({
         employee_id: employee.id,
-        attendance_date: today,
-        check_in_time: now.toTimeString().slice(0, 8),
+        attendance_date: istDate,
+        check_in_time: istTime,
         check_in_location: locationName,
         check_in_gps: gps,
         status: 'P',
@@ -303,8 +311,8 @@ export const checkIn = async (email, gps, ip, locationName) => {
     
     return { 
       ok: true, 
-      message: `Checked in at ${now.toTimeString().slice(0, 8)}`,
-      time: now.toTimeString().slice(0, 8),
+      message: `Checked in at ${istTime}`,
+      time: istTime,
       status: 'Checked In',
       employeeId: employee.employee_id,
       employeeName: employee.name,
@@ -345,6 +353,10 @@ export const checkOut = async (email, gps, ip, locationName, attendanceData) => 
     const diffMs = now - checkInTime
     const diffHrs = Math.round((diffMs / 3600000) * 100) / 100
     
+    // ✅ FIX: derive IST date and time
+    const istDate = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+    const istTime = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false })
+    
     // Update check_in_out record
     const { data, error } = await supabase
       .from('check_in_out')
@@ -362,24 +374,23 @@ export const checkOut = async (email, gps, ip, locationName, attendanceData) => 
     
     if (error) throw error
     
-    // Update attendance record
-    const today = now.toISOString().split('T')[0]
+    // Update attendance record — ✅ FIX: use IST date for the WHERE clause
     await supabase
       .from('attendance')
       .update({
-        check_out_time: now.toTimeString().slice(0, 8),
+        check_out_time: istTime,
         check_out_location: locationName,
         check_out_gps: gps,
         working_hours: diffHrs,
         status: attendanceData?.status || 'P'
       })
       .eq('employee_id', employee.id)
-      .eq('attendance_date', today)
+      .eq('attendance_date', istDate)
     
     return { 
       ok: true, 
-      message: `Checked out at ${now.toTimeString().slice(0, 8)} - ${diffHrs} hrs`,
-      time: now.toTimeString().slice(0, 8),
+      message: `Checked out at ${istTime} - ${diffHrs} hrs`,
+      time: istTime,
       totalHours: diffHrs,
       status: 'Checked Out'
     }
@@ -394,13 +405,18 @@ export const getTodayCheckinStatus = async (email) => {
     const employee = await getEmployeeByEmail(email)
     if (!employee) return { status: 'Not Checked In' }
     
-    const today = new Date().toISOString().split('T')[0]
+    // ✅ FIX: IST-anchored UTC bounds
+    const now = new Date()
+    const istDate = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+    const dayStartUTC = new Date(`${istDate}T00:00:00+05:30`).toISOString()
+    const dayEndUTC = new Date(`${istDate}T23:59:59.999+05:30`).toISOString()
     
     const { data, error } = await supabase
       .from('check_in_out')
       .select('*')
       .eq('employee_id', employee.id)
-      .gte('check_in_time', today)
+      .gte('check_in_time', dayStartUTC)
+      .lte('check_in_time', dayEndUTC)
       .order('check_in_time', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -439,15 +455,19 @@ export const getCheckInHistory = async (email, month, year) => {
     const employee = await getEmployeeByEmail(email)
     if (!employee) return []
     
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`
-    const endDate = `${year}-${String(month).padStart(2, '0')}-${new Date(year, month, 0).getDate()}`
+    // ✅ FIX: IST-anchored month range + zero-padded last day
+    const mm = String(month).padStart(2, '0')
+    const lastDay = new Date(year, month, 0).getDate()
+    const dd = String(lastDay).padStart(2, '0')
+    const monthStartUTC = new Date(`${year}-${mm}-01T00:00:00+05:30`).toISOString()
+    const monthEndUTC = new Date(`${year}-${mm}-${dd}T23:59:59.999+05:30`).toISOString()
     
     const { data, error } = await supabase
       .from('check_in_out')
       .select('*')
       .eq('employee_id', employee.id)
-      .gte('check_in_time', startDate)
-      .lte('check_in_time', endDate)
+      .gte('check_in_time', monthStartUTC)
+      .lte('check_in_time', monthEndUTC)
       .order('check_in_time', { ascending: false })
     
     if (error) throw error
@@ -548,11 +568,21 @@ export const getDashboardData = async (email) => {
       return { present: 0, delayed: 0, absent: 0, leave: 0, beyondDelay: 0, total: 0, recent: [] }
     }
     
-    const currentMonth = new Date().getMonth() + 1
-    const currentYear = new Date().getFullYear()
+    // ✅ FIX: derive current IST month/year
+    const now = new Date()
+    const istMonth = parseInt(
+      now.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', month: '2-digit' })
+    )
+    const istYear = parseInt(
+      now.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric' })
+    )
     
-    const startDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
-    const endDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${new Date(currentYear, currentMonth, 0).getDate()}`
+    // ✅ FIX: zero-padded last day
+    const mm = String(istMonth).padStart(2, '0')
+    const lastDay = new Date(istYear, istMonth, 0).getDate()
+    const dd = String(lastDay).padStart(2, '0')
+    const startDate = `${istYear}-${mm}-01`
+    const endDate = `${istYear}-${mm}-${dd}`
     
     const { data, error } = await supabase
       .from('attendance')

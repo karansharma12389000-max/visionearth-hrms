@@ -19,6 +19,7 @@ import { Employees } from '../pages/admin/Employees';
 import { AdminLeaves } from '../pages/admin/Leaves';
 import { ForgotTracker } from '../pages/admin/ForgotTracker';       // ✅ NEW
 import { SalaryCalculator } from '../pages/admin/SalaryCalculator'; // ✅ NEW
+import { AdminHolidays } from '../pages/admin/Holidays';
 
 // Auth Pages
 import { Login } from '../pages/auth/Login';
@@ -152,6 +153,14 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+  path="/admin/holidays"
+  element={
+    <ProtectedRoute adminOnly={true}>
+      <AdminHolidays />
+    </ProtectedRoute>
+  }
+/>
 
       {/* Fallback - redirect to dashboard */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

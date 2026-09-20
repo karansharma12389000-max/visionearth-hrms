@@ -25,8 +25,22 @@ export const AdminCheckinHistory = () => {
   const dark = isDark(theme);
 
   const [loading, setLoading] = useState(true);
-  const [month, setMonth] = useState(new Date().getMonth() + 1);
-  const [year, setYear] = useState(new Date().getFullYear());
+  // ✅ FIX: derive initial month/year from IST calendar
+  const _istNow = new Date();
+  const _istMonth = parseInt(
+    _istNow.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      month: '2-digit',
+    })
+  );
+  const _istYear = parseInt(
+    _istNow.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+    })
+  );
+  const [month, setMonth] = useState(_istMonth);
+  const [year, setYear] = useState(_istYear);
   const [checkins, setCheckins] = useState([]);
   const [filteredCheckins, setFilteredCheckins] = useState([]);
   const [filterDate, setFilterDate] = useState('');
@@ -103,20 +117,21 @@ export const AdminCheckinHistory = () => {
 
   const loadTodayData = () => {
     const today = getTodayIST();
-    const startDate = today + 'T00:00:00.000Z';
-    const endDate = today + 'T23:59:59.999Z';
+    // ✅ FIX: IST-anchored UTC bounds for the full IST day
+    const startDate = new Date(`${today}T00:00:00+05:30`).toISOString();
+    const endDate = new Date(`${today}T23:59:59.999+05:30`).toISOString();
     setViewMode('today');
     setFilterDate(today);
     fetchCheckinHistory(startDate, endDate);
   };
 
   const loadMonthData = () => {
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`;
-    const endDate = `${year}-${String(month).padStart(2, '0')}-${new Date(
-      year,
-      month,
-      0
-    ).getDate()}T23:59:59.999Z`;
+    // ✅ FIX: IST-anchored month range + zero-padded last day
+    const mm = String(month).padStart(2, '0');
+    const lastDay = new Date(year, month, 0).getDate();
+    const dd = String(lastDay).padStart(2, '0');
+    const startDate = new Date(`${year}-${mm}-01T00:00:00+05:30`).toISOString();
+    const endDate = new Date(`${year}-${mm}-${dd}T23:59:59.999+05:30`).toISOString();
     setViewMode('month');
     setFilterDate('');
     fetchCheckinHistory(startDate, endDate);
@@ -127,8 +142,9 @@ export const AdminCheckinHistory = () => {
       toast.error('Please select a date');
       return;
     }
-    const startDate = filterDate + 'T00:00:00.000Z';
-    const endDate = filterDate + 'T23:59:59.999Z';
+    // ✅ FIX: IST-anchored UTC bounds for the chosen IST day
+    const startDate = new Date(`${filterDate}T00:00:00+05:30`).toISOString();
+    const endDate = new Date(`${filterDate}T23:59:59.999+05:30`).toISOString();
     setViewMode('custom');
     fetchCheckinHistory(startDate, endDate);
   };
@@ -424,7 +440,7 @@ export const AdminCheckinHistory = () => {
               boxSizing: 'border-box',
             }}
           >
-            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(
+            {Array.from({ length: 5 }, (_, i) => _istYear - i).map(
               (y) => (
                 <option key={y} value={y}>
                   {y}

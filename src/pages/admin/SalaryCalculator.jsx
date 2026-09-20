@@ -54,9 +54,22 @@ export const SalaryCalculator = () => {
   const { theme, toggleDark } = useTheme();
   const dark = isDark(theme);
 
-  const now = new Date();
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  // ✅ FIX: derive initial month/year from IST calendar
+  const _istNow = new Date();
+  const _istMonth = parseInt(
+    _istNow.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      month: '2-digit',
+    })
+  );
+  const _istYear = parseInt(
+    _istNow.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+    })
+  );
+  const [month, setMonth] = useState(_istMonth);
+  const [year, setYear] = useState(_istYear);
 
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState([]);
@@ -93,12 +106,12 @@ export const SalaryCalculator = () => {
     try {
       setLoading(true);
 
-      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-      const endDate = `${year}-${String(month).padStart(2, '0')}-${new Date(
-        year,
-        month,
-        0
-      ).getDate()}`;
+      // ✅ FIX: zero-padded last day
+      const mm = String(month).padStart(2, '0');
+      const lastDay = new Date(year, month, 0).getDate();
+      const dd = String(lastDay).padStart(2, '0');
+      const startDate = `${year}-${mm}-01`;
+      const endDate = `${year}-${mm}-${dd}`;
 
       const [empRes, attRes] = await Promise.all([
         supabase
@@ -233,7 +246,11 @@ export const SalaryCalculator = () => {
   // ============================================
   const computeStats = (empId, monthlySalary) => {
     const records = attendanceMap[empId] || [];
-    const salary = parseFloat(monthlySalary) || 0;
+    // ✅ FIX: use Number() for strict parsing and explicit finite check
+    //    Rejects "1.2.3", "abc", Infinity, NaN, and negative salaries.
+    const rawSalary = String(monthlySalary ?? '').trim();
+    const parsed = rawSalary === '' ? 0 : Number(rawSalary);
+    const salary = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 
     const perDay =
       salary > 0
@@ -697,8 +714,7 @@ export const SalaryCalculator = () => {
           <>
             {/* SUMMARY */}
             <div style={{ padding: '0 16px 12px' }}>
-              <div
-                style={{
+              <div                style={{
                   padding: '14px',
                   background: dark
                     ? `linear-gradient(145deg, ${selectedAccent}15 0%, #1E293B 60%)`

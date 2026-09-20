@@ -25,7 +25,7 @@ export const Login = () => {
   const [error, setError] = useState('');
 
   // ✅ CONFIG: Change these to your admin/HR details
-  const ADMIN_EMAIL = 'visionearthcare.com'; // ← UPDATE THIS
+  const ADMIN_EMAIL = 'admin@visionearthcare.com'; // ← UPDATE THIS to your real admin email
   const ADMIN_SUBJECT = 'HRMS Access Request';
   const ADMIN_BODY = `Hello Vision Earth HRMS Team,
 
@@ -81,9 +81,10 @@ Thank you,
     e.preventDefault();
 
     const trimmedEmail = email.trim();
-    const trimmedPassword = password.trim();
+    // ✅ FIX: do not trim the password — spaces may be part of a valid password
+    const rawPassword = password;
 
-    if (!trimmedEmail || !trimmedPassword) {
+    if (!trimmedEmail || !rawPassword) {
       setError('Please enter both email and password.');
       return;
     }
@@ -105,7 +106,7 @@ Thank you,
       const found = DEMO_EMPLOYEES.find(
         (emp) =>
           emp.email.toLowerCase() === trimmedEmail.toLowerCase() &&
-          emp.password === trimmedPassword
+          emp.password === rawPassword
       );
 
       if (found) {
@@ -118,7 +119,7 @@ Thank you,
       }
 
       // Supabase login
-      const result = await login(trimmedEmail, trimmedPassword);
+      const result = await login(trimmedEmail, rawPassword);
 
       if (result.ok && result.employee) {
         const userData = {

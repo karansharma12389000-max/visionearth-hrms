@@ -244,38 +244,67 @@ export const getCurrentISTMinute = () => {
 
 /**
  * Get IST date range for a month
+ * ✅ FIXED: Returns IST calendar dates (zero-padded) and
+ *    UTC ISO bounds that fully cover the IST month window.
  */
 export const getMonthRangeIST = (month, year) => {
-  const startDate = new Date(year, month - 1, 1);
-  const endDate = new Date(year, month, 0);
+  const mm = String(month).padStart(2, '0');
+  const lastDay = new Date(year, month, 0).getDate();
+  const dd = String(lastDay).padStart(2, '0');
+
+  // IST calendar strings (YYYY-MM-DD)
+  const startDateStr = `${year}-${mm}-01`;
+  const endDateStr = `${year}-${mm}-${dd}`;
+
+  // UTC bounds covering the full IST day window:
+  //   00:00 IST     = 18:30 UTC of previous day
+  //   23:59:59.999 IST = 18:29:59.999 UTC of same day
+  const startUTC = new Date(`${startDateStr}T00:00:00+05:30`).toISOString();
+  const endUTC = new Date(`${endDateStr}T23:59:59.999+05:30`).toISOString();
 
   return {
-    startDate: startDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
-    endDate: endDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
-    startUTC: startDate.toISOString(),
-    endUTC: endDate.toISOString(),
+    startDate: startDateStr, // "2026-09-01"
+    endDate: endDateStr,     // "2026-09-30"
+    startUTC,                // "2026-08-31T18:30:00.000Z"
+    endUTC,                  // "2026-09-30T18:29:59.999Z"
   };
 };
 
 /**
  * Get IST date range for today
+ * ✅ FIXED: UTC bounds cover the full IST day (00:00 – 23:59:59 IST).
  */
 export const getTodayRangeIST = () => {
   const today = getTodayIST();
+  const startUTC = new Date(`${today}T00:00:00+05:30`).toISOString();
+  const endUTC = new Date(`${today}T23:59:59.999+05:30`).toISOString();
   return {
     start: today,
     end: today,
-    startUTC: today + 'T00:00:00.000Z',
-    endUTC: today + 'T23:59:59.999Z',
+    startUTC,
+    endUTC,
   };
 };
 
 /**
  * Get IST date range for the current month
+ * ✅ FIXED: Derives month/year from IST calendar, not server local time.
  */
 export const getCurrentMonthRangeIST = () => {
   const now = new Date();
-  return getMonthRangeIST(now.getMonth() + 1, now.getFullYear());
+  const istMonth = parseInt(
+    now.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      month: '2-digit',
+    })
+  );
+  const istYear = parseInt(
+    now.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+    })
+  );
+  return getMonthRangeIST(istMonth, istYear);
 };
 
 /**
@@ -387,6 +416,33 @@ export const getHoursDiff = (dateA, dateB = new Date()) => {
   }
 };
 
+/**
+ * Add `n` calendar days to an IST date string (YYYY-MM-DD).
+ * Returns YYYY-MM-DD in IST.
+ *
+ * ✅ IST-safe: anchors both ends at IST midnight before computing,
+ *    so no UTC-shift off-by-one.
+ *
+ * Used by:
+ *   - Admin Leave approval / rejection loops
+ *   - Any date-range iteration in the app
+ *
+ * Example:
+ *   addDaysIST('2026-09-18', 1)  → "2026-09-19"
+ *   addDaysIST('2026-09-30', 1)  → "2026-10-01"
+ *   addDaysIST('2026-12-31', 1)  → "2027-01-01"
+ *   addDaysIST('2026-09-18', -1) → "2026-09-17"
+ *   addDaysIST(null, 1)          → null
+ *   addDaysIST('bad-date', 1)    → null
+ */
+export const addDaysIST = (dateStr, n) => {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + 'T00:00:00+05:30');
+  if (isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+};
+
 // ============================================================
 // 6. LEGACY COMPATIBILITY (kept for existing code)
 // ============================================================
@@ -442,6 +498,7 @@ export default {
   isSameISTDay,
   getDaysDiffIST,
   getHoursDiff,
+  addDaysIST,
 
   // Legacy
   formatUTCDateToIST,

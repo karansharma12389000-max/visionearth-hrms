@@ -17,9 +17,22 @@ export const ForgotTracker = () => {
   const { theme, toggleDark } = useTheme();
   const dark = isDark(theme);
 
-  const now = new Date();
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  // ✅ FIX: derive current month/year from IST calendar
+  const _istNow = new Date();
+  const _istMonth = parseInt(
+    _istNow.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      month: '2-digit',
+    })
+  );
+  const _istYear = parseInt(
+    _istNow.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+    })
+  );
+  const [month, setMonth] = useState(_istMonth);
+  const [year, setYear] = useState(_istYear);
 
   const [summary, setSummary] = useState({
     total: 0,
@@ -50,9 +63,12 @@ export const ForgotTracker = () => {
     try {
       setLoading(true);
 
-      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      // ✅ FIX: IST-anchored UTC bounds for the check_in_time filter
+      const mm = String(month).padStart(2, '0');
       const lastDay = new Date(year, month, 0).getDate();
-      const endDate = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
+      const dd = String(lastDay).padStart(2, '0');
+      const monthStartUTC = new Date(`${year}-${mm}-01T00:00:00+05:30`).toISOString();
+      const monthEndUTC = new Date(`${year}-${mm}-${dd}T23:59:59.999+05:30`).toISOString();
 
       const { data, error } = await supabase
         .from('check_in_out')
@@ -72,8 +88,8 @@ export const ForgotTracker = () => {
           )
         `)
         .eq('forgotten_checkout', true)
-        .gte('check_in_time', startDate + 'T00:00:00.000Z')
-        .lte('check_in_time', endDate + 'T23:59:59.999Z')
+        .gte('check_in_time', monthStartUTC)
+        .lte('check_in_time', monthEndUTC)
         .order('check_in_time', { ascending: false });
 
       if (error) throw error;
@@ -112,9 +128,10 @@ export const ForgotTracker = () => {
         entry.records.push(row);
       });
 
+      // ✅ FIX: deterministic tie-break by name (was returning 0)
       const sorted = Array.from(map.values()).sort((a, b) => {
         if (b.count !== a.count) return b.count - a.count;
-        return 0;
+        return (a.name || '').localeCompare(b.name || '');
       });
 
       setOffenders(sorted);
@@ -138,6 +155,13 @@ export const ForgotTracker = () => {
       toast.error('No email address found for this employee');
       return;
     }
+
+    // ✅ FIX: confirm before opening the email modal — prevents accidental
+    //    multiple warnings to the same employee
+    const confirmed = window.confirm(
+      `Send a warning email to ${employee.name} (${employee.count} forgotten check-out${employee.count === 1 ? '' : 's'})?`
+    );
+    if (!confirmed) return;
 
     setEmailModal({
       open: true,
@@ -436,7 +460,7 @@ People • Projects • A Greener Tomorrow`;
                 boxSizing: 'border-box',
               }}
             >
-              {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+              {Array.from({ length: 5 }, (_, i) => _istYear - i).map((y) => (
                 <option key={y} value={y} style={{ color: '#000', background: '#FFF' }}>
                   {y}
                 </option>

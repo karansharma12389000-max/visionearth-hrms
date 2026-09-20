@@ -12,9 +12,17 @@ const Button = ({
   variant = 'primary',
   theme,
 }) => {
-  const bgColor = color || (variant === 'primary' ? '#1E40AF' : 'transparent');
-  const textColor = variant === 'primary' ? '#FFFFFF' : theme?.colors?.textPrimary || '#0F172A';
-  const borderColor = variant === 'outline' ? bgColor : 'transparent';
+  const DEFAULT_PRIMARY = '#1E40AF';
+
+  const bgColor = color || (variant === 'primary' ? DEFAULT_PRIMARY : 'transparent');
+  const textColor =
+    variant === 'primary'
+      ? '#FFFFFF'
+      : theme?.colors?.textPrimary || '#0F172A';
+
+  // ✅ FIX: outline falls back to DEFAULT_PRIMARY when no color is passed
+  const borderColor =
+    variant === 'outline' ? (color || DEFAULT_PRIMARY) : 'transparent';
 
   return (
     <button

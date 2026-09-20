@@ -24,16 +24,33 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('ve_session');
   }, []);
 
+  // ✅ NEW: partial update of the current user's session.
+  //   Merges the patch into the existing session, persists to
+  //   localStorage, and triggers a re-render across all consumers.
+  const updateUser = useCallback((patch) => {
+    setSession((prev) => {
+      if (!prev) return prev; // no session → nothing to update
+      const next = { ...prev, ...patch };
+      try {
+        localStorage.setItem('ve_session', JSON.stringify(next));
+      } catch (err) {
+        console.error('Failed to persist updated session:', err);
+      }
+      return next;
+    });
+  }, []);
+
   const value = useMemo(() => ({
     session,
     login,
     logout,
+    updateUser,
     loading,
     isAuthenticated: !!session,
     isAdmin: session?.role === 'Admin' || session?.role === 'HR' || session?.role === 'admin',
     isEmployee: session?.role === 'Employee' || session?.role === 'employee',
     user: session,
-  }), [session, login, logout, loading]);
+  }), [session, login, logout, updateUser, loading]);
 
   return (
     <AuthContext.Provider value={value}>

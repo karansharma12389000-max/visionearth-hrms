@@ -126,12 +126,16 @@ const markAbsentees = async (today) => {
       return;
     }
 
-    // 2. Get employees who checked in today (any status)
+    // 2. Get employees who checked in today (any status) — ✅ IST-safe bounds
+    //    Compute UTC boundaries that cover the full IST day (00:00 – 23:59:59.999 IST)
+    const dayStartUTC = new Date(`${today}T00:00:00+05:30`).toISOString();
+    const dayEndUTC = new Date(`${today}T23:59:59.999+05:30`).toISOString();
+
     const { data: checkIns, error: ciErr } = await supabase
       .from('check_in_out')
       .select('employee_id')
-      .gte('check_in_time', today + 'T00:00:00.000Z')
-      .lte('check_in_time', today + 'T23:59:59.999Z');
+      .gte('check_in_time', dayStartUTC)
+      .lte('check_in_time', dayEndUTC);
     if (ciErr) throw ciErr;
 
     const checkedInIds = new Set((checkIns || []).map((c) => c.employee_id));

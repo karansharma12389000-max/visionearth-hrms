@@ -2,6 +2,7 @@
 //
 // Vision Earth HRMS — Premium Admin Leave Approvals
 // Approve/reject leave requests with premium design.
+// ✅ Revoke Requested tab + Approve Revoke + Decline Revoke.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -14,6 +15,7 @@ import {
   getStatusColor,
   getStatusLabel,
 } from '../../utils/helpers';
+import { addDaysIST } from '../../utils/timeUtils';
 import BottomNavigation from '../../components/BottomNavigation';
 import { THEME, isDark } from '../../utils/designTokens';
 
@@ -91,9 +93,10 @@ export const AdminLeaves = () => {
         .from('employees')
         .select('id')
         .eq('email', user.email)
-        .single();
+        .maybeSingle();
 
-      if (adminError) {
+      // ✅ FIX: check both error AND null
+      if (adminError || !adminData) {
         toast.error('Could not find admin record');
         setSubmitting(false);
         return;
@@ -116,19 +119,13 @@ export const AdminLeaves = () => {
         .eq('id', leave.employee_id)
         .single();
 
-      // Mark attendance as 'L'
-      const startDate = new Date(leave.leave_start_date);
-      const endDate = new Date(leave.leave_end_date);
+      // ✅ FIX: IST-safe date iteration — no UTC+5.5h tricks
       let markedCount = 0;
       let skippedCount = 0;
+      let currentDate = leave.leave_start_date;
 
-      for (
-        let d = new Date(startDate);
-        d <= endDate;
-        d.setDate(d.getDate() + 1)
-      ) {
-        const istDate = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
-        const dateStr = istDate.toISOString().split('T')[0];
+      while (currentDate <= leave.leave_end_date) {
+        const dateStr = currentDate;
 
         const { data: existingAtt } = await supabase
           .from('attendance')
@@ -161,6 +158,8 @@ export const AdminLeaves = () => {
           });
           markedCount++;
         }
+
+        currentDate = addDaysIST(currentDate, 1);
       }
 
       let message = `✅ Leave approved for ${empData?.name || 'employee'}`;
@@ -197,31 +196,25 @@ export const AdminLeaves = () => {
 
       if (error) throw error;
 
-      // Remove any 'L' entries
-      const startDate = new Date(selectedLeave.leave_start_date);
-      const endDate = new Date(selectedLeave.leave_end_date);
+      // ✅ FIX: IST-safe date iteration + accept any case variant of 'L'
       let removedCount = 0;
+      let currentDate = selectedLeave.leave_start_date;
 
-      for (
-        let d = new Date(startDate);
-        d <= endDate;
-        d.setDate(d.getDate() + 1)
-      ) {
-        const istDate = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
-        const dateStr = istDate.toISOString().split('T')[0];
-
+      while (currentDate <= selectedLeave.leave_end_date) {
         const { data: existingAtt } = await supabase
           .from('attendance')
           .select('id')
           .eq('employee_id', selectedLeave.employee_id)
-          .eq('attendance_date', dateStr)
-          .eq('status', 'L')
+          .eq('attendance_date', currentDate)
+          .in('status', ['L', 'l', 'Leave', 'leave'])
           .maybeSingle();
 
         if (existingAtt) {
           await supabase.from('attendance').delete().eq('id', existingAtt.id);
           removedCount++;
         }
+
+        currentDate = addDaysIST(currentDate, 1);
       }
 
       toast.success(`✅ Rejected · removed ${removedCount} day(s)`);
@@ -239,10 +232,93 @@ export const AdminLeaves = () => {
   };
 
   // ============================================
+  // APPROVE REVOKE
+  // ============================================
+  const handleApproveRevoke = async (leave) => {
+    // ✅ FIX: use formatDate for friendly dates in the confirm dialog
+    const confirmed = window.confirm(
+      `Approve revoke for ${leave.employees?.name || 'employee'}?\n\nThis will delete their approved leave:\n${leave.leave_type}\nFrom ${formatDate(leave.leave_start_date)} to ${formatDate(leave.leave_end_date)}\n\nThis cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setSubmitting(true);
+
+      // 1. Delete attendance records marked as 'L' for this leave
+      let currentDate = leave.leave_start_date;
+      while (currentDate <= leave.leave_end_date) {
+        const { data: existingAtt } = await supabase
+          .from('attendance')
+          .select('id')
+          .eq('employee_id', leave.employee_id)
+          .eq('attendance_date', currentDate)
+          .in('status', ['L', 'l', 'Leave', 'leave'])
+          .maybeSingle();
+
+        if (existingAtt) {
+          await supabase.from('attendance').delete().eq('id', existingAtt.id);
+        }
+
+        currentDate = addDaysIST(currentDate, 1);
+      }
+
+      // 2. Delete the leave request itself
+      const { error } = await supabase
+        .from('leave_requests')
+        .delete()
+        .eq('id', leave.id);
+
+      if (error) throw error;
+
+      toast.success('✅ Revoke approved — leave deleted');
+      fetchLeaves();
+    } catch (error) {
+      console.error('Error approving revoke:', error);
+      toast.error(error.message || 'Failed to approve revoke');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ============================================
+  // ✅ NEW: DECLINE REVOKE
+  // ============================================
+  const handleDeclineRevoke = async (leave) => {
+    const confirmed = window.confirm(
+      `Decline the revoke for ${leave.employees?.name || 'employee'}?\n\nThe leave will go back to "Approved" and the employee's attendance will stay as "L" for ${leave.leave_type} from ${formatDate(leave.leave_start_date)} to ${formatDate(leave.leave_end_date)}.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setSubmitting(true);
+
+      const { error } = await supabase
+        .from('leave_requests')
+        .update({
+          status: 'Approved',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', leave.id);
+
+      if (error) throw error;
+
+      toast.success('✅ Revoke declined — leave stays approved');
+      fetchLeaves();
+    } catch (error) {
+      console.error('Error declining revoke:', error);
+      toast.error(error.message || 'Failed to decline revoke');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ============================================
   // FILTERS
   // ============================================
   const getFilteredLeaves = () => {
     if (filter === 'all') return leaves;
+    if (filter === 'revoke')
+      return leaves.filter((l) => l.status === 'Revoke Requested');
     return leaves.filter((l) => l.status?.toLowerCase() === filter);
   };
 
@@ -250,6 +326,9 @@ export const AdminLeaves = () => {
   const pendingCount = leaves.filter((l) => l.status === 'Pending').length;
   const approvedCount = leaves.filter((l) => l.status === 'Approved').length;
   const rejectedCount = leaves.filter((l) => l.status === 'Rejected').length;
+  const revokeCount = leaves.filter(
+    (l) => l.status === 'Revoke Requested'
+  ).length;
 
   // ============================================
   // LOADING
@@ -407,7 +486,7 @@ export const AdminLeaves = () => {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
+            gridTemplateColumns: 'repeat(4, 1fr)',
             gap: '8px',
           }}
         >
@@ -415,6 +494,7 @@ export const AdminLeaves = () => {
             { value: pendingCount, label: 'Pending', color: THEME.amber },
             { value: approvedCount, label: 'Approved', color: THEME.primary },
             { value: rejectedCount, label: 'Rejected', color: THEME.red },
+            { value: revokeCount, label: 'Revoke', color: THEME.orange },
           ].map((stat, idx) => (
             <div
               key={idx}
@@ -471,6 +551,7 @@ export const AdminLeaves = () => {
             { key: 'pending', label: 'Pending', count: pendingCount },
             { key: 'approved', label: 'Approved', count: approvedCount },
             { key: 'rejected', label: 'Rejected', count: rejectedCount },
+            { key: 'revoke', label: 'Revoke', count: revokeCount },
             { key: 'all', label: 'All', count: leaves.length },
           ].map((v) => {
             const active = filter === v.key;
@@ -480,7 +561,7 @@ export const AdminLeaves = () => {
                 onClick={() => setFilter(v.key)}
                 style={{
                   flex: 1,
-                  padding: '8px 4px',
+                  padding: '8px 2px',
                   borderRadius: THEME.radiusPill,
                   border: 'none',
                   background: active
@@ -490,7 +571,7 @@ export const AdminLeaves = () => {
                     : 'transparent',
                   color: active ? THEME.primary : textSecondary,
                   fontWeight: active ? 800 : 600,
-                  fontSize: '10px',
+                  fontSize: '9px',
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
                   boxShadow: active ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
@@ -509,9 +590,9 @@ export const AdminLeaves = () => {
                       color: active ? '#FFFFFF' : textMuted,
                       padding: '0 5px',
                       borderRadius: '8px',
-                      fontSize: '9px',
+                      fontSize: '8px',
                       fontWeight: 800,
-                      minWidth: '16px',
+                      minWidth: '14px',
                       textAlign: 'center',
                     }}
                   >
@@ -553,6 +634,7 @@ export const AdminLeaves = () => {
             const statusColor = getStatusColor(leave.status, theme);
             const statusLabel = getStatusLabel(leave.status);
             const isPending = leave.status === 'Pending';
+            const isRevokeRequested = leave.status === 'Revoke Requested';
 
             return (
               <div
@@ -742,6 +824,61 @@ export const AdminLeaves = () => {
                     }}
                   >
                     <strong>Rejected:</strong> {leave.rejection_reason}
+                  </div>
+                )}
+
+                {/* Revoke Requested actions */}
+                {isRevokeRequested && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => handleApproveRevoke(leave)}
+                      disabled={submitting}
+                      style={{
+                        flex: 1,
+                        padding: '11px',
+                        borderRadius: THEME.radiusMd,
+                        border: 'none',
+                        background: `linear-gradient(135deg, ${THEME.red}, #DC2626)`,
+                        color: '#FFFFFF',
+                        fontWeight: 800,
+                        fontSize: '12px',
+                        cursor: submitting ? 'not-allowed' : 'pointer',
+                        boxShadow: '0 4px 14px rgba(239,68,68,0.35)',
+                        fontFamily: THEME.font,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        letterSpacing: '0.3px',
+                        opacity: submitting ? 0.6 : 1,
+                      }}
+                    >
+                      🗑️ Approve Revoke
+                    </button>
+                    <button
+                      onClick={() => handleDeclineRevoke(leave)}
+                      disabled={submitting}
+                      style={{
+                        flex: 1,
+                        padding: '11px',
+                        borderRadius: THEME.radiusMd,
+                        border: `1px solid ${THEME.primary}30`,
+                        background: THEME.primary + '10',
+                        color: THEME.primary,
+                        fontWeight: 800,
+                        fontSize: '12px',
+                        cursor: submitting ? 'not-allowed' : 'pointer',
+                        fontFamily: THEME.font,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        letterSpacing: '0.3px',
+                        opacity: submitting ? 0.6 : 1,
+                      }}
+                    >
+                      ↩️ Decline Revoke
+                    </button>
                   </div>
                 )}
 

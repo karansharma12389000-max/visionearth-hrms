@@ -40,8 +40,8 @@ export const Report = () => {
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
   const [view, setView] = useState('table');
+  const [holidaysMap, setHolidaysMap] = useState({});
 
-  // Chart slice detail modal
   const [sliceModal, setSliceModal] = useState({
     open: false,
     statusKey: null,
@@ -82,7 +82,6 @@ export const Report = () => {
     Forgotten: 'F',
   };
 
-  // Human-readable status names for forgot resolution text
   const statusFullNames = {
     P: 'Present',
     Present: 'Present',
@@ -173,13 +172,20 @@ export const Report = () => {
 
       if (attError) throw attError;
 
+      // ✅ FIX: IST-anchored UTC bounds for the forgotten-records query
+      const mm = String(month).padStart(2, '0');
+      const lastDay = new Date(year, month, 0).getDate();
+      const dd = String(lastDay).padStart(2, '0');
+      const monthStartUTC = new Date(`${year}-${mm}-01T00:00:00+05:30`).toISOString();
+      const monthEndUTC = new Date(`${year}-${mm}-${dd}T23:59:59.999+05:30`).toISOString();
+
       const { data: forgottenData, error: forgottenError } = await supabase
         .from('check_in_out')
         .select('id, employee_id, check_in_time, check_out_time, forgotten_checkout')
         .eq('employee_id', user?.id)
         .eq('forgotten_checkout', true)
-        .gte('check_in_time', startDate + 'T00:00:00.000Z')
-        .lte('check_in_time', endDate + 'T23:59:59.999Z');
+        .gte('check_in_time', monthStartUTC)
+        .lte('check_in_time', monthEndUTC);
 
       if (forgottenError) {
         console.warn('Forgotten column missing:', forgottenError.message);
@@ -248,6 +254,26 @@ export const Report = () => {
   useEffect(() => {
     if (user?.id) fetchReportData();
   }, [month, year, user]);
+
+  // ============================================
+  // FETCH HOLIDAYS
+  // ============================================
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase
+        .from('holidays')
+        .select('holiday_date, name')
+        .gte('holiday_date', `${year}-01-01`)
+        .lte('holiday_date', `${year}-12-31`);
+
+      const map = {};
+      (data || []).forEach((h) => {
+        map[h.holiday_date] = h.name;
+      });
+      setHolidaysMap(map);
+    };
+    load();
+  }, [year]);
 
   // ============================================
   // STATS
@@ -337,16 +363,51 @@ export const Report = () => {
   };
 
   const handleSliceClick = (data) => {
+    // ✅ FIX: Recharts may pass either a flat payload or a wrapped one
+    //    depending on version. Unwrap defensively.
+    const p = data?.payload ?? data;
+    if (!p) return;
     setSliceModal({
       open: true,
-      statusKey: data.key,
-      statusCode: data.code,
-      statusLabel: data.name,
-      statusColor: data.color,
+      statusKey: p.key,
+      statusCode: p.code,
+      statusLabel: p.name,
+      statusColor: p.color,
     });
   };
 
-  const getStatusBadge = (status) => {
+  // ============================================
+  // BADGE HELPER (with holiday support)
+  // ============================================
+  const getStatusBadge = (status, day) => {
+    // Holiday overrides everything
+    if (day) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const holidayName = holidaysMap[dateStr];
+      if (holidayName) {
+        return (
+          <span
+            title={holidayName}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '26px',
+              height: '26px',
+              borderRadius: '7px',
+              background: '#8B5CF618',
+              color: '#8B5CF6',
+              fontWeight: 800,
+              fontSize: '10px',
+              border: '1px solid #8B5CF630',
+            }}
+          >
+            H
+          </span>
+        );
+      }
+    }
+
     if (!status || status === '-') {
       return (
         <span style={{ color: dark ? '#475569' : '#CBD5E1', fontSize: '13px' }}>
@@ -938,7 +999,7 @@ export const Report = () => {
                                 fontSize: '11px',
                               }}
                             >
-                              {getStatusBadge(emp.days?.[day])}
+                              {getStatusBadge(emp.days?.[day], day)}
                             </td>
                           ))}
                         </tr>
@@ -971,6 +1032,7 @@ export const Report = () => {
                 { color: '#F59E0B', label: 'D - Delayed' },
                 { color: '#DC2626', label: 'B - Beyond' },
                 { color: '#3B82F6', label: 'L - Leave' },
+                { color: '#8B5CF6', label: 'H - Holiday' },
               ].map((item, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span
@@ -1112,7 +1174,6 @@ export const Report = () => {
                   </span>
                 </div>
 
-                {/* Hint */}
                 <div
                   style={{
                     padding: '8px 12px',
@@ -1199,11 +1260,9 @@ export const Report = () => {
           </div>
         )}
 
-        {/* FLEXIBLE SPACER */}
         <div style={{ flex: 1, minHeight: '20px' }} />
       </div>
 
-      {/* Fixed spacer for bottom nav */}
       <div style={{ height: '20px', flexShrink: 0 }} />
 
       {/* SLICE DETAIL MODAL */}
@@ -1243,7 +1302,6 @@ export const Report = () => {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
             <div
               style={{
                 display: 'flex',
@@ -1317,7 +1375,6 @@ export const Report = () => {
               </button>
             </div>
 
-            {/* Date List */}
             {sliceDetails.length === 0 ? (
               <div
                 style={{
@@ -1347,7 +1404,6 @@ export const Report = () => {
                       }}
                     >
                       {!isForgot ? (
-                        // Simple row for non-forgot statuses
                         <div
                           style={{
                             display: 'flex',
@@ -1406,9 +1462,7 @@ export const Report = () => {
                           </span>
                         </div>
                       ) : (
-                        // Detailed card for forgot
                         <div>
-                          {/* Header row with forgot date */}
                           <div
                             style={{
                               display: 'flex',
@@ -1482,7 +1536,6 @@ export const Report = () => {
                             </span>
                           </div>
 
-                          {/* Resolution row */}
                           <div
                             style={{
                               display: 'flex',
@@ -1584,7 +1637,6 @@ export const Report = () => {
               </div>
             )}
 
-            {/* Close Button */}
             <button
               onClick={() =>
                 setSliceModal({
