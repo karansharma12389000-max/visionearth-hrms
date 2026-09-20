@@ -104,9 +104,6 @@ export const AttendanceFormModal = ({
   // ============================================
   // CLOSE DROPDOWN ON OUTSIDE CLICK
   // ============================================
-  // ✅ FIX: attach click-outside listener only while the modal is open.
-  //    When isOpen is false, this effect does nothing, so we don't
-  //    leak a document-level listener across the app's lifetime.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -251,9 +248,20 @@ export const AttendanceFormModal = ({
     : 'P';
   const previewInfo = checkInOutService.getStatusDescription(previewStatus);
 
-  const workingHoursPreview = record
-    ? ((new Date() - new Date(record.check_in_time)) / 3600000).toFixed(2)
-    : '0';
+  // ============================================
+  // ✅ FIXED: WORKING HOURS IN "X hr Y min" FORMAT
+  // ============================================
+  const workingHoursPreview = (() => {
+    if (!record?.check_in_time) return '0 min';
+    const diffMs = new Date() - new Date(record.check_in_time);
+    const totalMinutes = Math.max(0, Math.floor(diffMs / 60000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours > 0 && minutes > 0) return `${hours} hr ${minutes} min`;
+    if (hours > 0) return `${hours} hr`;
+    return `${minutes} min`;
+  })();
 
   if (!isOpen || !record) return null;
 
@@ -515,7 +523,7 @@ export const AttendanceFormModal = ({
                 letterSpacing: '-0.3px',
               }}
             >
-              {workingHoursPreview}h
+              {workingHoursPreview}
             </span>
           </div>
 
