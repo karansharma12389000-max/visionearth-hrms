@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
+
 // PWA Registration - Service Worker will be auto-registered by vite-plugin-pwa
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

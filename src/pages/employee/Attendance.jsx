@@ -2,6 +2,8 @@
 //
 // Vision Earth HRMS — Premium Attendance Page
 // Attractive stat cards with colored accent bars and glow dots.
+//
+// ✅ Check-in/out cards are now clickable and open a modal with a map icon.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -38,6 +40,9 @@ export const Attendance = () => {
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
+  // ✅ NEW: employee-side check-in/out modal state
+  const [selectedCheckin, setSelectedCheckin] = useState(null);
+
   const [viewMode, setViewMode] = useState('today');
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
@@ -54,7 +59,7 @@ export const Attendance = () => {
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
   // ============================================
-  // FETCH (✅ no more applyFilters inside — prevents race)
+  // FETCH
   // ============================================
   const fetchAttendance = async () => {
     try {
@@ -99,7 +104,6 @@ export const Attendance = () => {
       fAtt = fAtt.filter((a) => a.attendance_date === today);
       fCheck = fCheck.filter((c) => {
         if (!c.check_in_time) return false;
-        // ✅ FIX: extract IST calendar date, not UTC
         const d = getISTDateFromTimestamp(c.check_in_time);
         return d === today;
       });
@@ -108,7 +112,6 @@ export const Attendance = () => {
       fAtt = fAtt.filter((a) => a.attendance_date?.startsWith(monthStr));
       fCheck = fCheck.filter((c) => {
         if (!c.check_in_time) return false;
-        // ✅ FIX: extract IST calendar date, not UTC
         const d = getISTDateFromTimestamp(c.check_in_time);
         return d?.startsWith(monthStr);
       });
@@ -118,7 +121,6 @@ export const Attendance = () => {
       fAtt = fAtt.filter((a) => a.attendance_date === filterDate);
       fCheck = fCheck.filter((c) => {
         if (!c.check_in_time) return false;
-        // ✅ FIX: extract IST calendar date, not UTC
         const d = getISTDateFromTimestamp(c.check_in_time);
         return d === filterDate;
       });
@@ -142,6 +144,15 @@ export const Attendance = () => {
   useEffect(() => {
     applyFilters();
   }, [viewMode, month, year, filterDate, filterStatus, attendance, checkinHistory]);
+
+  // ✅ NEW: close the check-in/out modal on Escape key
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') setSelectedCheckin(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   // ============================================
   // HELPERS
@@ -174,6 +185,15 @@ export const Attendance = () => {
       if (!isNaN(d.getTime())) return d.toTimeString().slice(0, 5);
     } catch {}
     return 'N/A';
+  };
+
+  // ✅ NEW: open Google Maps for a given gps/address
+  const openInMaps = (q) => {
+    if (!q) return;
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      q
+    )}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   // ============================================
@@ -375,7 +395,7 @@ export const Attendance = () => {
         </div>
       </div>
 
-      {/* STATS GRID — ATTRACTIVE */}
+      {/* STATS GRID */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -442,7 +462,6 @@ export const Attendance = () => {
                 transition: 'all 0.2s ease',
               }}
             >
-              {/* Top accent bar */}
               <div
                 style={{
                   position: 'absolute',
@@ -455,7 +474,6 @@ export const Attendance = () => {
                 }}
               />
 
-              {/* Corner dot */}
               <div
                 style={{
                   position: 'absolute',
@@ -469,7 +487,6 @@ export const Attendance = () => {
                 }}
               />
 
-              {/* Number */}
               <div
                 style={{
                   fontSize: '28px',
@@ -484,7 +501,6 @@ export const Attendance = () => {
                 {stat.value}
               </div>
 
-              {/* Label */}
               <div
                 style={{
                   fontSize: '10px',
@@ -878,7 +894,8 @@ export const Attendance = () => {
 
                 return (
                   <div
-                    key={idx}
+                    key={item.id ?? idx}
+                    onClick={() => setSelectedCheckin(item)}
                     style={{
                       marginBottom: '10px',
                       padding: '16px',
@@ -886,6 +903,18 @@ export const Attendance = () => {
                       borderRadius: THEME.radiusLg,
                       border: `1px solid ${border}`,
                       boxShadow: cardShadow,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = `0 8px 20px ${THEME.primary}20`;
+                      e.currentTarget.style.borderColor = `${THEME.primary}40`;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = cardShadow;
+                      e.currentTarget.style.borderColor = border;
                     }}
                   >
                     <div
@@ -1006,7 +1035,7 @@ export const Attendance = () => {
         )}
       </div>
 
-      {/* DETAIL MODAL */}
+      {/* ==================== ATTENDANCE DETAIL MODAL (unchanged) ==================== */}
       {showDetailModal && selectedRecord && (
         <div
           style={{
@@ -1275,6 +1304,434 @@ export const Attendance = () => {
               style={{
                 width: '100%',
                 padding: '13px',
+                borderRadius: THEME.radiusMd,
+                border: 'none',
+                background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+                color: '#FFFFFF',
+                fontWeight: 800,
+                fontSize: '14px',
+                cursor: 'pointer',
+                boxShadow: THEME.shadowGreen,
+                fontFamily: THEME.font,
+                letterSpacing: '0.3px',
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== CHECK-IN/OUT DETAIL MODAL (NEW) ==================== */}
+      {selectedCheckin && (
+        <div
+          onClick={() => setSelectedCheckin(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(6px)',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: cardBg,
+              borderRadius: THEME.radiusXl,
+              padding: '22px',
+              maxWidth: '420px',
+              width: '100%',
+              maxHeight: '85vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              fontFamily: THEME.font,
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: '10px',
+                marginBottom: '16px',
+                paddingBottom: '14px',
+                borderBottom: `1px solid ${border}`,
+              }}
+            >
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: '16px',
+                    fontWeight: 800,
+                    color: textPrimary,
+                  }}
+                >
+                  Check-In Details
+                </div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: textMuted,
+                    fontWeight: 600,
+                    marginTop: '2px',
+                  }}
+                >
+                  {formatDate(
+                    selectedCheckin.check_in_time
+                      ? new Date(selectedCheckin.check_in_time)
+                      : null
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedCheckin(null)}
+                style={{
+                  fontSize: '22px',
+                  color: textMuted,
+                  cursor: 'pointer',
+                  background: 'none',
+                  border: 'none',
+                  padding: '4px',
+                  lineHeight: 1,
+                  flexShrink: 0,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Status pill */}
+            <div style={{ marginBottom: '14px' }}>
+              <span
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: THEME.radiusPill,
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  backgroundColor:
+                    (selectedCheckin.status === 'Checked In'
+                      ? THEME.primary
+                      : selectedCheckin.status === 'Checked Out (Late)'
+                      ? THEME.amber
+                      : THEME.purple) + '18',
+                  color:
+                    selectedCheckin.status === 'Checked In'
+                      ? THEME.primary
+                      : selectedCheckin.status === 'Checked Out (Late)'
+                      ? THEME.amber
+                      : THEME.purple,
+                  border: `1px solid ${
+                    (selectedCheckin.status === 'Checked In'
+                      ? THEME.primary
+                      : selectedCheckin.status === 'Checked Out (Late)'
+                      ? THEME.amber
+                      : THEME.purple) + '30'
+                  }`,
+                  display: 'inline-block',
+                }}
+              >
+                {selectedCheckin.status || 'Checked In'}
+              </span>
+            </div>
+
+            {/* CHECK IN BLOCK */}
+            <div
+              style={{
+                position: 'relative',
+                background: dark ? '#0F172A' : '#F8FAFC',
+                borderRadius: '12px',
+                padding: '14px',
+                paddingRight: '54px',
+                border: `1px solid ${border}`,
+                marginBottom: '10px',
+                minHeight: '96px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: THEME.primary,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                }}
+              >
+                <span>✓</span> Check In
+              </div>
+              <div
+                style={{
+                  fontSize: '20px',
+                  fontWeight: 800,
+                  color: textPrimary,
+                  marginBottom: '6px',
+                }}
+              >
+                {selectedCheckin.check_in_time
+                  ? formatTime(new Date(selectedCheckin.check_in_time))
+                  : '—'}
+              </div>
+              {selectedCheckin.check_in_address && (
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: textSecondary,
+                    lineHeight: 1.5,
+                    fontWeight: 500,
+                  }}
+                >
+                  📍 {selectedCheckin.check_in_address}
+                </div>
+              )}
+              {selectedCheckin.check_in_gps && (
+                <div
+                  style={{
+                    fontSize: '10px',
+                    color: textMuted,
+                    marginTop: '4px',
+                    fontWeight: 500,
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  🌐 {selectedCheckin.check_in_gps}
+                </div>
+              )}
+
+              {(selectedCheckin.check_in_gps ||
+                selectedCheckin.check_in_address) && (
+                <button
+                  type="button"
+                  title="Open in Google Maps"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openInMaps(
+                      selectedCheckin.check_in_gps ||
+                        selectedCheckin.check_in_address
+                    );
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    bottom: '10px',
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
+                    border: `1px solid ${THEME.primary}40`,
+                    background: THEME.primary + '15',
+                    color: THEME.primary,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    padding: 0,
+                    lineHeight: 1,
+                  }}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M9 20l-6-2V4l6 2 6-2 6 2v14l-6-2-6 2z" />
+                    <path d="M9 6v14" />
+                    <path d="M15 4v14" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* CHECK OUT BLOCK */}
+            <div
+              style={{
+                position: 'relative',
+                background: dark ? '#0F172A' : '#F8FAFC',
+                borderRadius: '12px',
+                padding: '14px',
+                paddingRight: '54px',
+                border: `1px solid ${border}`,
+                marginBottom: '10px',
+                minHeight: '96px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: THEME.red,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                }}
+              >
+                <span>↑</span> Check Out
+              </div>
+              <div
+                style={{
+                  fontSize: '20px',
+                  fontWeight: 800,
+                  color: textPrimary,
+                  marginBottom: '6px',
+                }}
+              >
+                {selectedCheckin.check_out_time
+                  ? formatTime(new Date(selectedCheckin.check_out_time))
+                  : '—'}
+              </div>
+              {selectedCheckin.check_out_address && (
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: textSecondary,
+                    lineHeight: 1.5,
+                    fontWeight: 500,
+                  }}
+                >
+                  📍 {selectedCheckin.check_out_address}
+                </div>
+              )}
+              {selectedCheckin.check_out_gps && (
+                <div
+                  style={{
+                    fontSize: '10px',
+                    color: textMuted,
+                    marginTop: '4px',
+                    fontWeight: 500,
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  🌐 {selectedCheckin.check_out_gps}
+                </div>
+              )}
+
+              {(selectedCheckin.check_out_gps ||
+                selectedCheckin.check_out_address) && (
+                <button
+                  type="button"
+                  title="Open in Google Maps"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openInMaps(
+                      selectedCheckin.check_out_gps ||
+                        selectedCheckin.check_out_address
+                    );
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    bottom: '10px',
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
+                    border: `1px solid ${THEME.red}40`,
+                    background: THEME.red + '15',
+                    color: THEME.red,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    padding: 0,
+                    lineHeight: 1,
+                  }}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M9 20l-6-2V4l6 2 6-2 6 2v14l-6-2-6 2z" />
+                    <path d="M9 6v14" />
+                    <path d="M15 4v14" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Working hours */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px 14px',
+                borderRadius: '12px',
+                background: dark ? '#0F172A' : '#F8FAFC',
+                border: `1px solid ${border}`,
+                marginBottom: '10px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: textSecondary,
+                  fontWeight: 700,
+                }}
+              >
+                ⏱️ Working Hours
+              </div>
+              <div
+                style={{
+                  fontSize: '18px',
+                  fontWeight: 800,
+                  color:
+                    selectedCheckin.working_hours > 8
+                      ? THEME.primary
+                      : selectedCheckin.working_hours > 4
+                      ? THEME.amber
+                      : THEME.red,
+                }}
+              >
+                {selectedCheckin.working_hours
+                  ? `${selectedCheckin.working_hours}h`
+                  : '—'}
+              </div>
+            </div>
+
+            {/* Forgotten badge */}
+            {selectedCheckin.forgotten_checkout && (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '10px',
+                  background: THEME.orangeSoft,
+                  color: '#B45309',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  border: `1px solid ${THEME.orange}30`,
+                  marginBottom: '10px',
+                }}
+              >
+                ⚠️ Forgotten check-out
+              </div>
+            )}
+
+            <button
+              onClick={() => setSelectedCheckin(null)}
+              style={{
+                width: '100%',
+                padding: '13px',
+                marginTop: '6px',
                 borderRadius: THEME.radiusMd,
                 border: 'none',
                 background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,

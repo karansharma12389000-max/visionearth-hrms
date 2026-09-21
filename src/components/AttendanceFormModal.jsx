@@ -4,6 +4,8 @@
 // Used for: normal check-out, forgotten check-out resolution.
 // Feature: searchable project dropdown with matched-text highlighting.
 // Reporting Location: free-text input (no dropdown).
+//
+// ✅ Submit is locked until the check-out location (GPS) is captured.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
@@ -52,6 +54,24 @@ export const AttendanceFormModal = ({
   const textSecondary = dark ? THEME.dark.textSecondary : THEME.textSecondary;
   const textMuted = dark ? THEME.dark.textMuted : THEME.textMuted;
   const border = dark ? THEME.dark.border : THEME.border;
+
+  // ============================================
+  // ✅ NEW: Check-out location validity
+  // ============================================
+  const hasCheckoutLocation = (() => {
+    if (!location) return false;
+    // `location` may be a string "lat,lng" OR an object { lat, lng }
+    if (typeof location === 'string') {
+      const parts = location.split(',').map((s) => parseFloat(s.trim()));
+      return parts.length === 2 && parts.every((n) => !isNaN(n));
+    }
+    if (typeof location === 'object') {
+      const lat = parseFloat(location.lat);
+      const lng = parseFloat(location.lng);
+      return !isNaN(lat) && !isNaN(lng);
+    }
+    return false;
+  })();
 
   // ============================================
   // LOAD PROJECTS
@@ -189,6 +209,11 @@ export const AttendanceFormModal = ({
       toast.error('Missing check-in record');
       return;
     }
+    // ✅ Guard: block submit if checkout location is missing
+    if (!hasCheckoutLocation) {
+      toast.error('Waiting for check-out location — please enable GPS');
+      return;
+    }
     if (!formData.reportingLocation || !formData.reportingLocation.trim()) {
       toast.error('Please enter reporting location');
       return;
@@ -249,7 +274,7 @@ export const AttendanceFormModal = ({
   const previewInfo = checkInOutService.getStatusDescription(previewStatus);
 
   // ============================================
-  // ✅ FIXED: WORKING HOURS IN "X hr Y min" FORMAT
+  // WORKING HOURS IN "X hr Y min" FORMAT
   // ============================================
   const workingHoursPreview = (() => {
     if (!record?.check_in_time) return '0 min';
@@ -970,33 +995,69 @@ export const AttendanceFormModal = ({
           />
         </div>
 
-        {/* SUBMIT */}
+        {/* ✅ NEW: WARNING BANNER WHEN GPS IS MISSING */}
+        {!hasCheckoutLocation && (
+          <div
+            style={{
+              padding: '10px 14px',
+              marginBottom: '10px',
+              borderRadius: '10px',
+              background: dark
+                ? 'rgba(245,158,11,0.12)'
+                : THEME.orangeSoft,
+              color: dark ? '#FDE68A' : '#B45309',
+              fontSize: '11px',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              border: `1px solid ${THEME.orange}40`,
+            }}
+          >
+            ⚠️ Waiting for check-out location — please enable GPS permission.
+          </div>
+        )}
+
+        {/* ✅ SUBMIT — LOCKED UNTIL CHECK-OUT LOCATION IS CAPTURED */}
         <button
           onClick={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || !hasCheckoutLocation}
           style={{
             width: '100%',
             padding: '14px',
             borderRadius: THEME.radiusMd,
             border: 'none',
-            background: submitting
-              ? '#94A3B8'
-              : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+            background:
+              submitting || !hasCheckoutLocation
+                ? '#94A3B8'
+                : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
             color: '#FFFFFF',
             fontSize: '14px',
             fontWeight: 800,
-            cursor: submitting ? 'not-allowed' : 'pointer',
-            boxShadow: submitting ? 'none' : THEME.shadowGreen,
+            cursor:
+              submitting || !hasCheckoutLocation ? 'not-allowed' : 'pointer',
+            opacity: submitting || !hasCheckoutLocation ? 0.7 : 1,
+            boxShadow:
+              submitting || !hasCheckoutLocation
+                ? 'none'
+                : THEME.shadowGreen,
             fontFamily: THEME.font,
             letterSpacing: '0.3px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
+            transition: 'all 0.2s ease',
           }}
         >
-          <span style={{ fontSize: '14px' }}>📤</span>
-          {submitting ? 'Submitting...' : 'SUBMIT & CHECK OUT'}
+          <span style={{ fontSize: '14px' }}>
+            {!hasCheckoutLocation ? '🔒' : '📤'}
+          </span>
+          {submitting
+            ? 'Submitting...'
+            : !hasCheckoutLocation
+            ? 'WAITING FOR LOCATION...'
+            : 'SUBMIT & CHECK OUT'}
         </button>
       </div>
     </div>

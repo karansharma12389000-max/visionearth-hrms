@@ -3,11 +3,14 @@
 // Vision Earth HRMS — Premium Admin Attendance Report
 // Company-wide monthly attendance, filterable by department/employee.
 //
-// ✅ Holiday pattern badge:
-//    - Plain purple H          → holiday, employee did NOT work
-//    - H with colored stripes  → holiday AND employee has a status
-//      (green = Present, amber = Delayed, red = Beyond Delay,
-//       blue = Leave, orange = Forgot Out)
+// ✅ Holiday pattern badge on Report tab (striped H when worked).
+// ✅ Report / Working Hours tabs — same calendar layout.
+// ✅ Working Hours tab:
+//      - Holiday + no work → plain purple "H"
+//      - Holiday + worked  → purple badge with hours inside
+//      - Regular day        → colored by amount (green/amber/red)
+//      - No record          → "•"
+//    Holiday hours ARE counted in the employee's monthly total.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -36,6 +39,9 @@ export const AdminAttendanceReport = () => {
   const [departments, setDepartments] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [holidaysMap, setHolidaysMap] = useState({});
+
+  // Which tab is active
+  const [activeTab, setActiveTab] = useState('report'); // 'report' | 'hours'
 
   // Theme helpers
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
@@ -77,7 +83,6 @@ export const AdminAttendanceReport = () => {
     Forgotten: 'F',
   };
 
-  // For tooltips on striped holiday badges
   const statusFullNames = {
     P: 'Present',
     Present: 'Present',
@@ -93,7 +98,6 @@ export const AdminAttendanceReport = () => {
     Forgotten: 'Forgot Out',
   };
 
-  // Stripe colors used when a holiday cell ALSO has a status
   const holidayStripeColors = {
     P: '#10B981',
     Present: '#10B981',
@@ -107,7 +111,6 @@ export const AdminAttendanceReport = () => {
     Forgotten: '#F97316',
   };
 
-  // IST-safe day extractor
   const getISTDay = (isoString) => {
     if (!isoString) return null;
     try {
@@ -224,11 +227,19 @@ export const AdminAttendanceReport = () => {
         const daysInMonth = new Date(year, month, 0).getDate();
 
         const days = {};
+        const dayHours = {};
 
         empAttendance.forEach((a) => {
           if (!a.attendance_date) return;
           const day = parseInt(a.attendance_date.split('-')[2], 10);
-          if (day) days[day] = a.status;
+          if (!day) return;
+
+          days[day] = a.status;
+
+          const h = parseFloat(a.working_hours);
+          if (!isNaN(h) && h > 0) {
+            dayHours[day] = h;
+          }
         });
 
         empForgotten.forEach((f) => {
@@ -242,6 +253,12 @@ export const AdminAttendanceReport = () => {
           }
         });
 
+        // Total hours includes hours on holidays too
+        const totalHours = Object.values(dayHours).reduce(
+          (s, h) => s + h,
+          0
+        );
+
         return {
           ...emp,
           present,
@@ -254,6 +271,8 @@ export const AdminAttendanceReport = () => {
           total,
           totalDays: daysInMonth,
           days,
+          dayHours,
+          totalHours,
         };
       });
 
@@ -328,10 +347,9 @@ export const AdminAttendanceReport = () => {
   const daysInMonth = new Date(year, month, 0).getDate();
 
   // ============================================
-  // BADGE HELPER (holiday + striped-on-worked)
+  // REPORT TAB BADGE (status letter / striped H)
   // ============================================
   const getStatusBadge = (status, day) => {
-    // ---- Holiday cell ----
     if (day) {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const holidayName = holidaysMap[dateStr];
@@ -379,7 +397,6 @@ export const AdminAttendanceReport = () => {
       }
     }
 
-    // ---- Non-holiday cells ----
     if (!status || status === '-') {
       return (
         <span
@@ -413,6 +430,106 @@ export const AdminAttendanceReport = () => {
         }}
       >
         {label}
+      </span>
+    );
+  };
+
+  // ============================================
+  // WORKING HOURS TAB CELL
+  //   - Holiday + no work → purple "H"
+  //   - Holiday + worked  → purple badge with hours
+  //   - Regular day       → colored by amount
+  // ============================================
+  const getHoursCell = (hours, day, status) => {
+    const dateStr = day
+      ? `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      : null;
+    const holidayName = dateStr ? holidaysMap[dateStr] : null;
+
+    // Holiday + no work → plain purple "H"
+    if (holidayName && (!hours || hours <= 0)) {
+      return (
+        <span
+          title={`${holidayName} — holiday`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '26px',
+            height: '26px',
+            borderRadius: '7px',
+            background: '#8B5CF618',
+            color: '#8B5CF6',
+            fontWeight: 800,
+            fontSize: '10px',
+            border: '1px solid #8B5CF630',
+          }}
+        >
+          H
+        </span>
+      );
+    }
+
+    // Holiday + worked → purple badge with hours inside
+    if (holidayName && hours > 0) {
+      return (
+        <span
+          title={`${holidayName} — worked ${hours.toFixed(1)}h`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minWidth: '26px',
+            height: '26px',
+            padding: '0 4px',
+            borderRadius: '7px',
+            background: '#8B5CF618',
+            color: '#8B5CF6',
+            fontWeight: 800,
+            fontSize: '9px',
+            border: '1px solid #8B5CF680',
+          }}
+        >
+          {hours.toFixed(1)}
+        </span>
+      );
+    }
+
+    // Regular day, no hours
+    if (!hours || hours <= 0) {
+      return (
+        <span style={{ color: dark ? '#475569' : '#CBD5E1', fontSize: '13px' }}>
+          •
+        </span>
+      );
+    }
+
+    // Regular day with hours → color by amount
+    const color =
+      hours >= 8
+        ? '#10B981'
+        : hours >= 4
+        ? '#F59E0B'
+        : '#EF4444';
+
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minWidth: '26px',
+          height: '26px',
+          padding: '0 4px',
+          borderRadius: '7px',
+          background: color + '18',
+          color: color,
+          fontWeight: 800,
+          fontSize: '9px',
+          border: `1px solid ${color}30`,
+        }}
+      >
+        {hours.toFixed(1)}
       </span>
     );
   };
@@ -756,72 +873,123 @@ export const AdminAttendanceReport = () => {
         </div>
       </div>
 
-      {/* STATS GRID */}
-      <div style={{ padding: '0 16px 16px' }}>
+      {/* TAB SWITCHER */}
+      <div style={{ padding: '0 16px 12px' }}>
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: '8px',
+            display: 'flex',
+            gap: '4px',
+            padding: '4px',
+            background: dark ? 'rgba(255,255,255,0.03)' : '#F1F5F9',
+            borderRadius: THEME.radiusPill,
+            border: `1px solid ${
+              dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'
+            }`,
           }}
         >
           {[
-            { value: stats.present, label: 'Present', color: THEME.primary, icon: '✓' },
-            { value: stats.delayed, label: 'Delayed', color: THEME.amber, icon: '⏳' },
-            { value: stats.beyondDelay, label: 'Beyond', color: THEME.red, icon: '🚫' },
-            { value: stats.absent, label: 'Absent', color: THEME.red, icon: '✕' },
-            { value: stats.leave, label: 'Leave', color: THEME.blue, icon: '📅' },
-            { value: stats.forgotten, label: 'Forgot Out', color: THEME.orange, icon: '⚠️' },
-          ].map((stat, idx) => (
-            <div
-              key={idx}
-              style={{
-                background: cardBg,
-                borderRadius: THEME.radiusMd,
-                padding: '12px 8px 10px',
-                textAlign: 'center',
-                border: `1px solid ${border}`,
-                boxShadow: cardShadow,
-                position: 'relative',
-                overflow: 'hidden',
-              }}
-            >
-              <div
+            { key: 'report', label: '📋 Report' },
+            { key: 'hours', label: '⏱️ Working Hours' },
+          ].map((t) => {
+            const active = activeTab === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
                 style={{
+                  flex: 1,
+                  padding: '10px 6px',
+                  borderRadius: THEME.radiusPill,
+                  border: 'none',
+                  background: active
+                    ? dark
+                      ? '#1E293B'
+                      : '#FFFFFF'
+                    : 'transparent',
+                  color: active ? THEME.primary : textSecondary,
+                  fontWeight: active ? 800 : 600,
                   fontSize: '12px',
-                  marginBottom: '3px',
-                  opacity: 0.9,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: active ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                  fontFamily: THEME.font,
                 }}
               >
-                {stat.icon}
-              </div>
-              <div
-                style={{
-                  fontSize: '20px',
-                  fontWeight: 800,
-                  color: stat.color,
-                  lineHeight: 1,
-                  letterSpacing: '-0.5px',
-                  marginBottom: '3px',
-                }}
-              >
-                {stat.value}
-              </div>
-              <div
-                style={{
-                  fontSize: '8px',
-                  fontWeight: 700,
-                  color: textMuted,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.3px',
-                }}
-              >
-                {stat.label}
-              </div>
-            </div>
-          ))}
+                {t.label}
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {/* STATS GRID — Report tab only */}
+      {activeTab === 'report' && (
+        <div style={{ padding: '0 16px 16px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '8px',
+            }}
+          >
+            {[
+              { value: stats.present, label: 'Present', color: THEME.primary, icon: '✓' },
+              { value: stats.delayed, label: 'Delayed', color: THEME.amber, icon: '⏳' },
+              { value: stats.beyondDelay, label: 'Beyond', color: THEME.red, icon: '🚫' },
+              { value: stats.absent, label: 'Absent', color: THEME.red, icon: '✕' },
+              { value: stats.leave, label: 'Leave', color: THEME.blue, icon: '📅' },
+              { value: stats.forgotten, label: 'Forgot Out', color: THEME.orange, icon: '⚠️' },
+            ].map((stat, idx) => (
+              <div
+                key={idx}
+                style={{
+                  background: cardBg,
+                  borderRadius: THEME.radiusMd,
+                  padding: '12px 8px 10px',
+                  textAlign: 'center',
+                  border: `1px solid ${border}`,
+                  boxShadow: cardShadow,
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '12px',
+                    marginBottom: '3px',
+                    opacity: 0.9,
+                  }}
+                >
+                  {stat.icon}
+                </div>
+                <div
+                  style={{
+                    fontSize: '20px',
+                    fontWeight: 800,
+                    color: stat.color,
+                    lineHeight: 1,
+                    letterSpacing: '-0.5px',
+                    marginBottom: '3px',
+                  }}
+                >
+                  {stat.value}
+                </div>
+                <div
+                  style={{
+                    fontSize: '8px',
+                    fontWeight: 700,
+                    color: textMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.3px',
+                  }}
+                >
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* TABLE */}
       <div style={{ padding: '0 16px 16px' }}>
@@ -869,15 +1037,24 @@ export const AdminAttendanceReport = () => {
                   >
                     👤 Employee
                   </th>
-                  {[
-                    { label: 'Total', color: textSecondary, min: '40px' },
-                    { label: 'P', color: '#10B981', min: '28px' },
-                    { label: 'A', color: '#EF4444', min: '28px' },
-                    { label: 'F', color: '#F97316', min: '30px' },
-                    { label: 'D', color: '#F59E0B', min: '28px' },
-                    { label: 'B', color: '#DC2626', min: '28px' },
-                    { label: 'L', color: '#3B82F6', min: '28px' },
-                  ].map((h, i) => (
+
+                  {(activeTab === 'report'
+                    ? [
+                        { label: 'Total', color: textSecondary, min: '40px' },
+                        { label: 'P', color: '#10B981', min: '28px' },
+                        { label: 'A', color: '#EF4444', min: '28px' },
+                        { label: 'F', color: '#F97316', min: '30px' },
+                        { label: 'D', color: '#F59E0B', min: '28px' },
+                        { label: 'B', color: '#DC2626', min: '28px' },
+                        { label: 'L', color: '#3B82F6', min: '28px' },
+                      ]
+                    : [
+                        { label: 'Hours', color: THEME.primary, min: '50px' },
+                        { label: 'P', color: '#10B981', min: '28px' },
+                        { label: 'A', color: '#EF4444', min: '28px' },
+                        { label: 'Avg', color: '#F59E0B', min: '40px' },
+                      ]
+                  ).map((h, i) => (
                     <th
                       key={i}
                       style={{
@@ -894,6 +1071,7 @@ export const AdminAttendanceReport = () => {
                       {h.label}
                     </th>
                   ))}
+
                   {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(
                     (day) => (
                       <th
@@ -918,7 +1096,7 @@ export const AdminAttendanceReport = () => {
                 {reportData.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8 + daysInMonth}
+                      colSpan={12 + daysInMonth}
                       style={{
                         padding: '40px',
                         textAlign: 'center',
@@ -996,95 +1174,55 @@ export const AdminAttendanceReport = () => {
                           </div>
                         )}
                       </td>
-                      <td
-                        style={{
-                          padding: '10px 6px',
-                          textAlign: 'center',
-                          fontWeight: 800,
-                          color: textPrimary,
-                          fontSize: '12px',
-                        }}
-                      >
-                        {emp.total}
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 6px',
-                          textAlign: 'center',
-                          fontWeight: 800,
-                          color: '#10B981',
-                          fontSize: '12px',
-                        }}
-                      >
-                        {emp.present}
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 6px',
-                          textAlign: 'center',
-                          fontWeight: 800,
-                          color: '#EF4444',
-                          fontSize: '12px',
-                        }}
-                      >
-                        {emp.absent}
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 6px',
-                          textAlign: 'center',
-                          fontWeight: 800,
-                          color: '#F97316',
-                          fontSize: '12px',
-                        }}
-                      >
-                        {emp.forgotten || 0}
-                        {emp.forgottenPending > 0 && (
-                          <div
-                            style={{
-                              fontSize: '7px',
-                              color: '#DC2626',
-                              fontWeight: 800,
-                              marginTop: '2px',
-                            }}
-                          >
-                            {emp.forgottenPending}pd
-                          </div>
-                        )}
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 6px',
-                          textAlign: 'center',
-                          fontWeight: 800,
-                          color: '#F59E0B',
-                          fontSize: '12px',
-                        }}
-                      >
-                        {emp.delayed}
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 6px',
-                          textAlign: 'center',
-                          fontWeight: 800,
-                          color: '#DC2626',
-                          fontSize: '12px',
-                        }}
-                      >
-                        {emp.beyondDelay}
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 6px',
-                          textAlign: 'center',
-                          fontWeight: 800,
-                          color: '#3B82F6',
-                          fontSize: '12px',
-                        }}
-                      >
-                        {emp.leave}
-                      </td>
+
+                      {activeTab === 'report' ? (
+                        <>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: textPrimary, fontSize: '12px' }}>
+                            {emp.total}
+                          </td>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#10B981', fontSize: '12px' }}>
+                            {emp.present}
+                          </td>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#EF4444', fontSize: '12px' }}>
+                            {emp.absent}
+                          </td>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#F97316', fontSize: '12px' }}>
+                            {emp.forgotten || 0}
+                            {emp.forgottenPending > 0 && (
+                              <div style={{ fontSize: '7px', color: '#DC2626', fontWeight: 800, marginTop: '2px' }}>
+                                {emp.forgottenPending}pd
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#F59E0B', fontSize: '12px' }}>
+                            {emp.delayed}
+                          </td>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#DC2626', fontSize: '12px' }}>
+                            {emp.beyondDelay}
+                          </td>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#3B82F6', fontSize: '12px' }}>
+                            {emp.leave}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: THEME.primary, fontSize: '12px' }}>
+                            {emp.totalHours > 0 ? `${emp.totalHours.toFixed(1)}h` : '—'}
+                          </td>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#10B981', fontSize: '12px' }}>
+                            {emp.present}
+                          </td>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#EF4444', fontSize: '12px' }}>
+                            {emp.absent}
+                          </td>
+                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#F59E0B', fontSize: '12px' }}>
+                            {emp.present > 0
+                              ? `${(emp.totalHours / emp.present).toFixed(1)}h`
+                              : '—'}
+                          </td>
+                        </>
+                      )}
+
                       {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(
                         (day) => (
                           <td
@@ -1095,7 +1233,13 @@ export const AdminAttendanceReport = () => {
                               fontSize: '11px',
                             }}
                           >
-                            {getStatusBadge(emp.days?.[day], day)}
+                            {activeTab === 'report'
+                              ? getStatusBadge(emp.days?.[day], day)
+                              : getHoursCell(
+                                  emp.dayHours?.[day],
+                                  day,
+                                  emp.days?.[day]
+                                )}
                           </td>
                         )
                       )}
@@ -1122,68 +1266,104 @@ export const AdminAttendanceReport = () => {
             boxShadow: cardShadow,
           }}
         >
-          {[
-            { color: '#10B981', label: 'P - Present' },
-            { color: '#EF4444', label: 'A - Absent' },
-            { color: '#F97316', label: 'F - Forgot' },
-            { color: '#F59E0B', label: 'D - Delayed' },
-            { color: '#DC2626', label: 'B - Beyond' },
-            { color: '#3B82F6', label: 'L - Leave' },
-            { color: '#8B5CF6', label: 'H - Holiday' },
-          ].map((item, i) => (
-            <div
-              key={i}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <span
-                style={{
-                  display: 'inline-block',
-                  width: '12px',
-                  height: '12px',
-                  borderRadius: '4px',
-                  background: item.color,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  color: textSecondary,
-                }}
-              >
-                {item.label}
-              </span>
-            </div>
-          ))}
-
-          {/* Striped H legend entry */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span
-              style={{
-                display: 'inline-block',
-                width: '12px',
-                height: '12px',
-                borderRadius: '4px',
-                background: `repeating-linear-gradient(
-                  45deg,
-                  #10B98155 0px,
-                  #10B98155 3px,
-                  transparent 3px,
-                  transparent 6px
-                ), #8B5CF618`,
-                border: '1px solid #10B98180',
-              }}
-            />
-            <span
-              style={{
-                fontSize: '10px',
-                fontWeight: 700,
-                color: textSecondary,
-              }}
-            >
-              H (striped) - Worked on holiday
-            </span>
-          </div>
+          {activeTab === 'report' ? (
+            <>
+              {[
+                { color: '#10B981', label: 'P - Present' },
+                { color: '#EF4444', label: 'A - Absent' },
+                { color: '#F97316', label: 'F - Forgot' },
+                { color: '#F59E0B', label: 'D - Delayed' },
+                { color: '#DC2626', label: 'B - Beyond' },
+                { color: '#3B82F6', label: 'L - Leave' },
+                { color: '#8B5CF6', label: 'H - Holiday' },
+              ].map((item, i) => (
+                <div
+                  key={i}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      width: '12px',
+                      height: '12px',
+                      borderRadius: '4px',
+                      background: item.color,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      color: textSecondary,
+                    }}
+                  >
+                    {item.label}
+                  </span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '4px',
+                    background: `repeating-linear-gradient(
+                      45deg,
+                      #10B98155 0px,
+                      #10B98155 3px,
+                      transparent 3px,
+                      transparent 6px
+                    ), #8B5CF618`,
+                    border: '1px solid #10B98180',
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: textSecondary,
+                  }}
+                >
+                  H (striped) - Worked on holiday
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              {[
+                { color: '#10B981', label: '≥ 8h — Full day' },
+                { color: '#F59E0B', label: '4–8h — Half day' },
+                { color: '#EF4444', label: '< 4h — Short' },
+                { color: '#8B5CF6', label: 'H — Holiday (no work)' },
+                { color: '#8B5CF680', label: 'Purple number — Worked on holiday' },
+              ].map((item, i) => (
+                <div
+                  key={i}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      width: '12px',
+                      height: '12px',
+                      borderRadius: '4px',
+                      background: item.color,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      color: textSecondary,
+                    }}
+                  >
+                    {item.label}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
 
