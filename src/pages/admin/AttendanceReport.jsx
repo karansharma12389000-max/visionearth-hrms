@@ -2,6 +2,12 @@
 //
 // Vision Earth HRMS — Premium Admin Attendance Report
 // Company-wide monthly attendance, filterable by department/employee.
+//
+// ✅ Holiday pattern badge:
+//    - Plain purple H          → holiday, employee did NOT work
+//    - H with colored stripes  → holiday AND employee has a status
+//      (green = Present, amber = Delayed, red = Beyond Delay,
+//       blue = Leave, orange = Forgot Out)
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -40,7 +46,7 @@ export const AdminAttendanceReport = () => {
   const border = dark ? THEME.dark.border : THEME.border;
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
-  // Status colors (ACO removed, Forgotten added)
+  // Status colors
   const statusColors = {
     P: '#10B981',
     Present: '#10B981',
@@ -69,6 +75,36 @@ export const AdminAttendanceReport = () => {
     Leave: 'L',
     F: 'F',
     Forgotten: 'F',
+  };
+
+  // For tooltips on striped holiday badges
+  const statusFullNames = {
+    P: 'Present',
+    Present: 'Present',
+    A: 'Absent',
+    Absent: 'Absent',
+    D: 'Delayed',
+    Delayed: 'Delayed',
+    B: 'Beyond Delay',
+    'Beyond Delay': 'Beyond Delay',
+    L: 'Leave',
+    Leave: 'Leave',
+    F: 'Forgot Out',
+    Forgotten: 'Forgot Out',
+  };
+
+  // Stripe colors used when a holiday cell ALSO has a status
+  const holidayStripeColors = {
+    P: '#10B981',
+    Present: '#10B981',
+    D: '#F59E0B',
+    Delayed: '#F59E0B',
+    B: '#DC2626',
+    'Beyond Delay': '#DC2626',
+    L: '#3B82F6',
+    Leave: '#3B82F6',
+    F: '#F97316',
+    Forgotten: '#F97316',
   };
 
   // IST-safe day extractor
@@ -117,14 +153,12 @@ export const AdminAttendanceReport = () => {
     try {
       setLoading(true);
 
-      // ✅ FIX: zero-padded last day
       const mm = String(month).padStart(2, '0');
       const lastDay = new Date(year, month, 0).getDate();
       const dd = String(lastDay).padStart(2, '0');
       const startDate = `${year}-${mm}-01`;
       const endDate = `${year}-${mm}-${dd}`;
 
-      // Filter employees
       let empQuery = supabase
         .from('employees')
         .select('id, name, employee_id, department, company');
@@ -139,7 +173,6 @@ export const AdminAttendanceReport = () => {
       const { data: empData, error: empError } = await empQuery;
       if (empError) throw empError;
 
-      // Attendance records
       const { data: attData, error: attError } = await supabase
         .from('attendance')
         .select('*')
@@ -148,7 +181,6 @@ export const AdminAttendanceReport = () => {
 
       if (attError) throw attError;
 
-      // ✅ FIX: IST-anchored UTC bounds for the forgotten-records query
       const monthStartUTC = new Date(`${startDate}T00:00:00+05:30`).toISOString();
       const monthEndUTC = new Date(`${endDate}T23:59:59.999+05:30`).toISOString();
 
@@ -296,17 +328,35 @@ export const AdminAttendanceReport = () => {
   const daysInMonth = new Date(year, month, 0).getDate();
 
   // ============================================
-  // BADGE HELPER (with holiday support)
+  // BADGE HELPER (holiday + striped-on-worked)
   // ============================================
   const getStatusBadge = (status, day) => {
-    // Holiday overrides everything
+    // ---- Holiday cell ----
     if (day) {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const holidayName = holidaysMap[dateStr];
+
       if (holidayName) {
+        const stripeColor = status ? holidayStripeColors[status] || null : null;
+        const hasPattern = !!stripeColor;
+
+        const background = hasPattern
+          ? `repeating-linear-gradient(
+              45deg,
+              ${stripeColor}55 0px,
+              ${stripeColor}55 3px,
+              transparent 3px,
+              transparent 6px
+            ), #8B5CF618`
+          : '#8B5CF618';
+
         return (
           <span
-            title={holidayName}
+            title={
+              hasPattern
+                ? `${holidayName} — worked (${statusFullNames[status] || status})`
+                : `${holidayName} — holiday`
+            }
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -314,11 +364,13 @@ export const AdminAttendanceReport = () => {
               width: '26px',
               height: '26px',
               borderRadius: '7px',
-              background: '#8B5CF618',
+              background,
               color: '#8B5CF6',
               fontWeight: 800,
               fontSize: '10px',
-              border: '1px solid #8B5CF630',
+              border: hasPattern
+                ? `1px solid ${stripeColor}80`
+                : '1px solid #8B5CF630',
             }}
           >
             H
@@ -327,6 +379,7 @@ export const AdminAttendanceReport = () => {
       }
     }
 
+    // ---- Non-holiday cells ----
     if (!status || status === '-') {
       return (
         <span
@@ -1102,6 +1155,35 @@ export const AdminAttendanceReport = () => {
               </span>
             </div>
           ))}
+
+          {/* Striped H legend entry */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span
+              style={{
+                display: 'inline-block',
+                width: '12px',
+                height: '12px',
+                borderRadius: '4px',
+                background: `repeating-linear-gradient(
+                  45deg,
+                  #10B98155 0px,
+                  #10B98155 3px,
+                  transparent 3px,
+                  transparent 6px
+                ), #8B5CF618`,
+                border: '1px solid #10B98180',
+              }}
+            />
+            <span
+              style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                color: textSecondary,
+              }}
+            >
+              H (striped) - Worked on holiday
+            </span>
+          </div>
         </div>
       </div>
 

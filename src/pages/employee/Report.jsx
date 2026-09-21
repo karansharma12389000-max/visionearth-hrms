@@ -3,6 +3,12 @@
 // Vision Earth HRMS — Premium Attendance Report
 // Interactive pie chart — click a slice to see dates.
 // Forgot entries show "forgot on X, resolved on Y".
+//
+// ✅ Holiday pattern badge:
+//    - Plain purple H          → holiday, employee did NOT work
+//    - H with colored stripes  → holiday AND employee has a status
+//      (green = Present, amber = Delayed, red = Beyond Delay,
+//       blue = Leave, orange = Forgot Out)
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -106,6 +112,20 @@ export const Report = () => {
     { name: 'Forgot Out', key: 'forgotten', color: '#F97316', code: 'F' },
   ];
 
+  // 🎨 Color of the stripes when a holiday cell ALSO has a status
+  const holidayStripeColors = {
+    P: '#10B981',
+    Present: '#10B981',
+    D: '#F59E0B',
+    Delayed: '#F59E0B',
+    B: '#DC2626',
+    'Beyond Delay': '#DC2626',
+    L: '#3B82F6',
+    Leave: '#3B82F6',
+    F: '#F97316',
+    Forgotten: '#F97316',
+  };
+
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
   const cardBg = dark ? THEME.dark.card : THEME.cardBg;
   const textPrimary = dark ? THEME.dark.text : THEME.text;
@@ -172,7 +192,6 @@ export const Report = () => {
 
       if (attError) throw attError;
 
-      // ✅ FIX: IST-anchored UTC bounds for the forgotten-records query
       const mm = String(month).padStart(2, '0');
       const lastDay = new Date(year, month, 0).getDate();
       const dd = String(lastDay).padStart(2, '0');
@@ -363,8 +382,6 @@ export const Report = () => {
   };
 
   const handleSliceClick = (data) => {
-    // ✅ FIX: Recharts may pass either a flat payload or a wrapped one
-    //    depending on version. Unwrap defensively.
     const p = data?.payload ?? data;
     if (!p) return;
     setSliceModal({
@@ -377,17 +394,36 @@ export const Report = () => {
   };
 
   // ============================================
-  // BADGE HELPER (with holiday support)
+  // BADGE HELPER (holiday + striped-on-worked)
   // ============================================
   const getStatusBadge = (status, day) => {
-    // Holiday overrides everything
+    // ---- Holiday cell ----
     if (day) {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const holidayName = holidaysMap[dateStr];
+
       if (holidayName) {
+        // Determine stripe color from the status (if any)
+        const stripeColor = status ? holidayStripeColors[status] || null : null;
+        const hasPattern = !!stripeColor;
+
+        const background = hasPattern
+          ? `repeating-linear-gradient(
+              45deg,
+              ${stripeColor}55 0px,
+              ${stripeColor}55 3px,
+              transparent 3px,
+              transparent 6px
+            ), #8B5CF618`
+          : '#8B5CF618';
+
         return (
           <span
-            title={holidayName}
+            title={
+              hasPattern
+                ? `${holidayName} — worked (${statusFullNames[status] || status})`
+                : `${holidayName} — holiday`
+            }
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -395,11 +431,13 @@ export const Report = () => {
               width: '26px',
               height: '26px',
               borderRadius: '7px',
-              background: '#8B5CF618',
+              background,
               color: '#8B5CF6',
               fontWeight: 800,
               fontSize: '10px',
-              border: '1px solid #8B5CF630',
+              border: hasPattern
+                ? `1px solid ${stripeColor}80`
+                : '1px solid #8B5CF630',
             }}
           >
             H
@@ -408,6 +446,7 @@ export const Report = () => {
       }
     }
 
+    // ---- Non-holiday cells (unchanged behavior) ----
     if (!status || status === '-') {
       return (
         <span style={{ color: dark ? '#475569' : '#CBD5E1', fontSize: '13px' }}>
@@ -1049,6 +1088,29 @@ export const Report = () => {
                   </span>
                 </div>
               ))}
+
+              {/* ✅ Striped H legend entry */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '4px',
+                    background: `repeating-linear-gradient(
+                      45deg,
+                      #10B98155 0px,
+                      #10B98155 3px,
+                      transparent 3px,
+                      transparent 6px
+                    ), #8B5CF618`,
+                    border: '1px solid #10B98180',
+                  }}
+                />
+                <span style={{ fontSize: '10px', fontWeight: 700, color: textSecondary }}>
+                  H (striped) - Worked on holiday
+                </span>
+              </div>
             </div>
           </div>
         )}
