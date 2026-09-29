@@ -1,9 +1,12 @@
 // src/pages/employee/Attendance.jsx
 //
 // Vision Earth HRMS — Premium Attendance Page
-// Attractive stat cards with colored accent bars and glow dots.
 //
-// ✅ Check-in/out cards are now clickable and open a modal with a map icon.
+// ✅ Manual location pings only — no auto hourly tracking.
+// ✅ Check-in/out cards clickable → modal with map icon.
+// ✅ Location timeline with 📌 Ping button (15-min cooldown).
+// ✅ 📅 Timeline button in the check-in modal to view a specific day's route.
+// ✅ Dark mode stat cards render correctly.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -23,6 +26,7 @@ import {
 import { getISTDateFromTimestamp } from '../../utils/timeUtils';
 import BottomNavigation from '../../components/BottomNavigation';
 import { THEME, isDark } from '../../utils/designTokens';
+import LocationTimeline from '../../components/LocationTimeline';
 
 export const Attendance = () => {
   const navigate = useNavigate();
@@ -39,9 +43,8 @@ export const Attendance = () => {
 
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
-
-  // ✅ NEW: employee-side check-in/out modal state
   const [selectedCheckin, setSelectedCheckin] = useState(null);
+  const [showDayTimeline, setShowDayTimeline] = useState(false);
 
   const [viewMode, setViewMode] = useState('today');
   const [month, setMonth] = useState(new Date().getMonth() + 1);
@@ -145,14 +148,22 @@ export const Attendance = () => {
     applyFilters();
   }, [viewMode, month, year, filterDate, filterStatus, attendance, checkinHistory]);
 
-  // ✅ NEW: close the check-in/out modal on Escape key
+  // Escape closes any open modal
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') setSelectedCheckin(null);
+      if (e.key === 'Escape') {
+        if (showDayTimeline) {
+          setShowDayTimeline(false);
+        } else if (selectedCheckin) {
+          setSelectedCheckin(null);
+        } else if (showDetailModal) {
+          setShowDetailModal(false);
+        }
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, []);
+  }, [selectedCheckin, showDetailModal, showDayTimeline]);
 
   // ============================================
   // HELPERS
@@ -187,7 +198,6 @@ export const Attendance = () => {
     return 'N/A';
   };
 
-  // ✅ NEW: open Google Maps for a given gps/address
   const openInMaps = (q) => {
     if (!q) return;
     const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
@@ -215,6 +225,45 @@ export const Attendance = () => {
   const beyondDelay = attendance.filter(
     (a) => a.status === 'B' || a.status === 'Beyond Delay'
   ).length;
+
+  const STAT_ITEMS = [
+    {
+      value: total,
+      label: 'Total',
+      color: dark ? '#F1F5F9' : '#0F172A',
+      accent: dark ? '#475569' : '#CBD5E1',
+    },
+    {
+      value: present,
+      label: 'Present',
+      color: THEME.primary,
+      accent: '#10B981',
+    },
+    {
+      value: delayed,
+      label: 'Delayed',
+      color: THEME.amber,
+      accent: '#F59E0B',
+    },
+    {
+      value: beyondDelay,
+      label: 'Beyond',
+      color: THEME.red,
+      accent: '#DC2626',
+    },
+    {
+      value: absent,
+      label: 'Absent',
+      color: THEME.red,
+      accent: '#EF4444',
+    },
+    {
+      value: leave,
+      label: 'Leave',
+      color: THEME.blue,
+      accent: '#3B82F6',
+    },
+  ];
 
   // ============================================
   // LOADING
@@ -395,7 +444,25 @@ export const Attendance = () => {
         </div>
       </div>
 
-      {/* STATS GRID */}
+      {/* ==================== LOCATION TIMELINE ==================== */}
+      <div style={{ padding: '0 16px 16px' }}>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            color: textMuted,
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+            marginBottom: 10,
+            paddingLeft: 4,
+          }}
+        >
+          📍 Location Timeline
+        </div>
+        <LocationTimeline employeeId={user?.id} />
+      </div>
+
+      {/* ==================== STATS GRID ==================== */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -404,59 +471,22 @@ export const Attendance = () => {
             gap: '10px',
           }}
         >
-          {[
-            {
-              value: total,
-              label: 'Total',
-              color: textPrimary,
-              accent: dark ? 'rgba(148,163,184,0.3)' : '#CBD5E1',
-            },
-            {
-              value: present,
-              label: 'Present',
-              color: THEME.primary,
-              accent: THEME.primary,
-            },
-            {
-              value: delayed,
-              label: 'Delayed',
-              color: THEME.amber,
-              accent: THEME.amber,
-            },
-            {
-              value: beyondDelay,
-              label: 'Beyond',
-              color: THEME.red,
-              accent: THEME.red,
-            },
-            {
-              value: absent,
-              label: 'Absent',
-              color: THEME.red,
-              accent: THEME.red,
-            },
-            {
-              value: leave,
-              label: 'Leave',
-              color: THEME.blue,
-              accent: THEME.blue,
-            },
-          ].map((stat, idx) => (
+          {STAT_ITEMS.map((stat, idx) => (
             <div
               key={idx}
               style={{
                 background: dark
-                  ? `linear-gradient(145deg, ${stat.accent}15 0%, #1E293B 60%)`
-                  : `linear-gradient(145deg, ${stat.accent}10 0%, #FFFFFF 60%)`,
+                  ? `linear-gradient(145deg, ${stat.accent}25 0%, #1E293B 70%)`
+                  : `linear-gradient(145deg, ${stat.accent}20 0%, #FFFFFF 70%)`,
                 borderRadius: THEME.radiusMd,
                 padding: '18px 10px 16px',
                 textAlign: 'center',
                 border: `1px solid ${
-                  dark ? 'rgba(255,255,255,0.05)' : stat.accent + '25'
+                  dark ? 'rgba(255,255,255,0.06)' : stat.accent + '30'
                 }`,
                 boxShadow: dark
-                  ? '0 4px 12px rgba(0,0,0,0.25)'
-                  : `0 4px 12px ${stat.accent}10`,
+                  ? '0 4px 12px rgba(0,0,0,0.35)'
+                  : `0 4px 12px ${stat.accent}15`,
                 position: 'relative',
                 overflow: 'hidden',
                 transition: 'all 0.2s ease',
@@ -1035,7 +1065,7 @@ export const Attendance = () => {
         )}
       </div>
 
-      {/* ==================== ATTENDANCE DETAIL MODAL (unchanged) ==================== */}
+      {/* ==================== ATTENDANCE DETAIL MODAL ==================== */}
       {showDetailModal && selectedRecord && (
         <div
           style={{
@@ -1322,7 +1352,7 @@ export const Attendance = () => {
         </div>
       )}
 
-      {/* ==================== CHECK-IN/OUT DETAIL MODAL (NEW) ==================== */}
+      {/* ==================== CHECK-IN/OUT DETAIL MODAL ==================== */}
       {selectedCheckin && (
         <div
           onClick={() => setSelectedCheckin(null)}
@@ -1352,7 +1382,6 @@ export const Attendance = () => {
               fontFamily: THEME.font,
             }}
           >
-            {/* Header */}
             <div
               style={{
                 display: 'flex',
@@ -1406,8 +1435,17 @@ export const Attendance = () => {
               </button>
             </div>
 
-            {/* Status pill */}
-            <div style={{ marginBottom: '14px' }}>
+            {/* Status pill + Timeline button */}
+            <div
+              style={{
+                marginBottom: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10,
+                flexWrap: 'wrap',
+              }}
+            >
               <span
                 style={{
                   padding: '5px 12px',
@@ -1438,6 +1476,29 @@ export const Attendance = () => {
               >
                 {selectedCheckin.status || 'Checked In'}
               </span>
+
+              <button
+                type="button"
+                onClick={() => setShowDayTimeline(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 12px',
+                  borderRadius: THEME.radiusPill,
+                  border: `1px solid ${THEME.primary}40`,
+                  background: THEME.primary + '12',
+                  color: THEME.primary,
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  fontFamily: THEME.font,
+                  letterSpacing: '0.3px',
+                }}
+              >
+                <span style={{ fontSize: 13 }}>📅</span>
+                Timeline
+              </button>
             </div>
 
             {/* CHECK IN BLOCK */}
@@ -1668,7 +1729,6 @@ export const Attendance = () => {
               )}
             </div>
 
-            {/* Working hours */}
             <div
               style={{
                 display: 'flex',
@@ -1708,7 +1768,6 @@ export const Attendance = () => {
               </div>
             </div>
 
-            {/* Forgotten badge */}
             {selectedCheckin.forgotten_checkout && (
               <div
                 style={{
@@ -1732,6 +1791,124 @@ export const Attendance = () => {
                 width: '100%',
                 padding: '13px',
                 marginTop: '6px',
+                borderRadius: THEME.radiusMd,
+                border: 'none',
+                background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+                color: '#FFFFFF',
+                fontWeight: 800,
+                fontSize: '14px',
+                cursor: 'pointer',
+                boxShadow: THEME.shadowGreen,
+                fontFamily: THEME.font,
+                letterSpacing: '0.3px',
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== DAY TIMELINE MODAL ==================== */}
+      {showDayTimeline && selectedCheckin && (
+        <div
+          onClick={() => setShowDayTimeline(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 1500,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: cardBg,
+              borderRadius: THEME.radiusXl,
+              padding: '20px',
+              maxWidth: '460px',
+              width: '100%',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+              fontFamily: THEME.font,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: 16,
+                paddingBottom: 12,
+                borderBottom: `1px solid ${border}`,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: '16px',
+                    fontWeight: 800,
+                    color: textPrimary,
+                  }}
+                >
+                  📅 Day Timeline
+                </div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: textMuted,
+                    fontWeight: 600,
+                    marginTop: '2px',
+                  }}
+                >
+                  {formatDate(
+                    selectedCheckin.check_in_time
+                      ? new Date(selectedCheckin.check_in_time)
+                      : null
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDayTimeline(false)}
+                style={{
+                  fontSize: '22px',
+                  color: textMuted,
+                  background: 'none',
+                  border: 'none',
+                  padding: '4px',
+                  cursor: 'pointer',
+                  lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <LocationTimeline
+              employeeId={user?.id}
+              date={
+                selectedCheckin.check_in_time
+                  ? new Date(selectedCheckin.check_in_time)
+                      .toLocaleDateString('en-CA', {
+                        timeZone: 'Asia/Kolkata',
+                      })
+                  : undefined
+              }
+              readOnly={true}
+            />
+
+            <button
+              onClick={() => setShowDayTimeline(false)}
+              style={{
+                width: '100%',
+                padding: '13px',
+                marginTop: 16,
                 borderRadius: THEME.radiusMd,
                 border: 'none',
                 background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,

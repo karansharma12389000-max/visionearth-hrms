@@ -1,11 +1,10 @@
 // src/pages/admin/CheckinHistory.jsx
 //
 // Vision Earth HRMS — Premium Check-In/Out History
-// All raw check-in and check-out records.
 //
-// ✅ Cards look exactly like before. Click a card → modal with full details.
-// ✅ Modal has a small map icon in the bottom-right of Check In / Check Out
-//    blocks — tap it to open the location in Google Maps.
+// ✅ Cards clickable → modal with full details.
+// ✅ Map icons in Check In / Check Out blocks → open in Google Maps.
+// ✅ 📅 Timeline button to view that employee's route for that day.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -21,6 +20,7 @@ import {
 } from '../../utils/helpers';
 import BottomNavigation from '../../components/BottomNavigation';
 import { THEME, isDark } from '../../utils/designTokens';
+import LocationTimeline from '../../components/LocationTimeline';
 
 export const AdminCheckinHistory = () => {
   const navigate = useNavigate();
@@ -29,7 +29,6 @@ export const AdminCheckinHistory = () => {
   const dark = isDark(theme);
 
   const [loading, setLoading] = useState(true);
-  // ✅ FIX: derive initial month/year from IST calendar
   const _istNow = new Date();
   const _istMonth = parseInt(
     _istNow.toLocaleDateString('en-GB', {
@@ -56,8 +55,8 @@ export const AdminCheckinHistory = () => {
     late: 0,
   });
 
-  // ✅ NEW: which record is currently open in the modal
   const [selectedRecord, setSelectedRecord] = useState(null);
+  const [showDayTimeline, setShowDayTimeline] = useState(false);
 
   // Theme helpers
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
@@ -178,14 +177,20 @@ export const AdminCheckinHistory = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, year]);
 
-  // ✅ NEW: close modal on Escape key
+  // Escape closes whichever modal is on top
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') setSelectedRecord(null);
+      if (e.key === 'Escape') {
+        if (showDayTimeline) {
+          setShowDayTimeline(false);
+        } else if (selectedRecord) {
+          setSelectedRecord(null);
+        }
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, []);
+  }, [selectedRecord, showDayTimeline]);
 
   // ============================================
   // LOADING
@@ -257,7 +262,11 @@ export const AdminCheckinHistory = () => {
       ? new Date(item.check_out_time)
       : null;
 
-    // Helper: open Google Maps for a given gps/address
+    // Date string for the timeline (YYYY-MM-DD in IST)
+    const attendanceDateStr = checkInDate
+      ? checkInDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+      : null;
+
     const openInMaps = (q) => {
       if (!q) return;
       const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
@@ -377,8 +386,17 @@ export const AdminCheckinHistory = () => {
             </button>
           </div>
 
-          {/* Status pill */}
-          <div style={{ marginBottom: '14px' }}>
+          {/* Status pill + Timeline button */}
+          <div
+            style={{
+              marginBottom: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
             <span
               style={{
                 padding: '5px 12px',
@@ -393,6 +411,31 @@ export const AdminCheckinHistory = () => {
             >
               {item.status || 'Checked In'}
             </span>
+
+            {attendanceDateStr && (
+              <button
+                type="button"
+                onClick={() => setShowDayTimeline(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 12px',
+                  borderRadius: THEME.radiusPill,
+                  border: `1px solid ${THEME.primary}40`,
+                  background: THEME.primary + '12',
+                  color: THEME.primary,
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  fontFamily: THEME.font,
+                  letterSpacing: '0.3px',
+                }}
+              >
+                <span style={{ fontSize: 13 }}>📅</span>
+                Timeline
+              </button>
+            )}
           </div>
 
           {/* ================= CHECK IN BLOCK ================= */}
@@ -459,7 +502,6 @@ export const AdminCheckinHistory = () => {
               </div>
             )}
 
-            {/* 🗺️ Small map icon — bottom-right corner */}
             {(item.check_in_gps || item.check_in_address) && (
               <button
                 type="button"
@@ -568,7 +610,6 @@ export const AdminCheckinHistory = () => {
               </div>
             )}
 
-            {/* 🗺️ Small map icon — bottom-right corner */}
             {(item.check_out_gps || item.check_out_address) && (
               <button
                 type="button"
@@ -676,6 +717,131 @@ export const AdminCheckinHistory = () => {
               width: '100%',
               padding: '13px',
               marginTop: '6px',
+              borderRadius: THEME.radiusMd,
+              border: 'none',
+              background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+              color: '#FFFFFF',
+              fontWeight: 800,
+              fontSize: '14px',
+              cursor: 'pointer',
+              boxShadow: THEME.shadowGreen,
+              fontFamily: THEME.font,
+              letterSpacing: '0.3px',
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================
+  // DAY TIMELINE MODAL
+  // ============================================
+  const renderDayTimelineModal = () => {
+    if (!showDayTimeline || !selectedRecord) return null;
+
+    const item = selectedRecord;
+    const checkInDate = item.check_in_time ? new Date(item.check_in_time) : null;
+    const attendanceDateStr = checkInDate
+      ? checkInDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+      : null;
+
+    if (!attendanceDateStr) return null;
+
+    return (
+      <div
+        onClick={() => setShowDayTimeline(false)}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          background: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 1500,
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            background: cardBg,
+            borderRadius: THEME.radiusXl,
+            padding: '20px',
+            maxWidth: '460px',
+            width: '100%',
+            maxHeight: '88vh',
+            overflowY: 'auto',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+            fontFamily: THEME.font,
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              marginBottom: 16,
+              paddingBottom: 12,
+              borderBottom: `1px solid ${border}`,
+            }}
+          >
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                style={{
+                  fontSize: '16px',
+                  fontWeight: 800,
+                  color: textPrimary,
+                }}
+              >
+                📅 Day Timeline
+              </div>
+              <div
+                style={{
+                  fontSize: '11px',
+                  color: textMuted,
+                  fontWeight: 600,
+                  marginTop: '2px',
+                }}
+              >
+                {item.employee?.name || 'Unknown'} ·{' '}
+                {formatDate(checkInDate)}
+              </div>
+            </div>
+            <button
+              onClick={() => setShowDayTimeline(false)}
+              style={{
+                fontSize: '22px',
+                color: textMuted,
+                background: 'none',
+                border: 'none',
+                padding: '4px',
+                cursor: 'pointer',
+                lineHeight: 1,
+                flexShrink: 0,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* LocationTimeline — read-only for that employee + date */}
+          <LocationTimeline
+            employeeId={item.employee_id}
+            date={attendanceDateStr}
+            readOnly={true}
+          />
+
+          <button
+            onClick={() => setShowDayTimeline(false)}
+            style={{
+              width: '100%',
+              padding: '13px',
+              marginTop: 16,
               borderRadius: THEME.radiusMd,
               border: 'none',
               background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
@@ -1102,7 +1268,6 @@ export const AdminCheckinHistory = () => {
                   cursor: 'pointer',
                 }}
               >
-                {/* Header */}
                 <div
                   style={{
                     display: 'flex',
@@ -1180,7 +1345,6 @@ export const AdminCheckinHistory = () => {
                   </span>
                 </div>
 
-                {/* In/Out grid */}
                 <div
                   style={{
                     display: 'grid',
@@ -1288,7 +1452,6 @@ export const AdminCheckinHistory = () => {
                   </div>
                 </div>
 
-                {/* Footer: working hours */}
                 <div
                   style={{
                     display: 'flex',
@@ -1346,8 +1509,11 @@ export const AdminCheckinHistory = () => {
         )}
       </div>
 
-      {/* ✅ MODAL */}
+      {/* ✅ CHECK-IN DETAILS MODAL */}
       {renderModal()}
+
+      {/* ✅ DAY TIMELINE MODAL */}
+      {renderDayTimelineModal()}
 
       <BottomNavigation theme={theme} />
     </div>

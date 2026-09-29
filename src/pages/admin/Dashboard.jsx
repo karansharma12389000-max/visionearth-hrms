@@ -95,6 +95,13 @@ export const AdminDashboard = () => {
       color: '#8B5CF6',
       desc: 'Add and manage company holidays',
     },
+    {
+      icon: '📁',
+      label: 'Manage Projects',
+      path: '/admin/projects',
+      color: '#F59E0B',
+      desc: 'Add, edit or remove project codes',
+    },
   ];
 
   // ============================================
@@ -108,7 +115,6 @@ export const AdminDashboard = () => {
         .from('employees')
         .select('*', { count: 'exact', head: true });
 
-      // ✅ FIX: use IST calendar date, not UTC
       const today = new Date().toLocaleDateString('en-CA', {
         timeZone: 'Asia/Kolkata',
       });
@@ -132,7 +138,6 @@ export const AdminDashboard = () => {
         .select('*', { count: 'exact', head: true })
         .eq('status', 'Pending');
 
-      // ✅ FIX: IST-anchored UTC bounds covering the full IST day
       const dayStartUTC = new Date(`${today}T00:00:00+05:30`).toISOString();
       const dayEndUTC = new Date(`${today}T23:59:59.999+05:30`).toISOString();
 

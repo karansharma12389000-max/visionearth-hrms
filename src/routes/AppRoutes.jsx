@@ -17,9 +17,10 @@ import { AdminAttendanceHistory } from '../pages/admin/AttendanceHistory';
 import { AdminCheckinHistory } from '../pages/admin/CheckinHistory';
 import { Employees } from '../pages/admin/Employees';
 import { AdminLeaves } from '../pages/admin/Leaves';
-import { ForgotTracker } from '../pages/admin/ForgotTracker';       // ✅ NEW
-import { SalaryCalculator } from '../pages/admin/SalaryCalculator'; // ✅ NEW
+import { ForgotTracker } from '../pages/admin/ForgotTracker';
+import { SalaryCalculator } from '../pages/admin/SalaryCalculator';
 import { AdminHolidays } from '../pages/admin/Holidays';
+import { AdminProjects } from '../pages/admin/Projects';   // ✅ NEW
 
 // Auth Pages
 import { Login } from '../pages/auth/Login';
@@ -27,7 +28,6 @@ import { Login } from '../pages/auth/Login';
 const AppRoutes = () => {
   const { user, isAdmin } = useAuth();
 
-  // Protected route wrapper
   const ProtectedRoute = ({ children, adminOnly = false }) => {
     if (!user) {
       return <Navigate to="/login" replace />;
@@ -135,7 +135,6 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-      {/* ✅ NEW: Forgot Check-Out Tracker */}
       <Route
         path="/admin/forgot-tracker"
         element={
@@ -144,7 +143,6 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-      {/* ✅ NEW: Salary Calculator */}
       <Route
         path="/admin/salary-calculator"
         element={
@@ -154,13 +152,22 @@ const AppRoutes = () => {
         }
       />
       <Route
-  path="/admin/holidays"
-  element={
-    <ProtectedRoute adminOnly={true}>
-      <AdminHolidays />
-    </ProtectedRoute>
-  }
-/>
+        path="/admin/holidays"
+        element={
+          <ProtectedRoute adminOnly={true}>
+            <AdminHolidays />
+          </ProtectedRoute>
+        }
+      />
+      {/* ✅ NEW: Projects Manager */}
+      <Route
+        path="/admin/projects"
+        element={
+          <ProtectedRoute adminOnly={true}>
+            <AdminProjects />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Fallback - redirect to dashboard */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
