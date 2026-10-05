@@ -3,10 +3,17 @@
 // Central service for all check-in/check-out logic.
 // Handles:
 //   - Pending check-out detection
+//   - Approved-leave block on check-in           ✅ NEW
 //   - Check-in (with blocking)
 //   - Check-out via attendance form
 //   - Status calculation (P / D / B) — IST-SAFE
 //   - Working hours calculation
+//
+// ✅ checkOut() accepts and persists:
+//      - formData.timelineScreenshotUrl      (string | null)
+//      - formData.timelineScreenshotRequired (boolean)
+//
+// ✅ checkIn() now blocks when the employee is on an approved leave today.
 
 import { supabase } from './supabase';
 import { getTodayIST } from '../utils/timeUtils';
@@ -55,7 +62,6 @@ const getISTDaysDiff = (fromTimestamp, toTimestamp) => {
     const toStr = getISTDateString(toTimestamp);
     if (!fromStr || !toStr) return 0;
 
-    // Parse both as IST midnight
     const from = new Date(fromStr + 'T00:00:00+05:30');
     const to = new Date(toStr + 'T00:00:00+05:30');
 
@@ -76,28 +82,26 @@ const getISTDaysDiff = (fromTimestamp, toTimestamp) => {
  *   - Day after tomorrow or later  → B (Beyond Delay)
  */
 export const calculateStatus = (
-  attendanceDate,      // "YYYY-MM-DD" (the check-in day)
+  attendanceDate,
   submissionTime = new Date()
 ) => {
-  // ✅ Everything in IST terms
-  const attendanceDayStr = attendanceDate;                       // "2026-09-18"
-  const submissionISTDate = getISTDateString(submissionTime);    // "2026-09-19"
-  const submissionISTHour = getISTHour(submissionTime);          // 0-23
+  const attendanceDayStr = attendanceDate;
+  const submissionISTDate = getISTDateString(submissionTime);
+  const submissionISTHour = getISTHour(submissionTime);
 
   // Rule 1: Same IST day → P
   if (submissionISTDate === attendanceDayStr) {
     return 'P';
   }
 
-  // Compute the IST date string of "next day"
   const attendanceDay00 = new Date(attendanceDayStr + 'T00:00:00+05:30');
   const nextDayStr = new Date(attendanceDay00.getTime() + 24 * 60 * 60 * 1000)
     .toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
   // Rule 2: Next day
   if (submissionISTDate === nextDayStr) {
-    if (submissionISTHour < 10) return 'P';  // Before 10 AM IST
-    return 'D';                               // 10 AM or later IST
+    if (submissionISTHour < 10) return 'P';
+    return 'D';
   }
 
   // Rule 3: Day after tomorrow or later → B
@@ -138,8 +142,38 @@ const toTimeString = (date) => {
     return new Date(date).toLocaleTimeString('en-GB', {
       timeZone: 'Asia/Kolkata',
       hour12: false,
-    }); // Returns "HH:MM:SS" in IST
+    });
   } catch {
+    return null;
+  }
+};
+
+// ============================================
+// ✅ NEW: Get approved leave covering a given date
+// Returns the leave row if an Approved leave exists for that date, else null.
+// ============================================
+export const getApprovedLeaveForDate = async (userId, dateStr) => {
+  if (!userId || !dateStr) return null;
+  try {
+    const { data, error } = await supabase
+      .from('leave_requests')
+      .select('id, leave_type, leave_start_date, leave_end_date, reason')
+      .eq('employee_id', userId)
+      .eq('status', 'Approved')
+      .lte('leave_start_date', dateStr)
+      .gte('leave_end_date', dateStr)
+      .maybeSingle();
+
+    if (error) {
+      // Supabase returns PGRST116 when maybeSingle() finds 0 rows — not a real error
+      if (error.code !== 'PGRST116') {
+        console.error('Error fetching leave for date:', error);
+      }
+      return null;
+    }
+    return data || null;
+  } catch (err) {
+    console.error('getApprovedLeaveForDate failed:', err);
     return null;
   }
 };
@@ -151,8 +185,6 @@ export const getPendingCheckOut = async (userId) => {
   if (!userId) return null;
 
   const today = getTodayIST();
-  // ✅ FIX: pending = check-in BEFORE today's IST midnight
-  //    today 00:00 IST in UTC = previous day 18:30 UTC
   const todayStartIST = new Date(`${today}T00:00:00+05:30`).toISOString();
 
   const { data, error } = await supabase
@@ -166,11 +198,13 @@ export const getPendingCheckOut = async (userId) => {
     .maybeSingle();
 
   if (error) {
-    console.error('Error fetching pending check-out:', error);
+    if (error.code !== 'PGRST116') {
+      console.error('Error fetching pending check-out:', error);
+    }
     return null;
   }
 
-  return data;
+  return data || null;
 };
 
 // ============================================
@@ -180,7 +214,6 @@ export const getTodayCheckIn = async (userId) => {
   if (!userId) return null;
 
   const today = getTodayIST();
-  // ✅ FIX: use IST-anchored UTC bounds covering the full IST day
   const dayStartUTC = new Date(`${today}T00:00:00+05:30`).toISOString();
   const dayEndUTC = new Date(`${today}T23:59:59.999+05:30`).toISOString();
 
@@ -195,18 +228,34 @@ export const getTodayCheckIn = async (userId) => {
     .maybeSingle();
 
   if (error) {
-    console.error('Error fetching today check-in:', error);
+    if (error.code !== 'PGRST116') {
+      console.error('Error fetching today check-in:', error);
+    }
     return null;
   }
 
-  return data;
+  return data || null;
 };
 
 // ============================================
-// CORE: Check-in (blocks if pending checkout exists)
+// CORE: Check-in (blocks on pending checkout OR approved leave today)
+// ✅ NEW: blocks if employee is on an approved leave today
 // ============================================
 export const checkIn = async (userId, location, address) => {
   if (!userId) throw new Error('User ID required');
+
+  // ✅ NEW: Check if employee is on approved leave today
+  const today = getTodayIST();
+  const onLeaveToday = await getApprovedLeaveForDate(userId, today);
+
+  if (onLeaveToday) {
+    return {
+      blocked: true,
+      onLeave: true,
+      leave: onLeaveToday,
+      message: `You're on approved ${onLeaveToday.leave_type} today (${onLeaveToday.leave_start_date} → ${onLeaveToday.leave_end_date}). Revoke or edit your leave first, then check in.`,
+    };
+  }
 
   // 1. Check if there's a pending check-out
   const pending = await getPendingCheckOut(userId);
@@ -253,6 +302,10 @@ export const checkIn = async (userId, location, address) => {
 
 // ============================================
 // CORE: Check-out (creates attendance record) — IST-SAFE
+//
+// Accepts and persists:
+//    - formData.timelineScreenshotUrl      (string | null)
+//    - formData.timelineScreenshotRequired (boolean)
 // ============================================
 export const checkOut = async (
   userId,
@@ -293,7 +346,6 @@ export const checkOut = async (
   const checkOutDayStr = getISTDateString(checkOutTime);
   const forgottenCheckout = checkInDayStr !== checkOutDayStr;
 
-  // ✅ FIX: use real hours (ms diff), not whole-day multiples
   const checkoutDelayHours =
     Math.round(((checkOutDate - checkInDate) / 3600000) * 100) / 100;
 
@@ -346,16 +398,22 @@ export const checkOut = async (
       (forgottenCheckout
         ? `Late check-out resolved (${checkoutDelayHours}h delay)`
         : ''),
+    timeline_screenshot_url: formData.timelineScreenshotUrl || null,
+    timeline_screenshot_required: !!formData.timelineScreenshotRequired,
     ...projectsPayload,
   };
 
-  const { data: attendanceRecord, error: insertError } = await supabase
+  // ✅ Upsert on (employee_id, attendance_date) — requires UNIQUE constraint
+  const { data: attendanceRecord, error: upsertError } = await supabase
     .from('attendance')
-    .insert(attendanceData)
+    .upsert(attendanceData, {
+      onConflict: 'employee_id,attendance_date',
+      ignoreDuplicates: false,
+    })
     .select()
     .single();
 
-  if (insertError) throw insertError;
+  if (upsertError) throw upsertError;
 
   return {
     success: true,
@@ -380,12 +438,15 @@ export const getForgottenCount = async (userId, month, year) => {
     .eq('forgotten_checkout', true);
 
   if (month && year) {
-    // ✅ FIX: IST-anchored month range
     const mm = String(month).padStart(2, '0');
     const lastDay = new Date(year, month, 0).getDate();
     const dd = String(lastDay).padStart(2, '0');
-    const monthStartUTC = new Date(`${year}-${mm}-01T00:00:00+05:30`).toISOString();
-    const monthEndUTC = new Date(`${year}-${mm}-${dd}T23:59:59.999+05:30`).toISOString();
+    const monthStartUTC = new Date(
+      `${year}-${mm}-01T00:00:00+05:30`
+    ).toISOString();
+    const monthEndUTC = new Date(
+      `${year}-${mm}-${dd}T23:59:59.999+05:30`
+    ).toISOString();
     query = query
       .gte('check_in_time', monthStartUTC)
       .lte('check_in_time', monthEndUTC);
@@ -405,6 +466,7 @@ export const getForgottenCount = async (userId, month, year) => {
 export default {
   calculateStatus,
   getStatusDescription,
+  getApprovedLeaveForDate,
   getPendingCheckOut,
   getTodayCheckIn,
   checkIn,

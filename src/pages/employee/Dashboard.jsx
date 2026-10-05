@@ -3,6 +3,10 @@
 // Vision Earth HRMS — Premium Dashboard
 // Attractive stat cards with colored accent bars and glow dots.
 // Cool & clean quick action icons.
+//
+// ✅ NEW: Detects approved leave for today on mount.
+//         If on leave → HIDES the Check-In button and shows a
+//         "You're on Approved Leave" status card instead.
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -10,7 +14,8 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../services/supabase';
-import { formatTime } from '../../utils/helpers';
+import { formatTime, formatDate } from '../../utils/helpers';
+import { getTodayIST } from '../../utils/timeUtils';
 import BottomNavigation from '../../components/BottomNavigation';
 import AttendanceFormModal from '../../components/AttendanceFormModal';
 import ForgotCheckoutBanner from '../../components/ForgotCheckoutBanner';
@@ -38,6 +43,10 @@ export const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // ✅ NEW: Approved leave for today
+  const [todayLeave, setTodayLeave] = useState(null);
+  const [leaveLoading, setLeaveLoading] = useState(true);
+
   const [showCheckInModal, setShowCheckInModal] = useState(false);
   const [showAttendanceForm, setShowAttendanceForm] = useState(false);
   const [formMode, setFormMode] = useState('normal');
@@ -63,12 +72,52 @@ export const Dashboard = () => {
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
   // ============================================
+  // ✅ NEW: FETCH TODAY'S APPROVED LEAVE
+  // ============================================
+  const fetchTodayLeave = async () => {
+    if (!user?.id) {
+      setTodayLeave(null);
+      setLeaveLoading(false);
+      return;
+    }
+    try {
+      setLeaveLoading(true);
+      const today = getTodayIST();
+
+      const { data, error } = await supabase
+        .from('leave_requests')
+        .select(
+          'id, leave_type, leave_start_date, leave_end_date, reason'
+        )
+        .eq('employee_id', user.id)
+        .eq('status', 'Approved')
+        .lte('leave_start_date', today)
+        .gte('leave_end_date', today)
+        .maybeSingle();
+
+      if (error) {
+        // PGRST116 = 0 rows from maybeSingle — not a real error
+        if (error.code !== 'PGRST116') {
+          console.error('Error fetching today leave:', error);
+        }
+        setTodayLeave(null);
+        return;
+      }
+      setTodayLeave(data || null);
+    } catch (err) {
+      console.error('fetchTodayLeave failed:', err);
+      setTodayLeave(null);
+    } finally {
+      setLeaveLoading(false);
+    }
+  };
+
+  // ============================================
   // FETCH DASHBOARD DATA
   // ============================================
   const fetchDashboardStats = async () => {
     try {
       setLoading(true);
-      // ✅ FIX: derive current IST month and year
       const now = new Date();
       const currentMonth = parseInt(
         now.toLocaleDateString('en-GB', {
@@ -123,22 +172,21 @@ export const Dashboard = () => {
     }
   };
 
-  // ✅ FIX: avoid the duplicate fetch on mount.
-  //    The original two effects both fired their callback on initial render,
-  //    producing two identical API calls. We keep both triggers but skip the
-  //    very first invocation of the check-in effect, since the user effect
-  //    already covers it. Subsequent check-in state changes still refetch.
+  // ✅ Initial load — stats + leave
   const hasInitialFetchedRef = useRef(false);
 
   useEffect(() => {
-    if (user?.id) fetchDashboardStats();
+    if (user?.id) {
+      fetchDashboardStats();
+      fetchTodayLeave();
+    }
   }, [user]);
 
   useEffect(() => {
     if (!user?.id) return;
     if (!hasInitialFetchedRef.current) {
       hasInitialFetchedRef.current = true;
-      return; // skip the initial trigger — user effect already fetched
+      return;
     }
     fetchDashboardStats();
   }, [isCheckedIn, isCheckedOut]);
@@ -234,7 +282,7 @@ export const Dashboard = () => {
   };
 
   // ============================================
-  // CHECK-IN
+  // CHECK-IN — still guarded as a safety net
   // ============================================
   const handleCheckIn = async () => {
     if (!locationFetched || !location) {
@@ -247,9 +295,22 @@ export const Dashboard = () => {
       const result = await checkIn(user?.id, location, address);
 
       if (result.blocked) {
+        setShowCheckInModal(false);
+        setLocationFetched(false);
+        setLocation(null);
+
+        // Safety: if the service detects leave, refresh the leave state
+        if (result.onLeave) {
+          toast.error(
+            result.message ||
+              "You're on approved leave today. Revoke it first."
+          );
+          await fetchTodayLeave();
+          return;
+        }
+
         toast.error(result.message || 'Check-in blocked');
         if (result.pendingRecord) {
-          setShowCheckInModal(false);
           refetchCheckIn();
         }
         return;
@@ -290,7 +351,7 @@ export const Dashboard = () => {
   // ============================================
   // LOADING
   // ============================================
-  if (loading || checkInLoading) {
+  if (loading || checkInLoading || leaveLoading) {
     return (
       <div
         style={{
@@ -330,14 +391,23 @@ export const Dashboard = () => {
   }
 
   // ============================================
-  // STATUS DISPLAY
+  // ✅ STATUS DISPLAY — includes ON-LEAVE state
   // ============================================
+  const isOnLeave = !!todayLeave;
+
   let statusText = 'Not Checked In';
   let statusSubtext = 'Check in to start your day';
   let statusColor = THEME.red;
   let statusIcon = '⚠️';
 
-  if (hasPendingCheckout) {
+  if (isOnLeave) {
+    statusText = 'On Approved Leave';
+    statusSubtext = `${todayLeave.leave_type || 'Leave'} · ${formatDate(
+      todayLeave.leave_start_date
+    )} → ${formatDate(todayLeave.leave_end_date)}`;
+    statusColor = THEME.blue;
+    statusIcon = '📅';
+  } else if (hasPendingCheckout) {
     statusText = 'Blocked — Resolve Pending';
     statusSubtext = "Complete yesterday's check-out to continue";
     statusColor = THEME.amber;
@@ -380,9 +450,7 @@ export const Dashboard = () => {
         fontFamily: THEME.font,
       }}
     >
-      {/* ============================================ */}
       {/* PREMIUM HEADER CARD */}
-      {/* ============================================ */}
       <div style={{ padding: '16px 16px 8px' }}>
         <div
           style={{
@@ -397,7 +465,6 @@ export const Dashboard = () => {
             overflow: 'hidden',
           }}
         >
-          {/* Decorative glow */}
           <div
             style={{
               position: 'absolute',
@@ -412,7 +479,6 @@ export const Dashboard = () => {
             }}
           />
 
-          {/* Top row */}
           <div
             style={{
               display: 'flex',
@@ -492,7 +558,6 @@ export const Dashboard = () => {
             </button>
           </div>
 
-          {/* Tagline */}
           <div
             style={{
               fontSize: '11px',
@@ -507,7 +572,6 @@ export const Dashboard = () => {
             People · Projects · A Greener Tomorrow
           </div>
 
-          {/* Welcome */}
           <div style={{ marginBottom: '14px', position: 'relative', zIndex: 1 }}>
             <div
               style={{
@@ -536,7 +600,6 @@ export const Dashboard = () => {
             </div>
           </div>
 
-          {/* Quote */}
           <div
             style={{
               padding: '10px 14px',
@@ -567,7 +630,6 @@ export const Dashboard = () => {
             </span>
           </div>
 
-          {/* Date chip */}
           <div
             style={{
               display: 'inline-flex',
@@ -599,10 +661,8 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* FORGOT BANNER */}
-      {/* ============================================ */}
-      {hasPendingCheckout && (
+      {/* FORGOT BANNER — hidden when on leave */}
+      {hasPendingCheckout && !isOnLeave && (
         <div style={{ padding: '0 16px' }}>
           <ForgotCheckoutBanner
             record={pendingRecord}
@@ -611,9 +671,7 @@ export const Dashboard = () => {
         </div>
       )}
 
-      {/* ============================================ */}
       {/* PREMIUM STATUS CARD */}
-      {/* ============================================ */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -622,15 +680,21 @@ export const Dashboard = () => {
               ? dark
                 ? 'linear-gradient(135deg, #064E3B 0%, #065F46 100%)'
                 : 'linear-gradient(135deg, #10B981 0%, #059669 100%)'
+              : isOnLeave
+              ? dark
+                ? 'linear-gradient(135deg, #1E3A8A 0%, #1E40AF 100%)'
+                : 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)'
               : dark
               ? 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)'
               : 'linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%)',
             borderRadius: THEME.radiusXl,
-            border: isCheckedIn
+            border: isCheckedIn || isOnLeave
               ? 'none'
               : `1px solid ${dark ? 'rgba(255,255,255,0.05)' : THEME.border}`,
             boxShadow: isCheckedIn
               ? '0 8px 24px rgba(16,185,129,0.35)'
+              : isOnLeave
+              ? '0 8px 24px rgba(59,130,246,0.35)'
               : dark
               ? '0 4px 20px rgba(0,0,0,0.3)'
               : '0 4px 20px rgba(0,0,0,0.05)',
@@ -644,15 +708,16 @@ export const Dashboard = () => {
               width: '52px',
               height: '52px',
               borderRadius: '50%',
-              background: isCheckedIn
-                ? 'rgba(255,255,255,0.2)'
-                : statusColor + '15',
+              background:
+                isCheckedIn || isOnLeave
+                  ? 'rgba(255,255,255,0.2)'
+                  : statusColor + '15',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: '24px',
               flexShrink: 0,
-              color: isCheckedIn ? '#FFFFFF' : statusColor,
+              color: isCheckedIn || isOnLeave ? '#FFFFFF' : statusColor,
               fontWeight: 900,
             }}
           >
@@ -663,7 +728,7 @@ export const Dashboard = () => {
             <div
               style={{
                 fontSize: '11px',
-                color: isCheckedIn
+                color: isCheckedIn || isOnLeave
                   ? 'rgba(255,255,255,0.75)'
                   : textSecondary,
                 marginBottom: '2px',
@@ -672,7 +737,9 @@ export const Dashboard = () => {
                 textTransform: 'uppercase',
               }}
             >
-              {isCheckedIn
+              {isOnLeave
+                ? 'Status'
+                : isCheckedIn
                 ? 'You are'
                 : hasPendingCheckout
                 ? 'Action Required'
@@ -684,7 +751,7 @@ export const Dashboard = () => {
               style={{
                 fontSize: '18px',
                 fontWeight: 800,
-                color: isCheckedIn ? '#FFFFFF' : textPrimary,
+                color: isCheckedIn || isOnLeave ? '#FFFFFF' : textPrimary,
                 lineHeight: 1.2,
                 letterSpacing: '-0.3px',
               }}
@@ -694,7 +761,7 @@ export const Dashboard = () => {
             <div
               style={{
                 fontSize: '12px',
-                color: isCheckedIn
+                color: isCheckedIn || isOnLeave
                   ? 'rgba(255,255,255,0.85)'
                   : textSecondary,
                 marginTop: '3px',
@@ -705,37 +772,43 @@ export const Dashboard = () => {
             </div>
           </div>
 
-          {!hasPendingCheckout && !isCheckedIn && !isCheckedOut && (
-            <button
-              onClick={openCheckInModal}
-              style={{
-                padding: '11px 20px',
-                borderRadius: '14px',
-                border: 'none',
-                background:
-                  'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-                color: '#FFFFFF',
-                fontWeight: 700,
-                fontSize: '13px',
-                cursor: 'pointer',
-                boxShadow: '0 4px 14px rgba(16,185,129,0.4)',
-                whiteSpace: 'nowrap',
-                fontFamily: THEME.font,
-                letterSpacing: '0.3px',
-              }}
-            >
-              Check In
-            </button>
-          )}
+          {/* ✅ CHECK-IN BUTTON — ONLY when NOT on leave */}
+          {!isOnLeave &&
+            !hasPendingCheckout &&
+            !isCheckedIn &&
+            !isCheckedOut && (
+              <button
+                onClick={openCheckInModal}
+                style={{
+                  padding: '11px 20px',
+                  borderRadius: '14px',
+                  border: 'none',
+                  background:
+                    'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                  color: '#FFFFFF',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(16,185,129,0.4)',
+                  whiteSpace: 'nowrap',
+                  fontFamily: THEME.font,
+                  letterSpacing: '0.3px',
+                }}
+              >
+                Check In
+              </button>
+            )}
 
-          {isCheckedIn && (
+          {/* CHECK-OUT BUTTON */}
+          {!isOnLeave && isCheckedIn && (
             <button
               onClick={handleNormalCheckOut}
               style={{
                 padding: '11px 20px',
                 borderRadius: '14px',
                 border: 'none',
-                background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
+                background:
+                  'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
                 color: '#FFFFFF',
                 fontWeight: 700,
                 fontSize: '13px',
@@ -750,7 +823,30 @@ export const Dashboard = () => {
             </button>
           )}
 
-          {isCheckedOut && (
+          {/* ✅ ON-LEAVE PILL — replaces the button */}
+          {isOnLeave && (
+            <button
+              onClick={() => navigate('/leave')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '20px',
+                border: '1px solid rgba(255,255,255,0.3)',
+                background: 'rgba(255,255,255,0.15)',
+                color: '#FFFFFF',
+                fontWeight: 700,
+                fontSize: '12px',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                fontFamily: THEME.font,
+                letterSpacing: '0.3px',
+              }}
+            >
+              View Leave →
+            </button>
+          )}
+
+          {/* DONE PILL */}
+          {!isOnLeave && isCheckedOut && (
             <div
               style={{
                 padding: '8px 16px',
@@ -768,9 +864,85 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* QUICK ACTIONS — CLEAN & COOL */}
-      {/* ============================================ */}
+      {/* ✅ ON-LEAVE INFO BANNER */}
+      {isOnLeave && (
+        <div style={{ padding: '0 16px 16px' }}>
+          <div
+            style={{
+              padding: '14px 16px',
+              background: dark
+                ? 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(37,99,235,0.08))'
+                : 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
+              borderRadius: THEME.radiusLg,
+              border: `1px solid ${dark ? 'rgba(59,130,246,0.3)' : '#BFDBFE'}`,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '12px',
+            }}
+          >
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                background: 'rgba(59,130,246,0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '16px',
+                flexShrink: 0,
+              }}
+            >
+              ℹ️
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  color: dark ? '#93C5FD' : '#1E40AF',
+                  marginBottom: '3px',
+                }}
+              >
+                Check-in is disabled today
+              </div>
+              <div
+                style={{
+                  fontSize: '11px',
+                  color: dark ? '#BFDBFE' : '#3B82F6',
+                  fontWeight: 500,
+                  lineHeight: 1.45,
+                }}
+              >
+                You have an approved leave covering today. To check in, first
+                revoke or edit your leave from the Leave page.
+              </div>
+              <button
+                onClick={() => navigate('/leave')}
+                style={{
+                  marginTop: '8px',
+                  padding: '6px 14px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: dark
+                    ? 'rgba(59,130,246,0.25)'
+                    : 'rgba(59,130,246,0.15)',
+                  color: dark ? '#DBEAFE' : '#1E40AF',
+                  fontWeight: 800,
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  fontFamily: THEME.font,
+                  letterSpacing: '0.3px',
+                }}
+              >
+                Go to Leave Page →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK ACTIONS */}
       <div style={{ padding: '0 16px 16px' }}>
         <h3
           style={{
@@ -916,7 +1088,6 @@ export const Dashboard = () => {
                 e.currentTarget.style.borderColor = border;
               }}
             >
-              {/* Icon chip — clean flat gradient */}
               <div
                 style={{
                   width: '48px',
@@ -950,9 +1121,7 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* THIS MONTH — ATTRACTIVE STAT CARDS */}
-      {/* ============================================ */}
+      {/* THIS MONTH STATS */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -1056,7 +1225,6 @@ export const Dashboard = () => {
                 transition: 'all 0.2s ease',
               }}
             >
-              {/* Top accent bar */}
               <div
                 style={{
                   position: 'absolute',
@@ -1069,7 +1237,6 @@ export const Dashboard = () => {
                 }}
               />
 
-              {/* Corner dot */}
               <div
                 style={{
                   position: 'absolute',
@@ -1083,7 +1250,6 @@ export const Dashboard = () => {
                 }}
               />
 
-              {/* Number */}
               <div
                 style={{
                   fontSize: '28px',
@@ -1098,7 +1264,6 @@ export const Dashboard = () => {
                 {stat.value}
               </div>
 
-              {/* Label */}
               <div
                 style={{
                   fontSize: '10px',
@@ -1116,9 +1281,7 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
       {/* BOTTOM QUOTE */}
-      {/* ============================================ */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -1164,9 +1327,7 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* CHECK-IN MODAL */}
-      {/* ============================================ */}
+      {/* CHECK-IN MODAL — only reachable when not on leave */}
       {showCheckInModal && (
         <div
           style={{

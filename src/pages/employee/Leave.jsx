@@ -3,6 +3,9 @@
 // Vision Earth HRMS — Premium Leave Management
 // (Balance tab removed)
 // ✅ Edit + Revoke + Cancel Revoke with admin-approval flow
+// ✅ Edit & Revoke hidden once the leave's end date has passed (IST)
+// ✅ Info reminder above the Apply form — encourages the employee to
+//    inform the admin personally after submit/edit/revoke.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -271,7 +274,7 @@ export const Leave = () => {
   };
 
   // ============================================
-  // ✅ NEW: CANCEL REVOKE (restore to Approved)
+  // CANCEL REVOKE
   // ============================================
   const handleCancelRevoke = async (leave) => {
     const confirmed = window.confirm(
@@ -591,7 +594,46 @@ export const Leave = () => {
       {/* TAB: APPLY */}
       {activeTab === 'apply' && (
         <div style={{ padding: '0 16px 16px' }}>
-          {/* Info banner */}
+          {/* ✅ Reminder banner — inform admin personally */}
+          <div
+            style={{
+              padding: '12px 14px',
+              marginBottom: '12px',
+              borderRadius: THEME.radiusMd,
+              background: dark ? 'rgba(59,130,246,0.1)' : '#EFF6FF',
+              border: `1px solid ${dark ? 'rgba(59,130,246,0.3)' : '#BFDBFE'}`,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '15px',
+                flexShrink: 0,
+                lineHeight: 1.25,
+              }}
+            >
+              📩
+            </span>
+            <div
+              style={{
+                fontSize: '11px',
+                color: dark ? '#93C5FD' : '#1E40AF',
+                fontWeight: 500,
+                lineHeight: 1.55,
+              }}
+            >
+              <strong style={{ color: dark ? '#DBEAFE' : '#1E3A8A' }}>
+                Reminder:
+              </strong>{' '}
+              After you <strong>apply</strong>, <strong>edit</strong>, or{' '}
+              <strong>request a revoke</strong>, please inform the admin
+              personally so they can review and approve your request.
+            </div>
+          </div>
+
+          {/* Info banner (existing blue banner) */}
           <div
             style={{
               background: editingLeaveId
@@ -1133,10 +1175,24 @@ export const Leave = () => {
               const statusLabel = getStatusLabel(leave.status);
               const typeStyle = getLeaveTypeStyle(leave.leave_type);
 
+              // Hide Edit/Revoke if the leave has already ended (IST)
+              const todayIST = new Date().toLocaleDateString('en-CA', {
+                timeZone: 'Asia/Kolkata',
+              });
+              const leaveEndDate = leave.leave_end_date; // "YYYY-MM-DD"
+              const isPastLeave =
+                !!leaveEndDate && leaveEndDate < todayIST;
+
               const canEdit =
-                leave.status === 'Pending' || leave.status === 'Approved';
+                (leave.status === 'Pending' ||
+                  leave.status === 'Approved') &&
+                !isPastLeave;
+
               const canRevoke =
-                leave.status === 'Pending' || leave.status === 'Approved';
+                (leave.status === 'Pending' ||
+                  leave.status === 'Approved') &&
+                !isPastLeave;
+
               const canCancelRevoke = leave.status === 'Revoke Requested';
 
               return (
@@ -1381,7 +1437,7 @@ export const Leave = () => {
                     </>
                   )}
 
-                  {/* Edit + Revoke buttons */}
+                  {/* Edit + Revoke buttons — only when not past */}
                   {canEdit && canRevoke && (
                     <div
                       style={{
@@ -1434,7 +1490,9 @@ export const Leave = () => {
                           letterSpacing: '0.3px',
                         }}
                       >
-                        {leave.status === 'Approved' ? '🚫 Request Revoke' : '🗑️ Revoke'}
+                        {leave.status === 'Approved'
+                          ? '🚫 Request Revoke'
+                          : '🗑️ Revoke'}
                       </button>
                     </div>
                   )}

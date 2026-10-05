@@ -2,6 +2,8 @@
 //
 // Vision Earth HRMS — Premium Admin Attendance History
 // Premium header, refined tabs, filter row, beautiful empty state.
+// ✅ 📸 Shows employee's Google Timeline screenshot (if uploaded)
+// ✅ 🕐 Smart time formatter — handles both TIME strings and ISO timestamps
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -12,13 +14,48 @@ import { supabase } from '../../services/supabase';
 import {
   getTodayIST,
   formatDate,
-  formatTime,
   getStatusColor,
   getStatusLabel,
   getMonthName,
 } from '../../utils/helpers';
 import BottomNavigation from '../../components/BottomNavigation';
 import { THEME, isDark } from '../../utils/designTokens';
+
+// ============================================
+// ✅ SMART TIME FORMATTER
+// Handles:
+//   - "10:29:38"          → "10:29 am"
+//   - "10:29"             → "10:29 am"
+//   - "2026-10-05T10:29:38Z" → "10:29 am"
+//   - null / undefined / "" → "—"
+// ============================================
+const formatFlexTime = (value) => {
+  if (value === null || value === undefined || value === '') return '—';
+
+  // If already in HH:MM or HH:MM:SS string form (from attendance table TIME column)
+  if (typeof value === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(value.trim())) {
+    const [hStr, mStr] = value.trim().split(':');
+    let h = parseInt(hStr, 10);
+    const m = mStr.padStart(2, '0');
+    const ampm = h >= 12 ? 'pm' : 'am';
+    h = h % 12 || 12;
+    return `${String(h).padStart(2, '0')}:${m} ${ampm}`;
+  }
+
+  // Otherwise try parsing as a Date (ISO timestamp)
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return '—';
+  }
+};
 
 export const AdminAttendanceHistory = () => {
   const navigate = useNavigate();
@@ -31,9 +68,9 @@ export const AdminAttendanceHistory = () => {
   const [filteredData, setFilteredData] = useState([]);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showScreenshotModal, setShowScreenshotModal] = useState(false);
 
   const [viewMode, setViewMode] = useState('today');
-  // ✅ FIX: derive initial month/year from IST calendar
   const _istNow = new Date();
   const _istMonth = parseInt(
     _istNow.toLocaleDateString('en-GB', {
@@ -53,9 +90,6 @@ export const AdminAttendanceHistory = () => {
   const [selectedEmployee, setSelectedEmployee] = useState('all');
   const [employees, setEmployees] = useState([]);
 
-  // ============================================
-  // THEME HELPERS
-  // ============================================
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
   const cardBg = dark ? THEME.dark.card : THEME.cardBg;
   const textPrimary = dark ? THEME.dark.text : THEME.text;
@@ -73,7 +107,6 @@ export const AdminAttendanceHistory = () => {
         .from('employees')
         .select('id, name, employee_id')
         .order('name');
-
       if (error) throw error;
       setEmployees(data || []);
     } catch (error) {
@@ -158,6 +191,18 @@ export const AdminAttendanceHistory = () => {
     applyFilters();
   }, [viewMode, month, year, filterDate, selectedEmployee, attendanceData]);
 
+  // Escape closes modals
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        if (showScreenshotModal) setShowScreenshotModal(false);
+        else if (showDetailModal) setShowDetailModal(false);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [showDetailModal, showScreenshotModal]);
+
   // ============================================
   // HANDLERS
   // ============================================
@@ -169,13 +214,10 @@ export const AdminAttendanceHistory = () => {
       fetchAttendanceHistory(today, today);
       setFilterDate('');
     } else if (mode === 'month') {
-      // ✅ FIX: zero-padded last day
       const mm = String(month).padStart(2, '0');
       const lastDay = new Date(year, month, 0).getDate();
       const dd = String(lastDay).padStart(2, '0');
-      const startDate = `${year}-${mm}-01`;
-      const endDate = `${year}-${mm}-${dd}`;
-      fetchAttendanceHistory(startDate, endDate);
+      fetchAttendanceHistory(`${year}-${mm}-01`, `${year}-${mm}-${dd}`);
       setFilterDate('');
     } else if (mode === 'all') {
       fetchAttendanceHistory(null, null);
@@ -187,13 +229,10 @@ export const AdminAttendanceHistory = () => {
     setMonth(newMonth);
     setYear(newYear);
     if (viewMode === 'month') {
-      // ✅ FIX: zero-padded last day
       const mm = String(newMonth).padStart(2, '0');
       const lastDay = new Date(newYear, newMonth, 0).getDate();
       const dd = String(lastDay).padStart(2, '0');
-      const startDate = `${newYear}-${mm}-01`;
-      const endDate = `${newYear}-${mm}-${dd}`;
-      fetchAttendanceHistory(startDate, endDate);
+      fetchAttendanceHistory(`${newYear}-${mm}-01`, `${newYear}-${mm}-${dd}`);
     }
   };
 
@@ -289,9 +328,7 @@ export const AdminAttendanceHistory = () => {
         fontFamily: THEME.font,
       }}
     >
-      {/* ============================================ */}
-      {/* PREMIUM HEADER */}
-      {/* ============================================ */}
+      {/* HEADER */}
       <div style={{ padding: '16px 16px 8px' }}>
         <div
           style={{
@@ -413,9 +450,7 @@ export const AdminAttendanceHistory = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
       {/* VIEW MODE TABS */}
-      {/* ============================================ */}
       <div style={{ padding: '0 16px 12px' }}>
         <div
           style={{
@@ -424,7 +459,9 @@ export const AdminAttendanceHistory = () => {
             padding: '4px',
             background: dark ? 'rgba(255,255,255,0.03)' : '#F1F5F9',
             borderRadius: THEME.radiusPill,
-            border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'}`,
+            border: `1px solid ${
+              dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'
+            }`,
           }}
         >
           {[
@@ -479,14 +516,14 @@ export const AdminAttendanceHistory = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
       {/* FILTER ROW */}
-      {/* ============================================ */}
       <div style={{ padding: '0 16px 12px' }}>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
           <select
             value={month}
-            onChange={(e) => handleMonthYearChange(parseInt(e.target.value), year)}
+            onChange={(e) =>
+              handleMonthYearChange(parseInt(e.target.value), year)
+            }
             style={{
               flex: 1,
               padding: '11px 12px',
@@ -517,7 +554,9 @@ export const AdminAttendanceHistory = () => {
 
           <select
             value={year}
-            onChange={(e) => handleMonthYearChange(month, parseInt(e.target.value))}
+            onChange={(e) =>
+              handleMonthYearChange(month, parseInt(e.target.value))
+            }
             style={{
               flex: 1,
               padding: '11px 12px',
@@ -539,13 +578,11 @@ export const AdminAttendanceHistory = () => {
               boxSizing: 'border-box',
             }}
           >
-            {Array.from({ length: 5 }, (_, i) => _istYear - i).map(
-              (y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              )
-            )}
+            {Array.from({ length: 5 }, (_, i) => _istYear - i).map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -780,6 +817,62 @@ export const AdminAttendanceHistory = () => {
                       )}
                     </div>
 
+                    {/* ✅ NEW: check-in / check-out / hours row on the card */}
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        display: 'flex',
+                        gap: '8px',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: '9px',
+                          background: dark
+                            ? 'rgba(16,185,129,0.12)'
+                            : THEME.primarySoft,
+                          color: THEME.primary,
+                          padding: '3px 8px',
+                          borderRadius: '7px',
+                          fontWeight: 800,
+                          border: `1px solid ${THEME.primary}30`,
+                        }}
+                      >
+                        ✓ {formatFlexTime(item.check_in_time)}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '9px',
+                          background: dark ? 'rgba(239,68,68,0.12)' : THEME.redSoft,
+                          color: THEME.red,
+                          padding: '3px 8px',
+                          borderRadius: '7px',
+                          fontWeight: 800,
+                          border: `1px solid ${THEME.red}30`,
+                        }}
+                      >
+                        ↑ {formatFlexTime(item.check_out_time)}
+                      </span>
+                      {item.working_hours != null && (
+                        <span
+                          style={{
+                            fontSize: '9px',
+                            background: dark
+                              ? 'rgba(59,130,246,0.12)'
+                              : THEME.blueSoft,
+                            color: THEME.blue,
+                            padding: '3px 8px',
+                            borderRadius: '7px',
+                            fontWeight: 800,
+                            border: `1px solid ${THEME.blue}30`,
+                          }}
+                        >
+                          ⏱ {item.working_hours}h
+                        </span>
+                      )}
+                    </div>
+
                     {projects.length > 0 && (
                       <div
                         style={{
@@ -819,6 +912,24 @@ export const AdminAttendanceHistory = () => {
                             +{projects.length - 2}
                           </span>
                         )}
+                      </div>
+                    )}
+
+                    {item.timeline_screenshot_url && (
+                      <div
+                        style={{
+                          marginTop: '8px',
+                          display: 'inline-block',
+                          fontSize: '9px',
+                          background: THEME.primary + '12',
+                          color: THEME.primary,
+                          padding: '3px 8px',
+                          borderRadius: '7px',
+                          fontWeight: 800,
+                          border: `1px solid ${THEME.primary}30`,
+                        }}
+                      >
+                        📸 Screenshot
                       </div>
                     )}
                   </div>
@@ -958,13 +1069,10 @@ export const AdminAttendanceHistory = () => {
                 marginBottom: '14px',
               }}
             >
+              {/* ✅ FIX: use formatFlexTime for check-in/out */}
               <DetailBox
                 label="Check In"
-                value={
-                  selectedRecord.check_in_time
-                    ? formatTime(selectedRecord.check_in_time)
-                    : '—'
-                }
+                value={formatFlexTime(selectedRecord.check_in_time)}
                 valueColor={THEME.primary}
                 dark={dark}
                 textPrimary={textPrimary}
@@ -973,11 +1081,7 @@ export const AdminAttendanceHistory = () => {
               />
               <DetailBox
                 label="Check Out"
-                value={
-                  selectedRecord.check_out_time
-                    ? formatTime(selectedRecord.check_out_time)
-                    : '—'
-                }
+                value={formatFlexTime(selectedRecord.check_out_time)}
                 valueColor={THEME.red}
                 dark={dark}
                 textPrimary={textPrimary}
@@ -1055,6 +1159,84 @@ export const AdminAttendanceHistory = () => {
               </div>
             )}
 
+            {/* SCREENSHOT SECTION */}
+            {selectedRecord.timeline_screenshot_url ? (
+              <div
+                style={{
+                  marginBottom: '14px',
+                  padding: '14px',
+                  background: dark ? '#0F172A' : '#F8FAFC',
+                  borderRadius: THEME.radiusMd,
+                  border: `1px solid ${THEME.primary}40`,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    color: THEME.primary,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <span>📸 Google Timeline Screenshot</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowScreenshotModal(true)}
+                    style={{
+                      padding: '3px 10px',
+                      borderRadius: '8px',
+                      border: `1px solid ${THEME.primary}40`,
+                      background: THEME.primary + '12',
+                      color: THEME.primary,
+                      fontSize: '9px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      fontFamily: THEME.font,
+                      letterSpacing: '0.2px',
+                    }}
+                  >
+                    🔍 View Full
+                  </button>
+                </div>
+                <img
+                  src={selectedRecord.timeline_screenshot_url}
+                  alt="Timeline screenshot"
+                  onClick={() => setShowScreenshotModal(true)}
+                  style={{
+                    width: '100%',
+                    maxHeight: '200px',
+                    objectFit: 'cover',
+                    borderRadius: '10px',
+                    border: `1px solid ${border}`,
+                    cursor: 'zoom-in',
+                  }}
+                />
+              </div>
+            ) : selectedRecord.timeline_screenshot_required ? (
+              <div
+                style={{
+                  marginBottom: '14px',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  background: THEME.redSoft,
+                  color: THEME.red,
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  border: `1px solid ${THEME.red}40`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                ⚠️ Timeline screenshot was required but not uploaded
+              </div>
+            ) : null}
+
             {selectedRecord.remarks && (
               <div
                 style={{
@@ -1104,6 +1286,136 @@ export const AdminAttendanceHistory = () => {
                 boxShadow: THEME.shadowGreen,
                 fontFamily: THEME.font,
                 letterSpacing: '0.3px',
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* FULL SCREENSHOT VIEWER */}
+      {showScreenshotModal && selectedRecord?.timeline_screenshot_url && (
+        <div
+          onClick={() => setShowScreenshotModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            background: 'rgba(0,0,0,0.85)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 1800,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: cardBg,
+              borderRadius: THEME.radiusXl,
+              padding: '20px',
+              maxWidth: '520px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+              fontFamily: THEME.font,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 14,
+                paddingBottom: 12,
+                borderBottom: `1px solid ${border}`,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 800,
+                    color: textPrimary,
+                  }}
+                >
+                  📸 Timeline Screenshot
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: textMuted,
+                    fontWeight: 600,
+                    marginTop: 2,
+                  }}
+                >
+                  {selectedRecord.employee?.name || 'Employee'} ·{' '}
+                  {formatDate(selectedRecord.attendance_date)}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowScreenshotModal(false)}
+                style={{
+                  fontSize: 22,
+                  color: textMuted,
+                  background: 'none',
+                  border: 'none',
+                  padding: 4,
+                  cursor: 'pointer',
+                  lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <img
+              src={selectedRecord.timeline_screenshot_url}
+              alt="Timeline screenshot"
+              style={{
+                width: '100%',
+                borderRadius: 12,
+                border: `1px solid ${border}`,
+                display: 'block',
+              }}
+            />
+
+            <a
+              href={selectedRecord.timeline_screenshot_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'block',
+                textAlign: 'center',
+                marginTop: 12,
+                fontSize: 11,
+                fontWeight: 700,
+                color: THEME.primary,
+                textDecoration: 'none',
+              }}
+            >
+              🔗 Open original in new tab
+            </a>
+
+            <button
+              onClick={() => setShowScreenshotModal(false)}
+              style={{
+                width: '100%',
+                padding: 13,
+                marginTop: 14,
+                borderRadius: THEME.radiusMd,
+                border: 'none',
+                background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+                color: '#FFFFFF',
+                fontWeight: 800,
+                fontSize: 14,
+                cursor: 'pointer',
+                fontFamily: THEME.font,
+                letterSpacing: 0.3,
+                boxShadow: THEME.shadowGreen,
               }}
             >
               Close

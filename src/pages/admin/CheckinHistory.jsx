@@ -5,6 +5,11 @@
 // ✅ Cards clickable → modal with full details.
 // ✅ Map icons in Check In / Check Out blocks → open in Google Maps.
 // ✅ 📅 Timeline button to view that employee's route for that day.
+// ✅ 📸 Screenshot button beside Timeline:
+//      - Enabled  → employee uploaded a Google Timeline screenshot
+//      - Disabled → not uploaded (either optional-skip or required-missing)
+//
+// ✅ FIX: attendance join now robust against DATE vs ISO string formats
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -57,6 +62,7 @@ export const AdminCheckinHistory = () => {
 
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [showDayTimeline, setShowDayTimeline] = useState(false);
+  const [showScreenshotModal, setShowScreenshotModal] = useState(false);
 
   // Theme helpers
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
@@ -68,7 +74,28 @@ export const AdminCheckinHistory = () => {
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
   // ============================================
-  // FETCH
+  // HELPER: normalize a date to "YYYY-MM-DD" IST
+  // ============================================
+  const toISTDateString = (value) => {
+    if (!value) return null;
+    try {
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        // Already "YYYY-MM-DD"
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+        // "YYYY-MM-DDTHH..." → take the first 10
+        if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) return trimmed.slice(0, 10);
+      }
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return null;
+      return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    } catch {
+      return null;
+    }
+  };
+
+  // ============================================
+  // FETCH — with attendance join
   // ============================================
   const fetchCheckinHistory = async (startDate, endDate) => {
     try {
@@ -94,11 +121,47 @@ export const AdminCheckinHistory = () => {
 
       if (empError) throw empError;
 
+      // ✅ Fetch attendance rows for screenshot info
+      let attQuery = supabase
+        .from('attendance')
+        .select(
+          'employee_id, attendance_date, timeline_screenshot_url, timeline_screenshot_required'
+        );
+
+      if (startDate && endDate) {
+        const startDay = toISTDateString(startDate);
+        const endDay = toISTDateString(endDate);
+        if (startDay && endDay) {
+          attQuery = attQuery
+            .gte('attendance_date', startDay)
+            .lte('attendance_date', endDay);
+        }
+      }
+
+      const { data: attData, error: attError } = await attQuery;
+      if (attError) console.warn('Attendance fetch warning:', attError.message);
+
       const combinedData =
-        checkinData?.map((item) => ({
-          ...item,
-          employee: empData?.find((emp) => emp.id === item.employee_id) || null,
-        })) || [];
+        checkinData?.map((item) => {
+          const emp = empData?.find((e) => e.id === item.employee_id) || null;
+
+          const istDay = toISTDateString(item.check_in_time);
+
+          // ✅ FIX: robust attendance match (handles DATE / ISO strings)
+          const att = (attData || []).find((a) => {
+            if (a.employee_id !== item.employee_id) return false;
+            const attDay = toISTDateString(a.attendance_date);
+            return attDay && istDay && attDay === istDay;
+          });
+
+          return {
+            ...item,
+            employee: emp,
+            timeline_screenshot_url: att?.timeline_screenshot_url || null,
+            timeline_screenshot_required:
+              att?.timeline_screenshot_required || false,
+          };
+        }) || [];
 
       setCheckins(combinedData);
       setFilteredCheckins(combinedData);
@@ -181,7 +244,9 @@ export const AdminCheckinHistory = () => {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') {
-        if (showDayTimeline) {
+        if (showScreenshotModal) {
+          setShowScreenshotModal(false);
+        } else if (showDayTimeline) {
           setShowDayTimeline(false);
         } else if (selectedRecord) {
           setSelectedRecord(null);
@@ -190,7 +255,7 @@ export const AdminCheckinHistory = () => {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [selectedRecord, showDayTimeline]);
+  }, [selectedRecord, showDayTimeline, showScreenshotModal]);
 
   // ============================================
   // LOADING
@@ -244,6 +309,31 @@ export const AdminCheckinHistory = () => {
   };
 
   // ============================================
+  // SCREENSHOT BUTTON HANDLER
+  // ============================================
+  const handleScreenshotClick = (item) => {
+    const hasScreenshot = !!item.timeline_screenshot_url;
+    const wasRequired = !!item.timeline_screenshot_required;
+
+    if (hasScreenshot) {
+      setShowScreenshotModal(true);
+      return;
+    }
+
+    if (wasRequired) {
+      toast.error(
+        '⚠️ Screenshot was REQUIRED (fewer than 2 pings) but not uploaded',
+        { duration: 4000 }
+      );
+    } else {
+      toast(
+        '📌 Screenshot not uploaded — route was recorded via location pings (optional)',
+        { icon: 'ℹ️', duration: 4000 }
+      );
+    }
+  };
+
+  // ============================================
   // MODAL
   // ============================================
   const renderModal = () => {
@@ -262,7 +352,6 @@ export const AdminCheckinHistory = () => {
       ? new Date(item.check_out_time)
       : null;
 
-    // Date string for the timeline (YYYY-MM-DD in IST)
     const attendanceDateStr = checkInDate
       ? checkInDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
       : null;
@@ -274,6 +363,34 @@ export const AdminCheckinHistory = () => {
       )}`;
       window.open(url, '_blank', 'noopener,noreferrer');
     };
+
+    // Screenshot button state
+    const hasScreenshot = !!item.timeline_screenshot_url;
+    const wasRequired = !!item.timeline_screenshot_required;
+
+    const screenshotBtnColors = hasScreenshot
+      ? {
+          bg: THEME.primary + '12',
+          border: THEME.primary + '40',
+          color: THEME.primary,
+          icon: '📸',
+          label: 'Screenshot',
+        }
+      : wasRequired
+      ? {
+          bg: dark ? 'rgba(239,68,68,0.08)' : THEME.redSoft,
+          border: THEME.red + '30',
+          color: THEME.red,
+          icon: '🔒',
+          label: 'Screenshot',
+        }
+      : {
+          bg: dark ? 'rgba(148,163,184,0.08)' : '#F1F5F9',
+          border: border,
+          color: textMuted,
+          icon: '🔒',
+          label: 'Screenshot',
+        };
 
     return (
       <div
@@ -386,14 +503,14 @@ export const AdminCheckinHistory = () => {
             </button>
           </div>
 
-          {/* Status pill + Timeline button */}
+          {/* Status pill + Timeline + Screenshot buttons */}
           <div
             style={{
               marginBottom: '14px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: 10,
+              gap: 8,
               flexWrap: 'wrap',
             }}
           >
@@ -412,33 +529,79 @@ export const AdminCheckinHistory = () => {
               {item.status || 'Checked In'}
             </span>
 
-            {attendanceDateStr && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {attendanceDateStr && (
+                <button
+                  type="button"
+                  onClick={() => setShowDayTimeline(true)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 12px',
+                    borderRadius: THEME.radiusPill,
+                    border: `1px solid ${THEME.primary}40`,
+                    background: THEME.primary + '12',
+                    color: THEME.primary,
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    fontFamily: THEME.font,
+                    letterSpacing: '0.3px',
+                  }}
+                >
+                  <span style={{ fontSize: 13 }}>📅</span>
+                  Timeline
+                </button>
+              )}
+
+              {/* SCREENSHOT BUTTON */}
               <button
                 type="button"
-                onClick={() => setShowDayTimeline(true)}
+                onClick={() => handleScreenshotClick(item)}
+                title={
+                  hasScreenshot
+                    ? 'View uploaded screenshot'
+                    : wasRequired
+                    ? 'Screenshot was required but not uploaded'
+                    : 'Screenshot not uploaded (optional)'
+                }
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
                   padding: '6px 12px',
                   borderRadius: THEME.radiusPill,
-                  border: `1px solid ${THEME.primary}40`,
-                  background: THEME.primary + '12',
-                  color: THEME.primary,
+                  border: `1px solid ${screenshotBtnColors.border}`,
+                  background: screenshotBtnColors.bg,
+                  color: screenshotBtnColors.color,
                   fontSize: '11px',
                   fontWeight: 800,
-                  cursor: 'pointer',
+                  cursor: hasScreenshot ? 'pointer' : 'not-allowed',
                   fontFamily: THEME.font,
                   letterSpacing: '0.3px',
+                  opacity: hasScreenshot ? 1 : 0.85,
                 }}
               >
-                <span style={{ fontSize: 13 }}>📅</span>
-                Timeline
+                <span style={{ fontSize: 13 }}>{screenshotBtnColors.icon}</span>
+                {screenshotBtnColors.label}
+                {hasScreenshot && (
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: THEME.primary,
+                      marginLeft: 2,
+                      boxShadow: `0 0 0 3px ${THEME.primary}30`,
+                    }}
+                  />
+                )}
               </button>
-            )}
+            </div>
           </div>
 
-          {/* ================= CHECK IN BLOCK ================= */}
+          {/* CHECK IN BLOCK */}
           <div
             style={{
               position: 'relative',
@@ -546,7 +709,7 @@ export const AdminCheckinHistory = () => {
             )}
           </div>
 
-          {/* ================= CHECK OUT BLOCK ================= */}
+          {/* CHECK OUT BLOCK */}
           <div
             style={{
               position: 'relative',
@@ -737,6 +900,147 @@ export const AdminCheckinHistory = () => {
   };
 
   // ============================================
+  // FULL SCREENSHOT VIEWER MODAL
+  // ============================================
+  const renderScreenshotModal = () => {
+    if (!showScreenshotModal || !selectedRecord?.timeline_screenshot_url)
+      return null;
+
+    return (
+      <div
+        onClick={() => setShowScreenshotModal(false)}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px',
+          background: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 1800,
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            background: cardBg,
+            borderRadius: THEME.radiusXl,
+            padding: '20px',
+            maxWidth: '520px',
+            width: '100%',
+            maxHeight: '92vh',
+            overflowY: 'auto',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            fontFamily: THEME.font,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 14,
+              paddingBottom: 12,
+              borderBottom: `1px solid ${border}`,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 800,
+                  color: textPrimary,
+                }}
+              >
+                📸 Timeline Screenshot
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: textMuted,
+                  fontWeight: 600,
+                  marginTop: 2,
+                }}
+              >
+                {selectedRecord.employee?.name || 'Employee'} ·{' '}
+                {formatDate(
+                  selectedRecord.check_in_time
+                    ? new Date(selectedRecord.check_in_time)
+                    : null
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setShowScreenshotModal(false)}
+              style={{
+                fontSize: 22,
+                color: textMuted,
+                background: 'none',
+                border: 'none',
+                padding: 4,
+                cursor: 'pointer',
+                lineHeight: 1,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <img
+            src={selectedRecord.timeline_screenshot_url}
+            alt="Timeline screenshot"
+            style={{
+              width: '100%',
+              borderRadius: 12,
+              border: `1px solid ${border}`,
+              display: 'block',
+            }}
+          />
+
+          <a
+            href={selectedRecord.timeline_screenshot_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'block',
+              textAlign: 'center',
+              marginTop: 12,
+              fontSize: 11,
+              fontWeight: 700,
+              color: THEME.primary,
+              textDecoration: 'none',
+            }}
+          >
+            🔗 Open original in new tab
+          </a>
+
+          <button
+            onClick={() => setShowScreenshotModal(false)}
+            style={{
+              width: '100%',
+              padding: 13,
+              marginTop: 14,
+              borderRadius: THEME.radiusMd,
+              border: 'none',
+              background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+              color: '#FFFFFF',
+              fontWeight: 800,
+              fontSize: 14,
+              cursor: 'pointer',
+              fontFamily: THEME.font,
+              letterSpacing: 0.3,
+              boxShadow: THEME.shadowGreen,
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================
   // DAY TIMELINE MODAL
   // ============================================
   const renderDayTimelineModal = () => {
@@ -779,7 +1083,6 @@ export const AdminCheckinHistory = () => {
             fontFamily: THEME.font,
           }}
         >
-          {/* Header */}
           <div
             style={{
               display: 'flex',
@@ -829,7 +1132,6 @@ export const AdminCheckinHistory = () => {
             </button>
           </div>
 
-          {/* LocationTimeline — read-only for that employee + date */}
           <LocationTimeline
             employeeId={item.employee_id}
             date={attendanceDateStr}
@@ -1503,16 +1805,53 @@ export const AdminCheckinHistory = () => {
                     ⚠️ Forgotten check-out
                   </div>
                 )}
+
+                {item.timeline_screenshot_url && (
+                  <div
+                    style={{
+                      marginTop: '8px',
+                      padding: '5px 10px',
+                      borderRadius: '8px',
+                      background: THEME.primary + '12',
+                      color: THEME.primary,
+                      fontSize: '9px',
+                      fontWeight: 800,
+                      display: 'inline-block',
+                      border: `1px solid ${THEME.primary}30`,
+                      marginLeft: item.forgotten_checkout ? '6px' : 0,
+                    }}
+                  >
+                    📸 Screenshot attached
+                  </div>
+                )}
+                {item.timeline_screenshot_required &&
+                  !item.timeline_screenshot_url && (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        padding: '5px 10px',
+                        borderRadius: '8px',
+                        background: THEME.redSoft,
+                        color: THEME.red,
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        display: 'inline-block',
+                        border: `1px solid ${THEME.red}30`,
+                        marginLeft: item.forgotten_checkout ? '6px' : 0,
+                      }}
+                    >
+                      📸 Missing screenshot
+                    </div>
+                  )}
               </div>
             );
           })
         )}
       </div>
 
-      {/* ✅ CHECK-IN DETAILS MODAL */}
+      {/* MODALS */}
       {renderModal()}
-
-      {/* ✅ DAY TIMELINE MODAL */}
+      {renderScreenshotModal()}
       {renderDayTimelineModal()}
 
       <BottomNavigation theme={theme} />

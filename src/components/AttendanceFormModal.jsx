@@ -6,6 +6,15 @@
 // Reporting Location: free-text input (no dropdown).
 //
 // ✅ Submit is locked until the check-out location (GPS) is captured.
+// ✅ Google Timeline screenshot upload:
+//      - Required when < 2 location pings on the record's date
+//      - Optional when >= 2 location pings
+//      - Max 5 MB, image only
+//      - Uploaded to Supabase Storage bucket `timeline-screenshots`
+//      - Public URL saved in attendance.timeline_screenshot_url
+//
+// ✅ FIX: ping count uses record.employee_id (not the session user)
+// ✅ FIX: file validation cleans up stale preview on reject
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
@@ -15,6 +24,10 @@ import { supabase } from '../services/supabase';
 import { formatDate, formatTime } from '../utils/helpers';
 import checkInOutService from '../services/checkInOutService';
 import { THEME, isDark } from '../utils/designTokens';
+
+const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024; // 5 MB
+const REQUIRED_PING_THRESHOLD = 2;             // < 2 pings → screenshot required
+const BUCKET = 'timeline-screenshots';
 
 export const AttendanceFormModal = ({
   isOpen,
@@ -41,12 +54,17 @@ export const AttendanceFormModal = ({
     { project: '', workDone: '' },
   ]);
 
-  // Search state per project field (index → query)
   const [projectSearch, setProjectSearch] = useState({});
-  // Which field's dropdown is currently open
   const [openDropdownIndex, setOpenDropdownIndex] = useState(null);
-  // One ref per project field
   const dropdownRefs = useRef([]);
+
+  // Screenshot state
+  const [pingCount, setPingCount] = useState(null); // null = loading
+  const [screenshotFile, setScreenshotFile] = useState(null);
+  const [screenshotPreview, setScreenshotPreview] = useState(null);
+  const [screenshotError, setScreenshotError] = useState('');
+  const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
+  const fileInputRef = useRef(null);
 
   // Theme helpers
   const cardBg = dark ? THEME.dark.card : THEME.cardBg;
@@ -56,11 +74,10 @@ export const AttendanceFormModal = ({
   const border = dark ? THEME.dark.border : THEME.border;
 
   // ============================================
-  // ✅ NEW: Check-out location validity
+  // Check-out location validity
   // ============================================
   const hasCheckoutLocation = (() => {
     if (!location) return false;
-    // `location` may be a string "lat,lng" OR an object { lat, lng }
     if (typeof location === 'string') {
       const parts = location.split(',').map((s) => parseFloat(s.trim()));
       return parts.length === 2 && parts.every((n) => !isNaN(n));
@@ -72,6 +89,10 @@ export const AttendanceFormModal = ({
     }
     return false;
   })();
+
+  const screenshotRequired =
+    pingCount !== null && pingCount < REQUIRED_PING_THRESHOLD;
+  const hasScreenshot = !!screenshotFile;
 
   // ============================================
   // LOAD PROJECTS
@@ -103,6 +124,53 @@ export const AttendanceFormModal = ({
   }, [isOpen]);
 
   // ============================================
+  // FETCH PING COUNT FOR THE RECORD'S DATE
+  // ✅ FIX: uses record.employee_id (falls back to session user)
+  // ============================================
+  useEffect(() => {
+    if (!isOpen || !record?.check_in_time) return;
+
+    const loadPingCount = async () => {
+      setPingCount(null);
+      try {
+        const employeeId = record?.employee_id || user?.id;
+        if (!employeeId) {
+          setPingCount(0);
+          return;
+        }
+
+        const dateStr = new Date(record.check_in_time).toLocaleDateString(
+          'en-CA',
+          { timeZone: 'Asia/Kolkata' }
+        );
+        const dayStart = new Date(`${dateStr}T00:00:00+05:30`).toISOString();
+        const dayEnd = new Date(
+          `${dateStr}T23:59:59.999+05:30`
+        ).toISOString();
+
+        const { count, error } = await supabase
+          .from('location_pings')
+          .select('id', { count: 'exact', head: true })
+          .eq('employee_id', employeeId)
+          .gte('ping_time', dayStart)
+          .lte('ping_time', dayEnd);
+
+        if (error) {
+          console.error('Ping count fetch error:', error);
+          setPingCount(0);
+          return;
+        }
+        setPingCount(count || 0);
+      } catch (err) {
+        console.error('Ping count fetch failed:', err);
+        setPingCount(0);
+      }
+    };
+
+    loadPingCount();
+  }, [isOpen, record, user]);
+
+  // ============================================
   // RESET ON OPEN
   // ============================================
   useEffect(() => {
@@ -118,8 +186,23 @@ export const AttendanceFormModal = ({
       setProjectSearch({});
       setOpenDropdownIndex(null);
       dropdownRefs.current = [];
+
+      setScreenshotFile(null);
+      setScreenshotPreview(null);
+      setScreenshotError('');
+      setUploadingScreenshot(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }, [isOpen, record, user]);
+
+  // ============================================
+  // CLEANUP PREVIEW URL
+  // ============================================
+  useEffect(() => {
+    return () => {
+      if (screenshotPreview) URL.revokeObjectURL(screenshotPreview);
+    };
+  }, [screenshotPreview]);
 
   // ============================================
   // CLOSE DROPDOWN ON OUTSIDE CLICK
@@ -140,7 +223,7 @@ export const AttendanceFormModal = ({
   }, [isOpen]);
 
   // ============================================
-  // PROJECT FIELD HELPERS
+  // PROJECT HELPERS
   // ============================================
   const updateProjectField = (index, field, value) => {
     setProjectFields((prev) => {
@@ -150,9 +233,6 @@ export const AttendanceFormModal = ({
     });
   };
 
-  // ============================================
-  // PROJECT SEARCH HELPERS
-  // ============================================
   const getFilteredProjects = useCallback(
     (query) => {
       if (!query || !query.trim()) return projects.slice(0, 50);
@@ -182,9 +262,6 @@ export const AttendanceFormModal = ({
     setProjectSearch((prev) => ({ ...prev, [index]: '' }));
   };
 
-  // ============================================
-  // ADD / REMOVE PROJECT FIELDS
-  // ============================================
   const addProjectField = () => {
     if (projectFields.length < 6) {
       setProjectFields([...projectFields, { project: '', workDone: '' }]);
@@ -202,6 +279,81 @@ export const AttendanceFormModal = ({
   };
 
   // ============================================
+  // SCREENSHOT HANDLERS
+  // ✅ FIX: cleanup stale preview on validation failure
+  // ============================================
+  const cleanupScreenshotSelection = () => {
+    if (screenshotPreview) URL.revokeObjectURL(screenshotPreview);
+    setScreenshotFile(null);
+    setScreenshotPreview(null);
+    setScreenshotError('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setScreenshotError('');
+
+    if (!file.type.startsWith('image/')) {
+      cleanupScreenshotSelection();
+      setScreenshotError('Only image files are allowed (JPG, PNG, etc.)');
+      return;
+    }
+    if (file.size > MAX_SCREENSHOT_BYTES) {
+      cleanupScreenshotSelection();
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+      setScreenshotError(`File too large — ${sizeMb} MB (max 5 MB)`);
+      return;
+    }
+
+    if (screenshotPreview) URL.revokeObjectURL(screenshotPreview);
+
+    setScreenshotFile(file);
+    setScreenshotPreview(URL.createObjectURL(file));
+  };
+
+  const handleRemoveScreenshot = () => {
+    if (screenshotPreview) URL.revokeObjectURL(screenshotPreview);
+    setScreenshotFile(null);
+    setScreenshotPreview(null);
+    setScreenshotError('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const uploadScreenshotIfAny = async () => {
+    if (!screenshotFile) return null;
+    setUploadingScreenshot(true);
+    try {
+      const dateStr = new Date(record.check_in_time).toLocaleDateString(
+        'en-CA',
+        { timeZone: 'Asia/Kolkata' }
+      );
+      const ext = (screenshotFile.name.split('.').pop() || 'jpg').toLowerCase();
+      const ownerId = record?.employee_id || user?.id || 'unknown';
+      const path = `${ownerId}/${dateStr}-${Date.now()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(BUCKET)
+        .upload(path, screenshotFile, {
+          contentType: screenshotFile.type,
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from(BUCKET)
+        .getPublicUrl(path);
+
+      return publicUrlData?.publicUrl || null;
+    } finally {
+      setUploadingScreenshot(false);
+    }
+  };
+
+  // ============================================
   // SUBMIT
   // ============================================
   const handleSubmit = async () => {
@@ -209,7 +361,6 @@ export const AttendanceFormModal = ({
       toast.error('Missing check-in record');
       return;
     }
-    // ✅ Guard: block submit if checkout location is missing
     if (!hasCheckoutLocation) {
       toast.error('Waiting for check-out location — please enable GPS');
       return;
@@ -226,8 +377,29 @@ export const AttendanceFormModal = ({
       return;
     }
 
+    if (screenshotRequired && !hasScreenshot) {
+      setScreenshotError(
+        `Screenshot is required — you only pinged ${pingCount} time${
+          pingCount === 1 ? '' : 's'
+        } today`
+      );
+      toast.error('Please upload a Google Timeline screenshot');
+      return;
+    }
+
     try {
       setSubmitting(true);
+
+      let screenshotUrl = null;
+      if (screenshotFile) {
+        try {
+          screenshotUrl = await uploadScreenshotIfAny();
+        } catch (uploadErr) {
+          console.error('Screenshot upload failed:', uploadErr);
+          toast.error(uploadErr.message || 'Screenshot upload failed');
+          return;
+        }
+      }
 
       const result = await checkInOutService.checkOut(
         user?.id,
@@ -236,6 +408,8 @@ export const AttendanceFormModal = ({
           reportingLocation: formData.reportingLocation.trim(),
           remarks: formData.remarks,
           projects: projectFields,
+          timelineScreenshotUrl: screenshotUrl,
+          timelineScreenshotRequired: screenshotRequired,
         },
         location,
         address,
@@ -274,7 +448,7 @@ export const AttendanceFormModal = ({
   const previewInfo = checkInOutService.getStatusDescription(previewStatus);
 
   // ============================================
-  // WORKING HOURS IN "X hr Y min" FORMAT
+  // WORKING HOURS PREVIEW
   // ============================================
   const workingHoursPreview = (() => {
     if (!record?.check_in_time) return '0 min';
@@ -294,6 +468,12 @@ export const AttendanceFormModal = ({
     'en-CA',
     { timeZone: 'Asia/Kolkata' }
   );
+
+  const submitDisabled =
+    submitting ||
+    uploadingScreenshot ||
+    !hasCheckoutLocation ||
+    (screenshotRequired && !hasScreenshot);
 
   // ============================================
   // RENDER
@@ -376,7 +556,7 @@ export const AttendanceFormModal = ({
           </button>
         </div>
 
-        {/* INFO BANNER */}
+        {/* FORGOTTEN INFO BANNER */}
         {mode === 'forgotten' && (
           <div
             style={{
@@ -427,7 +607,6 @@ export const AttendanceFormModal = ({
               marginBottom: '10px',
             }}
           >
-            {/* Check In */}
             <div>
               <div
                 style={{
@@ -471,7 +650,6 @@ export const AttendanceFormModal = ({
               )}
             </div>
 
-            {/* Check Out */}
             <div>
               <div
                 style={{
@@ -520,7 +698,6 @@ export const AttendanceFormModal = ({
             </div>
           </div>
 
-          {/* Working Hours */}
           <div
             style={{
               paddingTop: '10px',
@@ -552,7 +729,6 @@ export const AttendanceFormModal = ({
             </span>
           </div>
 
-          {/* Status Preview */}
           <div
             style={{
               paddingTop: '10px',
@@ -591,7 +767,262 @@ export const AttendanceFormModal = ({
           </div>
         </div>
 
-        {/* REPORTING LOCATION — FREE-TEXT INPUT */}
+        {/* SCREENSHOT UPLOAD SECTION */}
+        <div
+          style={{
+            marginBottom: '16px',
+            padding: '14px',
+            borderRadius: THEME.radiusMd,
+            background: dark ? '#0F172A' : '#F8FAFC',
+            border: `1px solid ${
+              screenshotError
+                ? THEME.red + '60'
+                : screenshotRequired && !hasScreenshot
+                ? THEME.amber + '60'
+                : border
+            }`,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '10px',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '12px',
+                fontWeight: 800,
+                color: textPrimary,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              📸 Google Timeline Screenshot
+              {screenshotRequired && (
+                <span style={{ color: THEME.red, fontWeight: 900 }}>*</span>
+              )}
+            </div>
+            {pingCount !== null && (
+              <span
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  padding: '3px 9px',
+                  borderRadius: '8px',
+                  background: screenshotRequired
+                    ? THEME.amber + '20'
+                    : THEME.primary + '20',
+                  color: screenshotRequired ? THEME.amber : THEME.primary,
+                  border: `1px solid ${
+                    screenshotRequired
+                      ? THEME.amber + '40'
+                      : THEME.primary + '40'
+                  }`,
+                }}
+              >
+                {pingCount} ping{pingCount === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
+
+          {pingCount === null ? (
+            <div
+              style={{
+                fontSize: '11px',
+                color: textMuted,
+                fontWeight: 600,
+                fontStyle: 'italic',
+                padding: '8px 0',
+              }}
+            >
+              Checking your location pings…
+            </div>
+          ) : screenshotRequired ? (
+            <div
+              style={{
+                padding: '10px 12px',
+                borderRadius: '10px',
+                background: dark
+                  ? 'rgba(245,158,11,0.12)'
+                  : 'linear-gradient(135deg, #FEF3C7, #FDE68A)',
+                color: dark ? '#FDE68A' : '#92400E',
+                fontSize: '11px',
+                fontWeight: 700,
+                lineHeight: 1.45,
+                marginBottom: '10px',
+                border: `1px solid ${THEME.amber}40`,
+              }}
+            >
+              ⚠️ You have only {pingCount} location ping
+              {pingCount === 1 ? '' : 's'} today. Upload a Google Maps Timeline
+              screenshot showing your travel route.
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: '10px 12px',
+                borderRadius: '10px',
+                background: dark
+                  ? 'rgba(16,185,129,0.1)'
+                  : 'linear-gradient(135deg, #ECFDF5, #D1FAE5)',
+                color: dark ? '#A7F3D0' : '#065F46',
+                fontSize: '11px',
+                fontWeight: 700,
+                lineHeight: 1.45,
+                marginBottom: '10px',
+                border: `1px solid ${THEME.primary}40`,
+              }}
+            >
+              ✅ You have {pingCount} location pings today — your route is
+              already recorded. Screenshot is optional.
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+          />
+
+          {!screenshotFile ? (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={pingCount === null}
+              style={{
+                width: '100%',
+                padding: '16px',
+                borderRadius: THEME.radiusMd,
+                border: `2px dashed ${
+                  screenshotRequired ? THEME.amber + '80' : border
+                }`,
+                background: 'transparent',
+                color: textSecondary,
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: pingCount === null ? 'wait' : 'pointer',
+                fontFamily: THEME.font,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'border-color 0.15s ease',
+              }}
+            >
+              <span style={{ fontSize: '22px' }}>📁</span>
+              <span>
+                {screenshotRequired
+                  ? 'Tap to upload'
+                  : 'Tap to upload (optional)'}
+              </span>
+              <span
+                style={{
+                  fontSize: '10px',
+                  color: textMuted,
+                  fontWeight: 500,
+                }}
+              >
+                JPG / PNG · max 5 MB
+              </span>
+            </button>
+          ) : (
+            <div
+              style={{
+                display: 'flex',
+                gap: '12px',
+                alignItems: 'center',
+                padding: '10px',
+                borderRadius: THEME.radiusMd,
+                background: cardBg,
+                border: `1px solid ${THEME.primary}40`,
+              }}
+            >
+              <img
+                src={screenshotPreview}
+                alt="Screenshot preview"
+                style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '10px',
+                  objectFit: 'cover',
+                  flexShrink: 0,
+                  border: `1px solid ${border}`,
+                }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    color: textPrimary,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    marginBottom: '3px',
+                  }}
+                >
+                  {screenshotFile.name}
+                </div>
+                <div
+                  style={{
+                    fontSize: '10px',
+                    color: textMuted,
+                    fontWeight: 600,
+                  }}
+                >
+                  {(screenshotFile.size / 1024).toFixed(1)} KB
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRemoveScreenshot}
+                title="Remove screenshot"
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  border: `1px solid ${THEME.red}40`,
+                  background: THEME.red + '12',
+                  color: THEME.red,
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+              >
+                🗑️
+              </button>
+            </div>
+          )}
+
+          {screenshotError && (
+            <div
+              style={{
+                marginTop: '10px',
+                padding: '8px 12px',
+                borderRadius: '10px',
+                background: dark ? 'rgba(239,68,68,0.12)' : THEME.redSoft,
+                color: THEME.red,
+                fontSize: '11px',
+                fontWeight: 700,
+                border: `1px solid ${THEME.red}40`,
+              }}
+            >
+              ⚠️ {screenshotError}
+            </div>
+          )}
+        </div>
+
+        {/* REPORTING LOCATION */}
         <div style={{ marginBottom: '14px' }}>
           <label
             style={{
@@ -683,7 +1114,6 @@ export const AttendanceFormModal = ({
               border: `1px solid ${border}`,
             }}
           >
-            {/* Field Header */}
             <div
               style={{
                 display: 'flex',
@@ -725,7 +1155,6 @@ export const AttendanceFormModal = ({
               )}
             </div>
 
-            {/* SEARCHABLE PROJECT INPUT */}
             <div
               style={{ marginBottom: '10px' }}
               ref={(el) => {
@@ -811,7 +1240,6 @@ export const AttendanceFormModal = ({
                   </button>
                 )}
 
-                {/* CUSTOM DROPDOWN */}
                 {openDropdownIndex === index &&
                   (() => {
                     const query = projectSearch[index] ?? '';
@@ -883,7 +1311,8 @@ export const AttendanceFormModal = ({
                                   : 'rgba(16,185,129,0.06)';
                               }}
                               onMouseLeave={(e) => {
-                                e.currentTarget.style.background = 'transparent';
+                                e.currentTarget.style.background =
+                                  'transparent';
                               }}
                             >
                               {parts.map((part, i) =>
@@ -915,7 +1344,6 @@ export const AttendanceFormModal = ({
               </div>
             </div>
 
-            {/* WORKS COMPLETED */}
             <div>
               <label
                 style={{
@@ -995,16 +1423,14 @@ export const AttendanceFormModal = ({
           />
         </div>
 
-        {/* ✅ NEW: WARNING BANNER WHEN GPS IS MISSING */}
+        {/* GPS WARNING */}
         {!hasCheckoutLocation && (
           <div
             style={{
               padding: '10px 14px',
               marginBottom: '10px',
               borderRadius: '10px',
-              background: dark
-                ? 'rgba(245,158,11,0.12)'
-                : THEME.orangeSoft,
+              background: dark ? 'rgba(245,158,11,0.12)' : THEME.orangeSoft,
               color: dark ? '#FDE68A' : '#B45309',
               fontSize: '11px',
               fontWeight: 700,
@@ -1018,29 +1444,45 @@ export const AttendanceFormModal = ({
           </div>
         )}
 
-        {/* ✅ SUBMIT — LOCKED UNTIL CHECK-OUT LOCATION IS CAPTURED */}
+        {/* SCREENSHOT MISSING WARNING */}
+        {screenshotRequired && !hasScreenshot && pingCount !== null && (
+          <div
+            style={{
+              padding: '10px 14px',
+              marginBottom: '10px',
+              borderRadius: '10px',
+              background: dark ? 'rgba(239,68,68,0.12)' : THEME.redSoft,
+              color: THEME.red,
+              fontSize: '11px',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              border: `1px solid ${THEME.red}40`,
+            }}
+          >
+            📸 Screenshot required before you can submit.
+          </div>
+        )}
+
+        {/* SUBMIT */}
         <button
           onClick={handleSubmit}
-          disabled={submitting || !hasCheckoutLocation}
+          disabled={submitDisabled}
           style={{
             width: '100%',
             padding: '14px',
             borderRadius: THEME.radiusMd,
             border: 'none',
-            background:
-              submitting || !hasCheckoutLocation
-                ? '#94A3B8'
-                : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+            background: submitDisabled
+              ? '#94A3B8'
+              : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
             color: '#FFFFFF',
             fontSize: '14px',
             fontWeight: 800,
-            cursor:
-              submitting || !hasCheckoutLocation ? 'not-allowed' : 'pointer',
-            opacity: submitting || !hasCheckoutLocation ? 0.7 : 1,
-            boxShadow:
-              submitting || !hasCheckoutLocation
-                ? 'none'
-                : THEME.shadowGreen,
+            cursor: submitDisabled ? 'not-allowed' : 'pointer',
+            opacity: submitDisabled ? 0.7 : 1,
+            boxShadow: submitDisabled ? 'none' : THEME.shadowGreen,
             fontFamily: THEME.font,
             letterSpacing: '0.3px',
             display: 'flex',
@@ -1051,12 +1493,22 @@ export const AttendanceFormModal = ({
           }}
         >
           <span style={{ fontSize: '14px' }}>
-            {!hasCheckoutLocation ? '🔒' : '📤'}
+            {uploadingScreenshot
+              ? '⏳'
+              : !hasCheckoutLocation
+              ? '🔒'
+              : screenshotRequired && !hasScreenshot
+              ? '📸'
+              : '📤'}
           </span>
-          {submitting
+          {uploadingScreenshot
+            ? 'Uploading screenshot…'
+            : submitting
             ? 'Submitting...'
             : !hasCheckoutLocation
             ? 'WAITING FOR LOCATION...'
+            : screenshotRequired && !hasScreenshot
+            ? 'UPLOAD SCREENSHOT TO CONTINUE'
             : 'SUBMIT & CHECK OUT'}
         </button>
       </div>
