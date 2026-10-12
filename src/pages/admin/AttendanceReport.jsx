@@ -5,17 +5,13 @@
 //
 // ✅ Holiday pattern badge on Report tab (striped H when worked).
 // ✅ Report / Working Hours tabs — same calendar layout.
-// ✅ Working Hours tab:
-//      - Holiday + no work → plain purple "H"
-//      - Holiday + worked  → purple badge with hours inside
-//      - Regular day        → colored by amount (green/amber/red)
-//      - No record          → "•"
-//    Holiday hours ARE counted in the employee's monthly total.
+// ✅ FULLSCREEN: Click ⛶ / double-click header / Esc to exit.
+// ✅ IST-anchored initial month/year
+// ✅ Division-by-zero guard on Avg hours
+// ✅ Clean JSX indentation
 
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../services/supabase';
 import { getMonthName } from '../../utils/helpers';
@@ -23,14 +19,27 @@ import BottomNavigation from '../../components/BottomNavigation';
 import { THEME, isDark } from '../../utils/designTokens';
 
 export const AdminAttendanceReport = () => {
-  const navigate = useNavigate();
   const { theme } = useTheme();
-  const { user } = useAuth();
   const dark = isDark(theme);
 
+  // ✅ FIX: IST-anchored initial month/year
+  const _istNow = new Date();
+  const _istMonth = parseInt(
+    _istNow.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      month: '2-digit',
+    })
+  );
+  const _istYear = parseInt(
+    _istNow.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+    })
+  );
+
   const [loading, setLoading] = useState(true);
-  const [month, setMonth] = useState(new Date().getMonth() + 1);
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [month, setMonth] = useState(_istMonth);
+  const [year, setYear] = useState(_istYear);
   const [reportData, setReportData] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState('all');
   const [selectedDepartment, setSelectedDepartment] = useState('all');
@@ -40,10 +49,9 @@ export const AdminAttendanceReport = () => {
   const [companies, setCompanies] = useState([]);
   const [holidaysMap, setHolidaysMap] = useState({});
 
-  // Which tab is active
-  const [activeTab, setActiveTab] = useState('report'); // 'report' | 'hours'
+  const [activeTab, setActiveTab] = useState('report');
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Theme helpers
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
   const cardBg = dark ? THEME.dark.card : THEME.cardBg;
   const textPrimary = dark ? THEME.dark.text : THEME.text;
@@ -52,7 +60,6 @@ export const AdminAttendanceReport = () => {
   const border = dark ? THEME.dark.border : THEME.border;
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
-  // Status colors
   const statusColors = {
     P: '#10B981',
     Present: '#10B981',
@@ -146,6 +153,8 @@ export const AdminAttendanceReport = () => {
       setCompanies(uniqueCompanies);
     } catch (error) {
       console.error('Error fetching employees:', error);
+      // ✅ FIX: show toast on failure
+      toast.error('Failed to load employees list');
     }
   };
 
@@ -253,7 +262,6 @@ export const AdminAttendanceReport = () => {
           }
         });
 
-        // Total hours includes hours on holidays too
         const totalHours = Object.values(dayHours).reduce(
           (s, h) => s + h,
           0
@@ -291,10 +299,12 @@ export const AdminAttendanceReport = () => {
 
   useEffect(() => {
     fetchEmployeesAndDepartments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     fetchReportData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, year, selectedEmployee, selectedDepartment, selectedCompany]);
 
   // ============================================
@@ -316,6 +326,26 @@ export const AdminAttendanceReport = () => {
     };
     load();
   }, [year]);
+
+  // ============================================
+  // FULLSCREEN: Esc to exit + body scroll lock
+  // ============================================
+  useEffect(() => {
+    if (!isFullscreen) return;
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isFullscreen]);
 
   // ============================================
   // AGGREGATE STATS
@@ -436,11 +466,8 @@ export const AdminAttendanceReport = () => {
 
   // ============================================
   // WORKING HOURS TAB CELL
-  //   - Holiday + no work → purple "H"
-  //   - Holiday + worked  → purple badge with hours
-  //   - Regular day       → colored by amount
   // ============================================
-  const getHoursCell = (hours, day, status) => {
+  const getHoursCell = (hours, day) => {
     const dateStr = day
       ? `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
       : null;
@@ -575,6 +602,464 @@ export const AdminAttendanceReport = () => {
       </div>
     );
   }
+
+  // ============================================
+  // TABLE CARD
+  // ============================================
+  const tableCard = (
+    <div
+      style={{
+        background: cardBg,
+        borderRadius: THEME.radiusLg,
+        border: `1px solid ${border}`,
+        overflow: 'hidden',
+        boxShadow: cardShadow,
+        ...(isFullscreen
+          ? {
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+            }
+          : {}),
+      }}
+    >
+      <div
+        onDoubleClick={() => setIsFullscreen((v) => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 12px',
+          background: dark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
+          borderBottom: `1px solid ${border}`,
+          cursor: isFullscreen ? 'zoom-out' : 'zoom-in',
+          userSelect: 'none',
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            fontSize: '11px',
+            fontWeight: 700,
+            color: textSecondary,
+            letterSpacing: '0.3px',
+          }}
+        >
+          {isFullscreen ? '📊 FULL VIEW' : '📊 Monthly Table'}
+        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsFullscreen((v) => !v);
+          }}
+          title={isFullscreen ? 'Exit full view (Esc)' : 'Expand full view'}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: THEME.radiusPill,
+            border: `1px solid ${border}`,
+            background: cardBg,
+            color: THEME.primary,
+            fontWeight: 800,
+            fontSize: '11px',
+            cursor: 'pointer',
+            fontFamily: THEME.font,
+          }}
+        >
+          {isFullscreen ? '✕ Exit' : '⛶ Expand'}
+        </button>
+      </div>
+
+      <div
+        style={{
+          overflowX: 'auto',
+          overflowY: isFullscreen ? 'auto' : 'visible',
+          maxWidth: '100%',
+          maxHeight: isFullscreen ? '100%' : 'none',
+          ...(isFullscreen ? { flex: 1, minHeight: 0 } : {}),
+        }}
+      >
+        <table
+          style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            fontSize: '12px',
+            minWidth: isFullscreen ? '1100px' : '720px',
+          }}
+        >
+          <thead>
+            <tr
+              style={{
+                background: dark ? '#0F172A' : '#F8FAFC',
+                borderBottom: `1px solid ${border}`,
+              }}
+            >
+              <th
+                style={{
+                  padding: '12px 10px',
+                  textAlign: 'left',
+                  fontWeight: 800,
+                  color: textSecondary,
+                  fontSize: '10px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  position: 'sticky',
+                  top: isFullscreen ? 0 : 'auto',
+                  left: 0,
+                  background: dark ? '#0F172A' : '#F8FAFC',
+                  minWidth: '120px',
+                  zIndex: 3,
+                  borderRight: `1px solid ${border}`,
+                }}
+              >
+                👤 Employee
+              </th>
+
+              {(activeTab === 'report'
+                ? [
+                    { label: 'Total', color: textSecondary, min: '40px' },
+                    { label: 'P', color: '#10B981', min: '28px' },
+                    { label: 'A', color: '#EF4444', min: '28px' },
+                    { label: 'F', color: '#F97316', min: '30px' },
+                    { label: 'D', color: '#F59E0B', min: '28px' },
+                    { label: 'B', color: '#DC2626', min: '28px' },
+                    { label: 'L', color: '#3B82F6', min: '28px' },
+                  ]
+                : [
+                    { label: 'Hours', color: THEME.primary, min: '50px' },
+                    { label: 'P', color: '#10B981', min: '28px' },
+                    { label: 'A', color: '#EF4444', min: '28px' },
+                    { label: 'Avg', color: '#F59E0B', min: '40px' },
+                  ]
+              ).map((h, i) => (
+                <th
+                  key={i}
+                  style={{
+                    padding: '12px 6px',
+                    textAlign: 'center',
+                    fontWeight: 800,
+                    color: h.color,
+                    fontSize: '10px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.3px',
+                    minWidth: h.min,
+                    position: isFullscreen ? 'sticky' : 'static',
+                    top: isFullscreen ? 0 : 'auto',
+                    background: isFullscreen
+                      ? dark
+                        ? '#0F172A'
+                        : '#F8FAFC'
+                      : 'transparent',
+                    zIndex: isFullscreen ? 2 : 'auto',
+                  }}
+                >
+                  {h.label}
+                </th>
+              ))}
+
+              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(
+                (day) => (
+                  <th
+                    key={day}
+                    style={{
+                      padding: '12px 4px',
+                      textAlign: 'center',
+                      fontWeight: 700,
+                      color: textMuted,
+                      fontSize: '9px',
+                      minWidth: '28px',
+                      background: dark ? '#0F172A' : '#F8FAFC',
+                      position: isFullscreen ? 'sticky' : 'static',
+                      top: isFullscreen ? 0 : 'auto',
+                      zIndex: isFullscreen ? 2 : 'auto',
+                    }}
+                  >
+                    {day}
+                  </th>
+                )
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {reportData.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={(activeTab === 'report' ? 8 : 5) + daysInMonth}
+                  style={{
+                    padding: '40px',
+                    textAlign: 'center',
+                    color: textSecondary,
+                  }}
+                >
+                  <div style={{ fontSize: '40px', marginBottom: '8px' }}>
+                    📊
+                  </div>
+                  <p style={{ fontWeight: 700 }}>No data available</p>
+                </td>
+              </tr>
+            ) : (
+              reportData.map((emp, idx) => (
+                <tr
+                  key={emp.id || idx}
+                  style={{
+                    borderBottom:
+                      idx < reportData.length - 1
+                        ? `1px solid ${border}`
+                        : 'none',
+                    background:
+                      idx % 2 === 0
+                        ? dark
+                          ? 'rgba(255,255,255,0.02)'
+                          : '#FAFAFA'
+                        : 'transparent',
+                  }}
+                >
+                  <td
+                    style={{
+                      padding: '10px 10px',
+                      position: 'sticky',
+                      left: 0,
+                      background:
+                        idx % 2 === 0
+                          ? dark
+                            ? '#1E293B'
+                            : '#FAFAFA'
+                          : cardBg,
+                      minWidth: '120px',
+                      zIndex: 1,
+                      borderRight: `1px solid ${border}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 800,
+                        color: textPrimary,
+                        fontSize: '12px',
+                      }}
+                    >
+                      {emp.name}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '9px',
+                        color: textMuted,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {emp.employee_id}
+                    </div>
+                    {emp.company && (
+                      <div
+                        style={{
+                          fontSize: '8px',
+                          color: THEME.purple,
+                          fontWeight: 800,
+                          marginTop: '2px',
+                          letterSpacing: '0.2px',
+                        }}
+                      >
+                        {emp.company}
+                      </div>
+                    )}
+                  </td>
+
+                  {activeTab === 'report' ? (
+                    <>
+                      <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: textPrimary, fontSize: '12px' }}>
+                        {emp.total}
+                      </td>
+                      <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#10B981', fontSize: '12px' }}>
+                        {emp.present}
+                      </td>
+                      <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#EF4444', fontSize: '12px' }}>
+                        {emp.absent}
+                      </td>
+                      <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#F97316', fontSize: '12px' }}>
+                        {emp.forgotten || 0}
+                        {emp.forgottenPending > 0 && (
+                          <div style={{ fontSize: '7px', color: '#DC2626', fontWeight: 800, marginTop: '2px' }}>
+                            {emp.forgottenPending}pd
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#F59E0B', fontSize: '12px' }}>
+                        {emp.delayed}
+                      </td>
+                      <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#DC2626', fontSize: '12px' }}>
+                        {emp.beyondDelay}
+                      </td>
+                      <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#3B82F6', fontSize: '12px' }}>
+                        {emp.leave}
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: THEME.primary, fontSize: '12px' }}>
+                        {emp.totalHours > 0 ? `${emp.totalHours.toFixed(1)}h` : '—'}
+                      </td>
+                      <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#10B981', fontSize: '12px' }}>
+                        {emp.present}
+                      </td>
+                      <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#EF4444', fontSize: '12px' }}>
+                        {emp.absent}
+                      </td>
+                      {/* ✅ FIX: guard against divide-by-zero */}
+                      <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#F59E0B', fontSize: '12px' }}>
+                        {emp.present > 0 && emp.totalHours > 0
+                          ? `${(emp.totalHours / emp.present).toFixed(1)}h`
+                          : '—'}
+                      </td>
+                    </>
+                  )}
+
+                  {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(
+                    (day) => (
+                      <td
+                        key={day}
+                        style={{
+                          padding: '6px 2px',
+                          textAlign: 'center',
+                          fontSize: '11px',
+                        }}
+                      >
+                        {activeTab === 'report'
+                          ? getStatusBadge(emp.days?.[day], day)
+                          : getHoursCell(emp.dayHours?.[day], day)}
+                      </td>
+                    )
+                  )}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  // ============================================
+  // LEGEND
+  // ============================================
+  const legend = (
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '10px',
+        padding: '14px 16px',
+        marginTop: '12px',
+        background: cardBg,
+        borderRadius: THEME.radiusMd,
+        border: `1px solid ${border}`,
+        justifyContent: 'center',
+        boxShadow: cardShadow,
+      }}
+    >
+      {activeTab === 'report' ? (
+        <>
+          {[
+            { color: '#10B981', label: 'P - Present' },
+            { color: '#EF4444', label: 'A - Absent' },
+            { color: '#F97316', label: 'F - Forgot' },
+            { color: '#F59E0B', label: 'D - Delayed' },
+            { color: '#DC2626', label: 'B - Beyond' },
+            { color: '#3B82F6', label: 'L - Leave' },
+            { color: '#8B5CF6', label: 'H - Holiday' },
+          ].map((item, i) => (
+            <div
+              key={i}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: '12px',
+                  height: '12px',
+                  borderRadius: '4px',
+                  background: item.color,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  color: textSecondary,
+                }}
+              >
+                {item.label}
+              </span>
+            </div>
+          ))}
+          {/* ✅ FIX: clean JSX indentation */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span
+              style={{
+                display: 'inline-block',
+                width: '12px',
+                height: '12px',
+                borderRadius: '4px',
+                background: `repeating-linear-gradient(
+                  45deg,
+                  #10B98155 0px,
+                  #10B98155 3px,
+                  transparent 3px,
+                  transparent 6px
+                ), #8B5CF618`,
+                border: '1px solid #10B98180',
+              }}
+            />
+            <span
+              style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                color: textSecondary,
+              }}
+            >
+              H (striped) - Worked on holiday
+            </span>
+          </div>
+        </>
+      ) : (
+        <>
+          {[
+            { color: '#10B981', label: '≥ 8h — Full day' },
+            { color: '#F59E0B', label: '4–8h — Half day' },
+            { color: '#EF4444', label: '< 4h — Short' },
+            { color: '#8B5CF6', label: 'H — Holiday (no work)' },
+            { color: '#8B5CF680', label: 'Purple number — Worked on holiday' },
+          ].map((item, i) => (
+            <div
+              key={i}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: '12px',
+                  height: '12px',
+                  borderRadius: '4px',
+                  background: item.color,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  color: textSecondary,
+                }}
+              >
+                {item.label}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
 
   // ============================================
   // RENDER
@@ -748,13 +1233,11 @@ export const AdminAttendanceReport = () => {
               boxSizing: 'border-box',
             }}
           >
-            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(
-              (y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              )
-            )}
+            {Array.from({ length: 5 }, (_, i) => _istYear - i).map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -991,381 +1474,68 @@ export const AdminAttendanceReport = () => {
         </div>
       )}
 
-      {/* TABLE */}
-      <div style={{ padding: '0 16px 16px' }}>
+      {/* TABLE — normal or fullscreen */}
+      {isFullscreen ? (
         <div
           style={{
-            background: cardBg,
-            borderRadius: THEME.radiusLg,
-            border: `1px solid ${border}`,
-            overflow: 'hidden',
-            boxShadow: cardShadow,
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: pageBg,
+            padding: '16px',
+            overflow: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            fontFamily: THEME.font,
           }}
         >
-          <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
-            <table
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '10px',
+              gap: '10px',
+              flexShrink: 0,
+            }}
+          >
+            <div
               style={{
-                width: '100%',
-                borderCollapse: 'collapse',
-                fontSize: '12px',
-                minWidth: '720px',
+                fontSize: '13px',
+                fontWeight: 800,
+                color: textPrimary,
               }}
             >
-              <thead>
-                <tr
-                  style={{
-                    background: dark ? '#0F172A' : '#F8FAFC',
-                    borderBottom: `1px solid ${border}`,
-                  }}
-                >
-                  <th
-                    style={{
-                      padding: '12px 10px',
-                      textAlign: 'left',
-                      fontWeight: 800,
-                      color: textSecondary,
-                      fontSize: '10px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                      position: 'sticky',
-                      left: 0,
-                      background: dark ? '#0F172A' : '#F8FAFC',
-                      minWidth: '120px',
-                      zIndex: 2,
-                      borderRight: `1px solid ${border}`,
-                    }}
-                  >
-                    👤 Employee
-                  </th>
-
-                  {(activeTab === 'report'
-                    ? [
-                        { label: 'Total', color: textSecondary, min: '40px' },
-                        { label: 'P', color: '#10B981', min: '28px' },
-                        { label: 'A', color: '#EF4444', min: '28px' },
-                        { label: 'F', color: '#F97316', min: '30px' },
-                        { label: 'D', color: '#F59E0B', min: '28px' },
-                        { label: 'B', color: '#DC2626', min: '28px' },
-                        { label: 'L', color: '#3B82F6', min: '28px' },
-                      ]
-                    : [
-                        { label: 'Hours', color: THEME.primary, min: '50px' },
-                        { label: 'P', color: '#10B981', min: '28px' },
-                        { label: 'A', color: '#EF4444', min: '28px' },
-                        { label: 'Avg', color: '#F59E0B', min: '40px' },
-                      ]
-                  ).map((h, i) => (
-                    <th
-                      key={i}
-                      style={{
-                        padding: '12px 6px',
-                        textAlign: 'center',
-                        fontWeight: 800,
-                        color: h.color,
-                        fontSize: '10px',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.3px',
-                        minWidth: h.min,
-                      }}
-                    >
-                      {h.label}
-                    </th>
-                  ))}
-
-                  {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(
-                    (day) => (
-                      <th
-                        key={day}
-                        style={{
-                          padding: '12px 4px',
-                          textAlign: 'center',
-                          fontWeight: 700,
-                          color: textMuted,
-                          fontSize: '9px',
-                          minWidth: '28px',
-                          background: dark ? '#0F172A' : '#F8FAFC',
-                        }}
-                      >
-                        {day}
-                      </th>
-                    )
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {reportData.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={12 + daysInMonth}
-                      style={{
-                        padding: '40px',
-                        textAlign: 'center',
-                        color: textSecondary,
-                      }}
-                    >
-                      <div style={{ fontSize: '40px', marginBottom: '8px' }}>
-                        📊
-                      </div>
-                      <p style={{ fontWeight: 700 }}>No data available</p>
-                    </td>
-                  </tr>
-                ) : (
-                  reportData.map((emp, idx) => (
-                    <tr
-                      key={emp.id || idx}
-                      style={{
-                        borderBottom:
-                          idx < reportData.length - 1
-                            ? `1px solid ${border}`
-                            : 'none',
-                        background:
-                          idx % 2 === 0
-                            ? dark
-                              ? 'rgba(255,255,255,0.02)'
-                              : '#FAFAFA'
-                            : 'transparent',
-                      }}
-                    >
-                      <td
-                        style={{
-                          padding: '10px 10px',
-                          position: 'sticky',
-                          left: 0,
-                          background:
-                            idx % 2 === 0
-                              ? dark
-                                ? '#1E293B'
-                                : '#FAFAFA'
-                              : cardBg,
-                          minWidth: '120px',
-                          zIndex: 1,
-                          borderRight: `1px solid ${border}`,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontWeight: 800,
-                            color: textPrimary,
-                            fontSize: '12px',
-                          }}
-                        >
-                          {emp.name}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: '9px',
-                            color: textMuted,
-                            fontWeight: 500,
-                          }}
-                        >
-                          {emp.employee_id}
-                        </div>
-                        {emp.company && (
-                          <div
-                            style={{
-                              fontSize: '8px',
-                              color: THEME.purple,
-                              fontWeight: 800,
-                              marginTop: '2px',
-                              letterSpacing: '0.2px',
-                            }}
-                          >
-                            {emp.company}
-                          </div>
-                        )}
-                      </td>
-
-                      {activeTab === 'report' ? (
-                        <>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: textPrimary, fontSize: '12px' }}>
-                            {emp.total}
-                          </td>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#10B981', fontSize: '12px' }}>
-                            {emp.present}
-                          </td>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#EF4444', fontSize: '12px' }}>
-                            {emp.absent}
-                          </td>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#F97316', fontSize: '12px' }}>
-                            {emp.forgotten || 0}
-                            {emp.forgottenPending > 0 && (
-                              <div style={{ fontSize: '7px', color: '#DC2626', fontWeight: 800, marginTop: '2px' }}>
-                                {emp.forgottenPending}pd
-                              </div>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#F59E0B', fontSize: '12px' }}>
-                            {emp.delayed}
-                          </td>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#DC2626', fontSize: '12px' }}>
-                            {emp.beyondDelay}
-                          </td>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#3B82F6', fontSize: '12px' }}>
-                            {emp.leave}
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: THEME.primary, fontSize: '12px' }}>
-                            {emp.totalHours > 0 ? `${emp.totalHours.toFixed(1)}h` : '—'}
-                          </td>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#10B981', fontSize: '12px' }}>
-                            {emp.present}
-                          </td>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#EF4444', fontSize: '12px' }}>
-                            {emp.absent}
-                          </td>
-                          <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#F59E0B', fontSize: '12px' }}>
-                            {emp.present > 0
-                              ? `${(emp.totalHours / emp.present).toFixed(1)}h`
-                              : '—'}
-                          </td>
-                        </>
-                      )}
-
-                      {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(
-                        (day) => (
-                          <td
-                            key={day}
-                            style={{
-                              padding: '6px 2px',
-                              textAlign: 'center',
-                              fontSize: '11px',
-                            }}
-                          >
-                            {activeTab === 'report'
-                              ? getStatusBadge(emp.days?.[day], day)
-                              : getHoursCell(
-                                  emp.dayHours?.[day],
-                                  day,
-                                  emp.days?.[day]
-                                )}
-                          </td>
-                        )
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+              📊 {getMonthName(month)} {year} ·{' '}
+              {activeTab === 'report' ? 'Report' : 'Working Hours'}
+            </div>
+            <button
+              onClick={() => setIsFullscreen(false)}
+              style={{
+                padding: '8px 14px',
+                borderRadius: THEME.radiusPill,
+                border: `1px solid ${border}`,
+                background: cardBg,
+                color: textPrimary,
+                fontWeight: 700,
+                fontSize: '12px',
+                cursor: 'pointer',
+                fontFamily: THEME.font,
+              }}
+            >
+              ✕ Exit (Esc)
+            </button>
           </div>
-        </div>
 
-        {/* LEGEND */}
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '10px',
-            padding: '14px 16px',
-            marginTop: '12px',
-            background: cardBg,
-            borderRadius: THEME.radiusMd,
-            border: `1px solid ${border}`,
-            justifyContent: 'center',
-            boxShadow: cardShadow,
-          }}
-        >
-          {activeTab === 'report' ? (
-            <>
-              {[
-                { color: '#10B981', label: 'P - Present' },
-                { color: '#EF4444', label: 'A - Absent' },
-                { color: '#F97316', label: 'F - Forgot' },
-                { color: '#F59E0B', label: 'D - Delayed' },
-                { color: '#DC2626', label: 'B - Beyond' },
-                { color: '#3B82F6', label: 'L - Leave' },
-                { color: '#8B5CF6', label: 'H - Holiday' },
-              ].map((item, i) => (
-                <div
-                  key={i}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '4px',
-                      background: item.color,
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      color: textSecondary,
-                    }}
-                  >
-                    {item.label}
-                  </span>
-                </div>
-              ))}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: '12px',
-                    height: '12px',
-                    borderRadius: '4px',
-                    background: `repeating-linear-gradient(
-                      45deg,
-                      #10B98155 0px,
-                      #10B98155 3px,
-                      transparent 3px,
-                      transparent 6px
-                    ), #8B5CF618`,
-                    border: '1px solid #10B98180',
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    color: textSecondary,
-                  }}
-                >
-                  H (striped) - Worked on holiday
-                </span>
-              </div>
-            </>
-          ) : (
-            <>
-              {[
-                { color: '#10B981', label: '≥ 8h — Full day' },
-                { color: '#F59E0B', label: '4–8h — Half day' },
-                { color: '#EF4444', label: '< 4h — Short' },
-                { color: '#8B5CF6', label: 'H — Holiday (no work)' },
-                { color: '#8B5CF680', label: 'Purple number — Worked on holiday' },
-              ].map((item, i) => (
-                <div
-                  key={i}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '4px',
-                      background: item.color,
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      color: textSecondary,
-                    }}
-                  >
-                    {item.label}
-                  </span>
-                </div>
-              ))}
-            </>
-          )}
+          {tableCard}
+          {legend}
         </div>
-      </div>
+      ) : (
+        <div style={{ padding: '0 16px 16px' }}>
+          {tableCard}
+          {legend}
+        </div>
+      )}
 
       <BottomNavigation theme={theme} />
     </div>

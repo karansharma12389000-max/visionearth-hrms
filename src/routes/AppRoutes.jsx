@@ -21,6 +21,7 @@ import { ForgotTracker } from '../pages/admin/ForgotTracker';
 import { SalaryCalculator } from '../pages/admin/SalaryCalculator';
 import { AdminHolidays } from '../pages/admin/Holidays';
 import { AdminProjects } from '../pages/admin/Projects';   // ✅ NEW
+import { AdminEmployeeTimeline } from '../pages/admin/EmployeeTimeline'; // ✅ NEW
 
 // Auth Pages
 import { Login } from '../pages/auth/Login';
@@ -159,12 +160,21 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-      {/* ✅ NEW: Projects Manager */}
+      {/* ✅ Projects Manager */}
       <Route
         path="/admin/projects"
         element={
           <ProtectedRoute adminOnly={true}>
             <AdminProjects />
+          </ProtectedRoute>
+        }
+      />
+      {/* ✅ NEW: Employee Timeline (Google Maps style) */}
+      <Route
+        path="/admin/timeline"
+        element={
+          <ProtectedRoute adminOnly={true}>
+            <AdminEmployeeTimeline />
           </ProtectedRoute>
         }
       />

@@ -2,8 +2,12 @@
 //
 // Vision Earth HRMS — Premium Profile
 // Avatar header, personal info card, menu list with icons.
+//
+// ✅ LIVE sync — reads fresh data from Supabase on mount,
+//    on window focus, every 30s, and via Realtime subscription.
+//    Admin edits reflect INSTANTLY without app reload.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -20,9 +24,8 @@ export const Profile = () => {
   const { user, logout, isAdmin, updateUser } = useAuth();
   const dark = isDark(theme);
 
-  // ============================================
-  // STATE
-  // ============================================
+  const [liveProfile, setLiveProfile] = useState(null);
+
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [passwordData, setPasswordData] = useState({
     current: '',
@@ -34,19 +37,16 @@ export const Profile = () => {
 
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState({
-    name: user?.name || '',
-    phone: user?.phone || '',
-    address: user?.address || '',
-    city: user?.city || '',
-    state: user?.state || '',
-    pincode: user?.pincode || '',
-    emergency_contact: user?.emergency_contact || '',
+    name: '',
+    phone: '',
+    address: '',
+    city: '',
+    state: '',
+    pincode: '',
+    emergency_contact: '',
   });
   const [editLoading, setEditLoading] = useState(false);
 
-  // ============================================
-  // THEME HELPERS
-  // ============================================
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
   const cardBg = dark ? THEME.dark.card : THEME.cardBg;
   const textPrimary = dark ? THEME.dark.text : THEME.text;
@@ -56,21 +56,195 @@ export const Profile = () => {
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
   // ============================================
-  // PERSONAL INFO ROWS
+  // ✅ LIVE FETCH — always reads fresh from Supabase
   // ============================================
+  const loadLiveProfile = useCallback(async () => {
+    if (!user?.id && !user?.email) return;
+
+    try {
+      const isDemoUser = user?.id && user.id.startsWith('demo-');
+
+      let query = supabase.from('employees').select('*').limit(1);
+
+      if (isDemoUser) {
+        query = query.eq('email', user.email);
+      } else if (user?.id) {
+        query = query.eq('id', user.id);
+      } else {
+        query = query.eq('email', user.email);
+      }
+
+      const { data, error } = await query.maybeSingle();
+
+      if (error) {
+        console.warn('Profile live-fetch error:', error.message);
+        return;
+      }
+
+      if (data) {
+        setLiveProfile(data);
+
+        if (typeof updateUser === 'function') {
+          updateUser({
+            name: data.name,
+            phone: data.phone,
+            address: data.address,
+            city: data.city,
+            state: data.state,
+            pincode: data.pincode,
+            emergency_contact: data.emergency_contact,
+            department: data.department,
+            designation: data.designation,
+            reporting_location: data.reporting_location,
+            company: data.company,
+            role: data.role,
+            employee_id: data.employee_id,
+            email: data.email,
+            date_of_joining: data.date_of_joining,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Profile live-fetch failed:', err);
+    }
+  }, [user?.id, user?.email, updateUser]);
+
+  // On mount
+  useEffect(() => {
+    loadLiveProfile();
+  }, [loadLiveProfile]);
+
+  // On window focus
+  useEffect(() => {
+    const onFocus = () => loadLiveProfile();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadLiveProfile]);
+
+  // Every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(loadLiveProfile, 30000);
+    return () => clearInterval(interval);
+  }, [loadLiveProfile]);
+
+  // ✅ Realtime subscription
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`profile-sync-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'employees',
+          filter: `id=eq.${user.id}`,
+        },
+        (payload) => {
+          if (payload?.new) {
+            setLiveProfile(payload.new);
+            if (typeof updateUser === 'function') {
+              updateUser({
+                name: payload.new.name,
+                phone: payload.new.phone,
+                address: payload.new.address,
+                city: payload.new.city,
+                state: payload.new.state,
+                pincode: payload.new.pincode,
+                emergency_contact: payload.new.emergency_contact,
+                department: payload.new.department,
+                designation: payload.new.designation,
+                reporting_location: payload.new.reporting_location,
+                company: payload.new.company,
+                role: payload.new.role,
+                employee_id: payload.new.employee_id,
+                email: payload.new.email,
+                date_of_joining: payload.new.date_of_joining,
+              });
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  }, [user?.id, updateUser]);
+
+  // Merge: prefer liveProfile
+  const P = liveProfile
+    ? {
+        name: liveProfile.name,
+        employee_id: liveProfile.employee_id,
+        email: liveProfile.email,
+        department: liveProfile.department,
+        designation: liveProfile.designation,
+        reporting_location: liveProfile.reporting_location,
+        phone: liveProfile.phone,
+        role: liveProfile.role,
+        company: liveProfile.company,
+        address: liveProfile.address,
+        city: liveProfile.city,
+        state: liveProfile.state,
+        pincode: liveProfile.pincode,
+        emergency_contact: liveProfile.emergency_contact,
+        date_of_joining: liveProfile.date_of_joining,
+      }
+    : {
+        name: user?.name,
+        employee_id: user?.employee_id,
+        email: user?.email,
+        department: user?.department,
+        designation: user?.designation,
+        reporting_location: user?.reporting_location,
+        phone: user?.phone,
+        role: user?.role,
+        company: user?.company,
+        address: user?.address,
+        city: user?.city,
+        state: user?.state,
+        pincode: user?.pincode,
+        emergency_contact: user?.emergency_contact,
+        date_of_joining: user?.date_of_joining,
+      };
+
+  // Seed editData once P is available
+  useEffect(() => {
+    setEditData({
+      name: P.name || '',
+      phone: P.phone || '',
+      address: P.address || '',
+      city: P.city || '',
+      state: P.state || '',
+      pincode: P.pincode || '',
+      emergency_contact: P.emergency_contact || '',
+    });
+  }, [
+    P.name,
+    P.phone,
+    P.address,
+    P.city,
+    P.state,
+    P.pincode,
+    P.emergency_contact,
+  ]);
+
+  // Personal info rows
   const profileFields = [
-    { label: 'Employee ID', value: user?.employee_id || '-', icon: '🆔', color: '#6366F1' },
-    { label: 'Email', value: user?.email || '-', icon: '✉️', color: '#3B82F6' },
-    { label: 'Department', value: user?.department || 'N/A', icon: '🏢', color: '#10B981' },
-    { label: 'Designation', value: user?.designation || 'N/A', icon: '💼', color: '#F59E0B' },
-    { label: 'Reporting Location', value: user?.reporting_location || '-', icon: '📍', color: '#EF4444' },
-    { label: 'Phone', value: user?.phone || '-', icon: '📞', color: '#8B5CF6' },
-    { label: 'Role', value: user?.role || 'Employee', icon: '👑', color: '#F97316' },
+    { label: 'Employee ID', value: P.employee_id || '-', icon: '🆔', color: '#6366F1' },
+    { label: 'Email', value: P.email || '-', icon: '✉️', color: '#3B82F6' },
+    { label: 'Department', value: P.department || 'N/A', icon: '🏢', color: '#10B981' },
+    { label: 'Designation', value: P.designation || 'N/A', icon: '💼', color: '#F59E0B' },
+    { label: 'Reporting Location', value: P.reporting_location || '-', icon: '📍', color: '#EF4444' },
+    { label: 'Phone', value: P.phone || '-', icon: '📞', color: '#8B5CF6' },
+    { label: 'Role', value: P.role || 'Employee', icon: '👑', color: '#F97316' },
   ];
 
-  // ============================================
-  // MENU ITEMS
-  // ============================================
+  // Menu items
   const menuItems = [
     {
       key: 'password',
@@ -125,9 +299,7 @@ export const Profile = () => {
     });
   }
 
-  // ============================================
-  // HANDLE PASSWORD CHANGE
-  // ============================================
+  // Change password
   const handleChangePassword = async () => {
     setPasswordError('');
 
@@ -149,7 +321,7 @@ export const Profile = () => {
     try {
       setLoading(true);
       const result = await changePassword(
-        user?.email,
+        P.email,
         passwordData.current,
         passwordData.new
       );
@@ -169,9 +341,7 @@ export const Profile = () => {
     }
   };
 
-  // ============================================
-  // HANDLE UPDATE PROFILE
-  // ============================================
+  // Update profile
   const handleUpdateProfile = async () => {
     try {
       setEditLoading(true);
@@ -209,27 +379,11 @@ export const Profile = () => {
       toast.success('Profile updated successfully!');
       setIsEditing(false);
 
-      // ✅ FIX: update the AuthContext session in-place instead of reloading.
-      //    This makes the header, avatar, and profile card re-render instantly
-      //    with the new data, and persists to localStorage.
       if (typeof updateUser === 'function') {
-        updateUser({
-          name: editData.name,
-          phone: editData.phone,
-          address: editData.address,
-          city: editData.city,
-          state: editData.state,
-          pincode: editData.pincode,
-          emergency_contact: editData.emergency_contact,
-        });
-      } else {
-        // Fallback for older AuthContext that doesn't yet expose updateUser
-        const updatedUser = { ...user, ...editData };
-        try {
-          localStorage.setItem('ve_session', JSON.stringify(updatedUser));
-        } catch {}
-        window.location.reload();
+        updateUser(updateData);
       }
+
+      loadLiveProfile();
     } catch (error) {
       console.error('Error updating profile:', error);
       toast.error(error.message || 'Failed to update profile');
@@ -245,9 +399,6 @@ export const Profile = () => {
     });
   };
 
-  // ============================================
-  // RENDER
-  // ============================================
   return (
     <div
       style={{
@@ -259,9 +410,7 @@ export const Profile = () => {
         fontFamily: THEME.font,
       }}
     >
-      {/* ============================================ */}
-      {/* PREMIUM HEADER */}
-      {/* ============================================ */}
+      {/* HEADER */}
       <div style={{ padding: '16px 16px 8px' }}>
         <div
           style={{
@@ -384,9 +533,7 @@ export const Profile = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
       {/* AVATAR CARD */}
-      {/* ============================================ */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -402,7 +549,6 @@ export const Profile = () => {
             boxShadow: cardShadow,
           }}
         >
-          {/* Decorative leaves glow */}
           <div
             style={{
               position: 'absolute',
@@ -430,7 +576,6 @@ export const Profile = () => {
             }}
           />
 
-          {/* Avatar */}
           <div
             style={{
               width: '88px',
@@ -450,10 +595,9 @@ export const Profile = () => {
               border: '4px solid rgba(255,255,255,0.5)',
             }}
           >
-            {user?.name?.charAt(0).toUpperCase() || '👤'}
+            {P.name?.charAt(0).toUpperCase() || '👤'}
           </div>
 
-          {/* Name */}
           <div
             style={{
               fontSize: '20px',
@@ -465,10 +609,9 @@ export const Profile = () => {
               zIndex: 1,
             }}
           >
-            {user?.name || 'User'}
+            {P.name || 'User'}
           </div>
 
-          {/* ID */}
           <div
             style={{
               fontSize: '12px',
@@ -479,10 +622,9 @@ export const Profile = () => {
               zIndex: 1,
             }}
           >
-            {user?.employee_id || 'N/A'}
+            {P.employee_id || 'N/A'}
           </div>
 
-          {/* Badges */}
           <div
             style={{
               display: 'flex',
@@ -505,7 +647,7 @@ export const Profile = () => {
                 letterSpacing: '0.3px',
               }}
             >
-              {user?.role || 'Employee'}
+              {P.role || 'Employee'}
             </span>
             <span
               style={{
@@ -537,9 +679,7 @@ export const Profile = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* PERSONAL INFORMATION */}
-      {/* ============================================ */}
+      {/* PERSONAL INFO */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -625,9 +765,7 @@ export const Profile = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* MENU ITEMS */}
-      {/* ============================================ */}
+      {/* MENU */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -735,9 +873,7 @@ export const Profile = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* LOGOUT BUTTON */}
-      {/* ============================================ */}
+      {/* LOGOUT */}
       <div style={{ padding: '0 16px 16px' }}>
         <button
           onClick={handleLogout}
@@ -765,9 +901,7 @@ export const Profile = () => {
         </button>
       </div>
 
-      {/* ============================================ */}
-      {/* FOOTER QUOTE */}
-      {/* ============================================ */}
+      {/* FOOTER */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -806,9 +940,7 @@ export const Profile = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
       {/* EDIT PROFILE MODAL */}
-      {/* ============================================ */}
       {isEditing && (
         <div
           style={{
@@ -837,7 +969,6 @@ export const Profile = () => {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal header */}
             <div
               style={{
                 display: 'flex',
@@ -994,9 +1125,7 @@ export const Profile = () => {
         </div>
       )}
 
-      {/* ============================================ */}
       {/* CHANGE PASSWORD MODAL */}
-      {/* ============================================ */}
       {showChangePassword && (
         <div
           style={{

@@ -1,11 +1,13 @@
 // src/pages/admin/Dashboard.jsx
 //
 // Vision Earth HRMS — Premium Admin Dashboard
-// Attractive stat cards + Forgot Tracker + Salary Calculator.
+// Stats + Admin Tools grid + poster header
+// Icons: soft-colored tiles with iOS-style 3D emoji
 //
-// ✅ OPTIMIZED: Dashboard stats now fetched in PARALLEL (Promise.all)
-//               instead of sequentially — 4x faster load time.
-// ✅ Uses head: true where only counts are needed (0 rows transferred).
+// FIXES:
+// ✅ totalCheckins now shown in stats grid (5th stat)
+// ✅ focus refresh — stats reload when user returns to tab
+// ✅ stats grid → 3-column layout for 5 stats + spacer
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -40,76 +42,83 @@ export const AdminDashboard = () => {
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
   // ============================================
-  // ADMIN TOOLS
+  // ADMIN TOOLS — iOS-style 3D emoji icons
   // ============================================
   const adminTools = [
     {
       icon: '👥',
-      label: 'Employee Management',
+      label: 'Employees',
+      desc: 'View and manage employee details',
       path: '/admin/employees',
-      color: '#3B82F6',
-      desc: 'Add, edit, or remove employees',
+      color: '#8B5CF6',
     },
     {
       icon: '📋',
       label: 'Leave Approvals',
+      desc: 'Approve and manage leave requests',
       path: '/admin/leaves',
-      color: '#F59E0B',
-      desc: 'Approve or reject leave requests',
+      color: '#FB923C',
     },
     {
       icon: '📊',
-      label: 'Attendance Report',
+      label: 'Attendance',
+      desc: 'Track and manage attendance records',
       path: '/admin/attendance-report',
       color: '#10B981',
-      desc: 'View monthly attendance analytics',
     },
     {
-      icon: '📋',
-      label: 'Attendance History',
+      icon: '📄',
+      label: 'History',
+      desc: 'View past records and activity log',
       path: '/admin/attendance-history',
-      color: '#EC4899',
-      desc: 'All employee attendance records',
+      color: '#A855F7',
     },
     {
       icon: '📍',
-      label: 'Check-In/Out History',
+      label: 'Check-In/Out',
+      desc: 'Manage check-in and check-out logs',
       path: '/admin/checkin-history',
-      color: '#8B5CF6',
-      desc: 'Track all check-ins and check-outs',
+      color: '#EC4899',
+    },
+    {
+      icon: '🗺️',
+      label: 'Timeline',
+      desc: 'View employee activity timeline',
+      path: '/admin/timeline',
+      color: '#3B82F6',
     },
     {
       icon: '⚠️',
-      label: 'Forgot Check-Out Tracker',
+      label: 'Forgot',
+      desc: 'Reset password and recover access',
       path: '/admin/forgot-tracker',
-      color: '#EF4444',
-      desc: 'See who forgot to check out',
+      color: '#F59E0B',
     },
     {
       icon: '💰',
-      label: 'Salary Calculator',
+      label: 'Salary',
+      desc: 'Manage salary details and payrolls',
       path: '/admin/salary-calculator',
-      color: '#059669',
-      desc: 'Calculate monthly salary from attendance',
+      color: '#10B981',
     },
     {
       icon: '🎉',
-      label: 'Holiday Management',
+      label: 'Holidays',
+      desc: 'View and manage holiday calendar',
       path: '/admin/holidays',
-      color: '#8B5CF6',
-      desc: 'Add and manage company holidays',
+      color: '#A855F7',
     },
     {
       icon: '📁',
-      label: 'Manage Projects',
+      label: 'Projects',
+      desc: 'Manage projects and assignments',
       path: '/admin/projects',
-      color: '#F59E0B',
-      desc: 'Add, edit or remove project codes',
+      color: '#3B82F6',
     },
   ];
 
   // ============================================
-  // FETCH DATA — parallel + optimized
+  // FETCH DATA
   // ============================================
   const fetchDashboardData = async () => {
     try {
@@ -123,26 +132,21 @@ export const AdminDashboard = () => {
         `${today}T23:59:59.999+05:30`
       ).toISOString();
 
-      // ✅ Run all 4 queries in parallel
       const [empRes, attRes, leaveRes, checkinRes] = await Promise.all([
-        // 1. Employee count (head: true → 0 rows, just count)
         supabase
           .from('employees')
           .select('*', { count: 'exact', head: true }),
 
-        // 2. Today's attendance — only need status column
         supabase
           .from('attendance')
           .select('status')
           .eq('attendance_date', today),
 
-        // 3. Pending leave count
         supabase
           .from('leave_requests')
           .select('*', { count: 'exact', head: true })
           .eq('status', 'Pending'),
 
-        // 4. Today's check-in count
         supabase
           .from('check_in_out')
           .select('id', { count: 'exact', head: true })
@@ -150,7 +154,6 @@ export const AdminDashboard = () => {
           .lte('check_in_time', dayEndUTC),
       ]);
 
-      // Non-fatal warnings
       if (empRes.error) console.warn('emp fetch:', empRes.error.message);
       if (attRes.error) console.warn('att fetch:', attRes.error.message);
       if (leaveRes.error) console.warn('leave fetch:', leaveRes.error.message);
@@ -185,6 +188,14 @@ export const AdminDashboard = () => {
 
   useEffect(() => {
     fetchDashboardData();
+  }, []);
+
+  // ✅ FIX: refresh stats when tab regains focus
+  useEffect(() => {
+    const onFocus = () => fetchDashboardData();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ============================================
@@ -401,39 +412,45 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* STATS GRID */}
+        {/* STATS GRID — now 5 stats + 1 spacer = 6 cells → 3 cols × 2 rows */}
         <div style={{ padding: '0 16px 16px' }}>
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
+              gridTemplateColumns: 'repeat(3, 1fr)',
               gap: '10px',
             }}
           >
             {[
               {
                 value: stats.totalEmployees,
-                label: 'Total Employees',
+                label: 'Employees',
                 color: THEME.blue,
                 accent: THEME.blue,
               },
               {
                 value: stats.todayPresent,
-                label: 'Present Today',
+                label: 'Present',
                 color: THEME.primary,
                 accent: THEME.primary,
               },
               {
                 value: stats.todayAbsent,
-                label: 'Absent Today',
+                label: 'Absent',
                 color: THEME.red,
                 accent: THEME.red,
               },
               {
                 value: stats.pendingLeaves,
-                label: 'Pending Leaves',
+                label: 'Pending',
                 color: THEME.amber,
                 accent: THEME.amber,
+              },
+              {
+                value: stats.totalCheckins,
+                label: 'Check-Ins',
+                color: THEME.purple,
+                accent: THEME.purple,
               },
             ].map((stat, idx) => (
               <div
@@ -443,7 +460,7 @@ export const AdminDashboard = () => {
                     ? `linear-gradient(145deg, ${stat.accent}15 0%, #1E293B 60%)`
                     : `linear-gradient(145deg, ${stat.accent}10 0%, #FFFFFF 60%)`,
                   borderRadius: THEME.radiusMd,
-                  padding: '16px 12px 14px',
+                  padding: '14px 10px 12px',
                   textAlign: 'left',
                   border: `1px solid ${
                     dark ? 'rgba(255,255,255,0.05)' : stat.accent + '25'
@@ -469,8 +486,8 @@ export const AdminDashboard = () => {
                 <div
                   style={{
                     position: 'absolute',
-                    top: '10px',
-                    right: '10px',
+                    top: '8px',
+                    right: '8px',
                     width: '6px',
                     height: '6px',
                     borderRadius: '50%',
@@ -480,7 +497,7 @@ export const AdminDashboard = () => {
                 />
                 <div
                   style={{
-                    fontSize: '28px',
+                    fontSize: '24px',
                     fontWeight: 900,
                     color: stat.color,
                     lineHeight: 1,
@@ -493,7 +510,7 @@ export const AdminDashboard = () => {
                 </div>
                 <div
                   style={{
-                    fontSize: '10px',
+                    fontSize: '9px',
                     fontWeight: 800,
                     color: textMuted,
                     textTransform: 'uppercase',
@@ -507,129 +524,407 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* ADMIN TOOLS */}
+        {/* ADMIN TOOLS SECTION */}
         <div style={{ padding: '0 16px 16px' }}>
+          {/* POSTER HEADER */}
           <div
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '12px',
-              paddingLeft: '4px',
-            }}
-          >
-            <h3
-              style={{
-                fontSize: '15px',
-                fontWeight: 800,
-                color: textPrimary,
-                margin: 0,
-                letterSpacing: '-0.2px',
-              }}
-            >
-              Admin Tools
-            </h3>
-            <span
-              style={{
-                fontSize: '10px',
-                color: textMuted,
-                fontWeight: 700,
-                background: dark ? 'rgba(255,255,255,0.05)' : '#F1F5F9',
-                padding: '4px 12px',
-                borderRadius: THEME.radiusPill,
-                letterSpacing: '0.3px',
-              }}
-            >
-              {adminTools.length} tools
-            </span>
-          </div>
-
-          <div
-            style={{
-              background: cardBg,
-              borderRadius: THEME.radiusLg,
-              border: `1px solid ${border}`,
-              boxShadow: cardShadow,
+              position: 'relative',
+              borderRadius: '20px',
               overflow: 'hidden',
+              marginBottom: '14px',
+              background: dark
+                ? 'linear-gradient(135deg, #1E3A8A 0%, #5B21B6 50%, #7C3AED 100%)'
+                : 'linear-gradient(135deg, #DBEAFE 0%, #E0E7FF 40%, #EDE9FE 100%)',
+              border: `1px solid ${
+                dark ? 'rgba(255,255,255,0.08)' : 'rgba(139,92,246,0.15)'
+              }`,
+              boxShadow: dark
+                ? '0 8px 24px rgba(0,0,0,0.35)'
+                : '0 8px 24px rgba(99,102,241,0.12)',
+              padding: '16px',
+              minHeight: '96px',
             }}
           >
-            {adminTools.map((tool, idx) => (
-              <button
-                key={tool.path}
-                onClick={() => navigate(tool.path)}
+            <div
+              style={{
+                position: 'absolute',
+                top: -30,
+                right: -20,
+                width: 120,
+                height: 120,
+                borderRadius: '50%',
+                background:
+                  'radial-gradient(circle, rgba(255,255,255,0.55) 0%, transparent 70%)',
+                pointerEvents: 'none',
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                bottom: -30,
+                left: -20,
+                width: 100,
+                height: 100,
+                borderRadius: '50%',
+                background:
+                  'radial-gradient(circle, rgba(139,92,246,0.35) 0%, transparent 70%)',
+                pointerEvents: 'none',
+              }}
+            />
+
+            <div
+              style={{
+                position: 'relative',
+                zIndex: 1,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: '12px',
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3
+                  style={{
+                    fontSize: '17px',
+                    fontWeight: 900,
+                    color: dark ? '#FFFFFF' : '#1E293B',
+                    margin: 0,
+                    letterSpacing: '-0.3px',
+                    lineHeight: 1.15,
+                  }}
+                >
+                  Admin Tools
+                </h3>
+                <div
+                  style={{
+                    fontSize: '10.5px',
+                    color: dark ? 'rgba(255,255,255,0.75)' : '#475569',
+                    fontWeight: 500,
+                    marginTop: '4px',
+                    lineHeight: 1.35,
+                    maxWidth: '180px',
+                  }}
+                >
+                  Manage your organisation with ease
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    marginTop: '10px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      fontWeight: 800,
+                      color: dark ? '#FFFFFF' : '#5B21B6',
+                      background: dark
+                        ? 'rgba(255,255,255,0.15)'
+                        : 'rgba(255,255,255,0.7)',
+                      padding: '3px 10px',
+                      borderRadius: '999px',
+                      letterSpacing: '0.3px',
+                      border: dark
+                        ? '1px solid rgba(255,255,255,0.15)'
+                        : '1px solid rgba(255,255,255,0.9)',
+                    }}
+                  >
+                    {adminTools.length} tools
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      fontWeight: 800,
+                      color: dark ? 'rgba(255,255,255,0.85)' : '#6D28D9',
+                      background: dark
+                        ? 'rgba(255,255,255,0.08)'
+                        : 'rgba(255,255,255,0.5)',
+                      padding: '3px 10px',
+                      borderRadius: '999px',
+                      letterSpacing: '0.3px',
+                      border: dark
+                        ? '1px solid rgba(255,255,255,0.1)'
+                        : '1px solid rgba(255,255,255,0.7)',
+                    }}
+                  >
+                    Fast
+                  </span>
+                </div>
+              </div>
+
+              {/* Illustration */}
+              <div
                 style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '14px 16px',
-                  borderBottom:
-                    idx < adminTools.length - 1 ? `1px solid ${border}` : 'none',
-                  gap: '12px',
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'background 0.2s ease',
-                  fontFamily: THEME.font,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = dark
-                    ? 'rgba(255,255,255,0.03)'
-                    : '#F8FAFC';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
+                  position: 'relative',
+                  flexShrink: 0,
+                  width: 88,
+                  height: 70,
                 }}
               >
                 <div
                   style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '12px',
-                    background: tool.color + '15',
+                    position: 'absolute',
+                    top: 6,
+                    right: 6,
+                    width: 66,
+                    height: 46,
+                    borderRadius: 10,
+                    background: dark
+                      ? 'rgba(255,255,255,0.12)'
+                      : 'rgba(255,255,255,0.75)',
+                    border: dark
+                      ? '1px solid rgba(255,255,255,0.2)'
+                      : '1px solid rgba(255,255,255,0.9)',
+                    boxShadow: dark
+                      ? '0 6px 14px rgba(0,0,0,0.35)'
+                      : '0 6px 14px rgba(99,102,241,0.15)',
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    justifyContent: 'space-between',
+                    padding: 6,
+                    gap: 3,
+                  }}
+                >
+                  <div style={{ width: 8, height: 16, borderRadius: 3, background: '#60A5FA' }} />
+                  <div style={{ width: 8, height: 24, borderRadius: 3, background: '#A78BFA' }} />
+                  <div style={{ width: 8, height: 14, borderRadius: 3, background: '#34D399' }} />
+                  <div style={{ width: 8, height: 20, borderRadius: 3, background: '#F472B6' }} />
+                </div>
+
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    width: 52,
+                    height: 46,
+                    borderRadius: 10,
+                    background: dark
+                      ? 'linear-gradient(135deg, #7C3AED, #A855F7)'
+                      : 'linear-gradient(135deg, #A78BFA, #8B5CF6)',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    boxShadow: dark
+                      ? '0 6px 14px rgba(0,0,0,0.4)'
+                      : '0 6px 14px rgba(139,92,246,0.35)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '20px',
-                    flexShrink: 0,
                   }}
                 >
-                  {tool.icon}
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+                    stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4.5" width="18" height="16" rx="3" />
+                    <path d="M3 9.5h18M8 2.5v4M16 2.5v4" />
+                  </svg>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: -2,
+                    left: 20,
+                    width: 24,
+                    height: 24,
+                    borderRadius: '50%',
+                    background: dark ? '#FACC15' : '#FBBF24',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 10px rgba(250,204,21,0.5)',
+                    border: '1.5px solid #FFFFFF',
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                    stroke="#78350F" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                    <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+                  </svg>
+                </div>
+
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: -4,
+                    right: 0,
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    background: dark ? '#0EA5E9' : '#38BDF8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 10px rgba(56,189,248,0.5)',
+                    border: '1.5px solid #FFFFFF',
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                    stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="8" r="4" />
+                    <path d="M4 21c0-4.4 3.6-7.5 8-7.5s8 3.1 8 7.5" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 3-column grid — iOS-style icon cards */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '10px',
+            }}
+          >
+            {adminTools.map((tool) => (
+              <button
+                key={tool.path}
+                onClick={() => navigate(tool.path)}
+                title={tool.label}
+                style={{
+                  background: dark ? '#1E293B' : '#FFFFFF',
+                  border: `1px solid ${
+                    dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'
+                  }`,
+                  borderRadius: '16px',
+                  padding: '12px 10px 10px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  fontFamily: THEME.font,
+                  transition: 'all 0.2s ease',
+                  boxShadow: dark
+                    ? '0 3px 10px rgba(0,0,0,0.25)'
+                    : '0 3px 10px rgba(15,23,42,0.05)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  gap: '9px',
+                  minHeight: '124px',
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = dark
+                    ? `0 10px 22px rgba(0,0,0,0.4), 0 0 0 1px ${tool.color}45`
+                    : `0 10px 22px ${tool.color}20, 0 0 0 1px ${tool.color}45`;
+                  e.currentTarget.style.borderColor = tool.color + '50';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = dark
+                    ? '0 3px 10px rgba(0,0,0,0.25)'
+                    : '0 3px 10px rgba(15,23,42,0.05)';
+                  e.currentTarget.style.borderColor = dark
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'rgba(0,0,0,0.05)';
+                }}
+              >
+                {/* Small arrow top-right */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '10px',
+                    right: '10px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    color: tool.color,
+                    opacity: 0.85,
+                    lineHeight: 1,
+                  }}
+                >
+                  ›
+                </div>
+
+                {/* iOS-style icon tile */}
+                <div
+                  style={{
+                    width: '46px',
+                    height: '46px',
+                    borderRadius: '14px',
+                    background: dark
+                      ? `linear-gradient(180deg, ${tool.color}22 0%, ${tool.color}14 100%)`
+                      : `linear-gradient(180deg, ${tool.color}20 0%, ${tool.color}10 100%)`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '24px',
+                    flexShrink: 0,
+                    border: `1px solid ${tool.color}28`,
+                    boxShadow: dark
+                      ? `inset 0 1px 0 rgba(255,255,255,0.06)`
+                      : `inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 3px ${tool.color}10`,
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
                   <div
                     style={{
-                      fontSize: '13px',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: '50%',
+                      background: dark
+                        ? 'linear-gradient(180deg, rgba(255,255,255,0.05), transparent)'
+                        : 'linear-gradient(180deg, rgba(255,255,255,0.6), transparent)',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                  <span
+                    style={{
+                      lineHeight: 1,
+                      position: 'relative',
+                      zIndex: 1,
+                      filter: dark
+                        ? 'drop-shadow(0 1px 1px rgba(0,0,0,0.4))'
+                        : 'drop-shadow(0 1px 1px rgba(0,0,0,0.08))',
+                    }}
+                  >
+                    {tool.icon}
+                  </span>
+                </div>
+
+                {/* Text */}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '3px',
+                    flex: 1,
+                    width: '100%',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '11px',
                       fontWeight: 800,
                       color: textPrimary,
-                      marginBottom: '2px',
+                      lineHeight: 1.2,
+                      letterSpacing: '0.1px',
                     }}
                   >
                     {tool.label}
                   </div>
                   <div
                     style={{
-                      fontSize: '11px',
-                      color: textMuted,
+                      fontSize: '8.5px',
                       fontWeight: 500,
+                      color: textMuted,
+                      lineHeight: 1.35,
                       overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
                     }}
                   >
                     {tool.desc}
                   </div>
                 </div>
-                <span
-                  style={{
-                    fontSize: '18px',
-                    color: textMuted,
-                    flexShrink: 0,
-                    fontWeight: 300,
-                  }}
-                >
-                  ›
-                </span>
               </button>
             ))}
           </div>

@@ -5,16 +5,18 @@
 // ✅ Cards clickable → modal with full details.
 // ✅ Map icons in Check In / Check Out blocks → open in Google Maps.
 // ✅ 📅 Timeline button to view that employee's route for that day.
-// ✅ 📸 Screenshot button beside Timeline:
-//      - Enabled  → employee uploaded a Google Timeline screenshot
-//      - Disabled → not uploaded (either optional-skip or required-missing)
+// ✅ 📸 Screenshot button beside Timeline.
+// ✅ ⬇ Download Report — filter by year / month / company / designation / employee
+// ✅ 🌙/☀️ Theme toggle in header
 //
-// ✅ FIX: attendance join now robust against DATE vs ISO string formats
+// FIXES:
+// ✅ today filter no longer leaves stale date in input
+// ✅ screenshot img has error fallback
+// ✅ CSV date normalization simplified (no double parse)
+// ✅ lean column select on check_in_out + attendance
 
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../services/supabase';
 import {
@@ -23,14 +25,19 @@ import {
   formatTime,
   getMonthName,
 } from '../../utils/helpers';
+import { buildCSV, downloadCSV, timestamp } from '../../utils/csvExport';
 import BottomNavigation from '../../components/BottomNavigation';
 import { THEME, isDark } from '../../utils/designTokens';
 import LocationTimeline from '../../components/LocationTimeline';
 
+// ============================================
+// ✅ SPECIFIC COLUMNS (avoid SELECT *)
+// ============================================
+const CHECKIN_COLUMNS =
+  'id, employee_id, check_in_time, check_out_time, check_in_address, check_out_address, check_in_gps, check_out_gps, working_hours, status, forgotten_checkout';
+
 export const AdminCheckinHistory = () => {
-  const navigate = useNavigate();
-  const { theme } = useTheme();
-  const { user } = useAuth();
+  const { theme, toggleDark } = useTheme();
   const dark = isDark(theme);
 
   const [loading, setLoading] = useState(true);
@@ -49,7 +56,6 @@ export const AdminCheckinHistory = () => {
   );
   const [month, setMonth] = useState(_istMonth);
   const [year, setYear] = useState(_istYear);
-  const [checkins, setCheckins] = useState([]);
   const [filteredCheckins, setFilteredCheckins] = useState([]);
   const [filterDate, setFilterDate] = useState('');
   const [viewMode, setViewMode] = useState('today');
@@ -64,7 +70,17 @@ export const AdminCheckinHistory = () => {
   const [showDayTimeline, setShowDayTimeline] = useState(false);
   const [showScreenshotModal, setShowScreenshotModal] = useState(false);
 
-  // Theme helpers
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [dlYear, setDlYear] = useState(_istYear);
+  const [dlMonth, setDlMonth] = useState('all');
+  const [dlCompany, setDlCompany] = useState('all');
+  const [dlDesignation, setDlDesignation] = useState('all');
+  const [dlEmployee, setDlEmployee] = useState('all');
+  const [employees, setEmployees] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [designations, setDesignations] = useState([]);
+
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
   const cardBg = dark ? THEME.dark.card : THEME.cardBg;
   const textPrimary = dark ? THEME.dark.text : THEME.text;
@@ -81,9 +97,7 @@ export const AdminCheckinHistory = () => {
     try {
       if (typeof value === 'string') {
         const trimmed = value.trim();
-        // Already "YYYY-MM-DD"
         if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-        // "YYYY-MM-DDTHH..." → take the first 10
         if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) return trimmed.slice(0, 10);
       }
       const d = new Date(value);
@@ -103,7 +117,7 @@ export const AdminCheckinHistory = () => {
 
       let query = supabase
         .from('check_in_out')
-        .select('*')
+        .select(CHECKIN_COLUMNS)
         .order('check_in_time', { ascending: false });
 
       if (startDate && endDate) {
@@ -117,11 +131,24 @@ export const AdminCheckinHistory = () => {
 
       const { data: empData, error: empError } = await supabase
         .from('employees')
-        .select('id, name, employee_id, email, department');
+        .select(
+          'id, name, employee_id, email, department, company, designation'
+        );
 
       if (empError) throw empError;
 
-      // ✅ Fetch attendance rows for screenshot info
+      setEmployees(empData || []);
+      setCompanies([
+        ...new Set((empData || []).map((e) => e.company).filter(Boolean)),
+      ]);
+      setDesignations([
+        ...new Set(
+          (empData || [])
+            .map((e) => e.designation || e.department)
+            .filter(Boolean)
+        ),
+      ]);
+
       let attQuery = supabase
         .from('attendance')
         .select(
@@ -144,10 +171,8 @@ export const AdminCheckinHistory = () => {
       const combinedData =
         checkinData?.map((item) => {
           const emp = empData?.find((e) => e.id === item.employee_id) || null;
-
           const istDay = toISTDateString(item.check_in_time);
 
-          // ✅ FIX: robust attendance match (handles DATE / ISO strings)
           const att = (attData || []).find((a) => {
             if (a.employee_id !== item.employee_id) return false;
             const attDay = toISTDateString(a.attendance_date);
@@ -163,7 +188,6 @@ export const AdminCheckinHistory = () => {
           };
         }) || [];
 
-      setCheckins(combinedData);
       setFilteredCheckins(combinedData);
 
       const total = combinedData?.length || 0;
@@ -186,12 +210,13 @@ export const AdminCheckinHistory = () => {
     }
   };
 
+  // ✅ FIX: don't populate filterDate for "today" mode
   const loadTodayData = () => {
     const today = getTodayIST();
     const startDate = new Date(`${today}T00:00:00+05:30`).toISOString();
     const endDate = new Date(`${today}T23:59:59.999+05:30`).toISOString();
     setViewMode('today');
-    setFilterDate(today);
+    setFilterDate('');
     fetchCheckinHistory(startDate, endDate);
   };
 
@@ -231,6 +256,7 @@ export const AdminCheckinHistory = () => {
 
   useEffect(() => {
     loadTodayData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -240,7 +266,6 @@ export const AdminCheckinHistory = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, year]);
 
-  // Escape closes whichever modal is on top
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') {
@@ -250,12 +275,164 @@ export const AdminCheckinHistory = () => {
           setShowDayTimeline(false);
         } else if (selectedRecord) {
           setSelectedRecord(null);
+        } else if (showDownloadModal && !downloading) {
+          setShowDownloadModal(false);
         }
       }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [selectedRecord, showDayTimeline, showScreenshotModal]);
+  }, [
+    selectedRecord,
+    showDayTimeline,
+    showScreenshotModal,
+    showDownloadModal,
+    downloading,
+  ]);
+
+  // ============================================
+  // DOWNLOAD REPORT
+  // ============================================
+  const handleDownloadReport = async () => {
+    try {
+      setDownloading(true);
+
+      let startDate = null;
+      let endDate = null;
+
+      if (dlMonth === 'all') {
+        startDate = new Date(`${dlYear}-01-01T00:00:00+05:30`).toISOString();
+        endDate = new Date(
+          `${dlYear}-12-31T23:59:59.999+05:30`
+        ).toISOString();
+      } else {
+        const mm = String(dlMonth).padStart(2, '0');
+        const lastDay = new Date(dlYear, dlMonth, 0).getDate();
+        startDate = new Date(
+          `${dlYear}-${mm}-01T00:00:00+05:30`
+        ).toISOString();
+        endDate = new Date(
+          `${dlYear}-${mm}-${String(lastDay).padStart(
+            2,
+            '0'
+          )}T23:59:59.999+05:30`
+        ).toISOString();
+      }
+
+      let empQ = supabase
+        .from('employees')
+        .select('id, name, employee_id, company, designation, department');
+
+      if (dlCompany !== 'all') empQ = empQ.eq('company', dlCompany);
+      if (dlDesignation !== 'all') {
+        empQ = empQ.or(
+          `designation.eq.${dlDesignation},department.eq.${dlDesignation}`
+        );
+      }
+      if (dlEmployee !== 'all') empQ = empQ.eq('id', dlEmployee);
+
+      const { data: empData, error: empErr } = await empQ;
+      if (empErr) throw empErr;
+
+      const empIds = (empData || []).map((e) => e.id);
+      if (empIds.length === 0) {
+        toast.error('No employees match the selected filters');
+        setDownloading(false);
+        return;
+      }
+
+      const { data: checkinData, error: chErr } = await supabase
+        .from('check_in_out')
+        .select(CHECKIN_COLUMNS)
+        .gte('check_in_time', startDate)
+        .lte('check_in_time', endDate)
+        .in('employee_id', empIds)
+        .order('check_in_time', { ascending: false });
+
+      if (chErr) throw chErr;
+
+      const rows = (checkinData || []).map((c) => {
+        const emp = empData.find((e) => e.id === c.employee_id) || {};
+
+        const checkInIST = c.check_in_time
+          ? new Date(c.check_in_time).toLocaleString('en-IN', {
+              timeZone: 'Asia/Kolkata',
+            })
+          : '';
+        const checkOutIST = c.check_out_time
+          ? new Date(c.check_out_time).toLocaleString('en-IN', {
+              timeZone: 'Asia/Kolkata',
+            })
+          : '';
+
+        // ✅ FIX: single normalize — no double-parse
+        const istDate = c.check_in_time
+          ? new Date(c.check_in_time).toLocaleDateString('en-CA', {
+              timeZone: 'Asia/Kolkata',
+            })
+          : '';
+        const [y, m, d] = istDate ? istDate.split('-') : ['', '', ''];
+        const displayDate = y && m && d ? `${d}-${m}-${y}` : '';
+
+        return {
+          employee_name: emp.name || '',
+          employee_id: emp.employee_id || '',
+          company: emp.company || '',
+          designation: emp.designation || emp.department || '',
+          date: displayDate,
+          status: c.status || '',
+          check_in_time: checkInIST,
+          check_in_address: c.check_in_address || '',
+          check_in_gps: c.check_in_gps || '',
+          check_out_time: checkOutIST,
+          check_out_address: c.check_out_address || '',
+          check_out_gps: c.check_out_gps || '',
+          working_hours: c.working_hours ?? '',
+          forgotten_checkout: c.forgotten_checkout ? 'Yes' : 'No',
+        };
+      });
+
+      if (rows.length === 0) {
+        toast.error('No records found for the selected filters');
+        setDownloading(false);
+        return;
+      }
+
+      const columns = [
+        { key: 'employee_name', label: 'Employee Name' },
+        { key: 'employee_id', label: 'Employee ID' },
+        { key: 'company', label: 'Company' },
+        { key: 'designation', label: 'Designation' },
+        { key: 'date', label: 'Date' },
+        { key: 'status', label: 'Status' },
+        { key: 'check_in_time', label: 'Check In Time' },
+        { key: 'check_in_address', label: 'Check In Address' },
+        { key: 'check_in_gps', label: 'Check In GPS' },
+        { key: 'check_out_time', label: 'Check Out Time' },
+        { key: 'check_out_address', label: 'Check Out Address' },
+        { key: 'check_out_gps', label: 'Check Out GPS' },
+        { key: 'working_hours', label: 'Working Hours' },
+        { key: 'forgotten_checkout', label: 'Forgotten Checkout' },
+      ];
+
+      const csv = buildCSV(rows, columns, {
+        textColumns: ['date', 'check_in_time', 'check_out_time'],
+      });
+
+      const filename = `checkin-report-${dlYear}${
+        dlMonth === 'all' ? '-all' : '-' + String(dlMonth).padStart(2, '0')
+      }-${timestamp()}.csv`;
+
+      downloadCSV(filename, csv);
+      toast.success(`Downloaded ${rows.length} records`);
+      setShowDownloadModal(false);
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error('Failed to generate report');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   // ============================================
   // LOADING
@@ -308,9 +485,6 @@ export const AdminCheckinHistory = () => {
     });
   };
 
-  // ============================================
-  // SCREENSHOT BUTTON HANDLER
-  // ============================================
   const handleScreenshotClick = (item) => {
     const hasScreenshot = !!item.timeline_screenshot_url;
     const wasRequired = !!item.timeline_screenshot_required;
@@ -364,7 +538,6 @@ export const AdminCheckinHistory = () => {
       window.open(url, '_blank', 'noopener,noreferrer');
     };
 
-    // Screenshot button state
     const hasScreenshot = !!item.timeline_screenshot_url;
     const wasRequired = !!item.timeline_screenshot_required;
 
@@ -421,7 +594,6 @@ export const AdminCheckinHistory = () => {
             fontFamily: THEME.font,
           }}
         >
-          {/* Modal header */}
           <div
             style={{
               display: 'flex',
@@ -503,7 +675,6 @@ export const AdminCheckinHistory = () => {
             </button>
           </div>
 
-          {/* Status pill + Timeline + Screenshot buttons */}
           <div
             style={{
               marginBottom: '14px',
@@ -555,7 +726,6 @@ export const AdminCheckinHistory = () => {
                 </button>
               )}
 
-              {/* SCREENSHOT BUTTON */}
               <button
                 type="button"
                 onClick={() => handleScreenshotClick(item)}
@@ -855,7 +1025,6 @@ export const AdminCheckinHistory = () => {
             </div>
           </div>
 
-          {/* Forgotten badge */}
           {item.forgotten_checkout && (
             <div
               style={{
@@ -873,7 +1042,6 @@ export const AdminCheckinHistory = () => {
             </div>
           )}
 
-          {/* Close button */}
           <button
             onClick={() => setSelectedRecord(null)}
             style={{
@@ -900,7 +1068,7 @@ export const AdminCheckinHistory = () => {
   };
 
   // ============================================
-  // FULL SCREENSHOT VIEWER MODAL
+  // FULL SCREENSHOT VIEWER
   // ============================================
   const renderScreenshotModal = () => {
     if (!showScreenshotModal || !selectedRecord?.timeline_screenshot_url)
@@ -987,9 +1155,15 @@ export const AdminCheckinHistory = () => {
             </button>
           </div>
 
+          {/* ✅ FIX: img error fallback */}
           <img
             src={selectedRecord.timeline_screenshot_url}
             alt="Timeline screenshot"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              const next = e.currentTarget.nextElementSibling;
+              if (next) next.style.display = 'block';
+            }}
             style={{
               width: '100%',
               borderRadius: 12,
@@ -997,6 +1171,21 @@ export const AdminCheckinHistory = () => {
               display: 'block',
             }}
           />
+          <div
+            style={{
+              display: 'none',
+              padding: '24px 16px',
+              textAlign: 'center',
+              background: dark ? 'rgba(239,68,68,0.08)' : THEME.redSoft,
+              border: `1px solid ${THEME.red}40`,
+              borderRadius: 12,
+              color: THEME.red,
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            ⚠️ Could not load image — tap the link below to open original
+          </div>
 
           <a
             href={selectedRecord.timeline_screenshot_url}
@@ -1261,6 +1450,51 @@ export const AdminCheckinHistory = () => {
                   HISTORY
                 </div>
               </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                onClick={() => setShowDownloadModal(true)}
+                title="Download report"
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: dark
+                    ? 'rgba(255,255,255,0.08)'
+                    : 'linear-gradient(135deg, #D1FAE5, #A7F3D0)',
+                  fontSize: '16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(16,185,129,0.2)',
+                }}
+              >
+                ⬇
+              </button>
+              <button
+                onClick={toggleDark}
+                title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: dark
+                    ? 'rgba(255,255,255,0.08)'
+                    : 'linear-gradient(135deg, #FEF3C7, #FDE68A)',
+                  fontSize: '16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(245,158,11,0.2)',
+                }}
+              >
+                {dark ? '☀️' : '🌙'}
+              </button>
             </div>
           </div>
 
@@ -1853,6 +2087,333 @@ export const AdminCheckinHistory = () => {
       {renderModal()}
       {renderScreenshotModal()}
       {renderDayTimelineModal()}
+
+      {/* DOWNLOAD REPORT MODAL */}
+      {showDownloadModal && (
+        <div
+          onClick={() => !downloading && setShowDownloadModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(6px)',
+            zIndex: 2000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: cardBg,
+              borderRadius: THEME.radiusXl,
+              padding: '22px',
+              maxWidth: '420px',
+              width: '100%',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              fontFamily: THEME.font,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '18px',
+                paddingBottom: '12px',
+                borderBottom: `1px solid ${border}`,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: '17px',
+                    fontWeight: 800,
+                    color: textPrimary,
+                  }}
+                >
+                  ⬇ Download Report
+                </div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: textMuted,
+                    fontWeight: 600,
+                    marginTop: '2px',
+                  }}
+                >
+                  Choose filters → export CSV
+                </div>
+              </div>
+              <button
+                onClick={() => !downloading && setShowDownloadModal(false)}
+                style={{
+                  fontSize: '22px',
+                  color: textMuted,
+                  background: 'none',
+                  border: 'none',
+                  padding: '4px',
+                  cursor: 'pointer',
+                  lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  display: 'block',
+                  marginBottom: '6px',
+                }}
+              >
+                Year
+              </label>
+              <select
+                value={dlYear}
+                onChange={(e) => setDlYear(parseInt(e.target.value))}
+                style={{
+                  width: '100%',
+                  padding: '11px 12px',
+                  borderRadius: THEME.radiusMd,
+                  border: `1px solid ${border}`,
+                  background: cardBg,
+                  color: textPrimary,
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  outline: 'none',
+                  fontFamily: THEME.font,
+                  cursor: 'pointer',
+                  boxSizing: 'border-box',
+                }}
+              >
+                {Array.from({ length: 5 }, (_, i) => _istYear - i).map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  display: 'block',
+                  marginBottom: '6px',
+                }}
+              >
+                Month
+              </label>
+              <select
+                value={dlMonth}
+                onChange={(e) =>
+                  setDlMonth(
+                    e.target.value === 'all' ? 'all' : parseInt(e.target.value)
+                  )
+                }
+                style={{
+                  width: '100%',
+                  padding: '11px 12px',
+                  borderRadius: THEME.radiusMd,
+                  border: `1px solid ${border}`,
+                  background: cardBg,
+                  color: textPrimary,
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  outline: 'none',
+                  fontFamily: THEME.font,
+                  cursor: 'pointer',
+                  boxSizing: 'border-box',
+                }}
+              >
+                <option value="all">📅 Full Year</option>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>
+                    {getMonthName(m)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {companies.length > 0 && (
+              <div style={{ marginBottom: '12px' }}>
+                <label
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    color: textMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    display: 'block',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Company
+                </label>
+                <select
+                  value={dlCompany}
+                  onChange={(e) => setDlCompany(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '11px 12px',
+                    borderRadius: THEME.radiusMd,
+                    border: `1px solid ${border}`,
+                    background: cardBg,
+                    color: textPrimary,
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    outline: 'none',
+                    fontFamily: THEME.font,
+                    cursor: 'pointer',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <option value="all">🏛️ All Companies</option>
+                  {companies.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {designations.length > 0 && (
+              <div style={{ marginBottom: '12px' }}>
+                <label
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    color: textMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    display: 'block',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Designation
+                </label>
+                <select
+                  value={dlDesignation}
+                  onChange={(e) => setDlDesignation(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '11px 12px',
+                    borderRadius: THEME.radiusMd,
+                    border: `1px solid ${border}`,
+                    background: cardBg,
+                    color: textPrimary,
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    outline: 'none',
+                    fontFamily: THEME.font,
+                    cursor: 'pointer',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <option value="all">💼 All Designations</option>
+                  {designations.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div style={{ marginBottom: '18px' }}>
+              <label
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  display: 'block',
+                  marginBottom: '6px',
+                }}
+              >
+                Employee
+              </label>
+              <select
+                value={dlEmployee}
+                onChange={(e) => setDlEmployee(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '11px 12px',
+                  borderRadius: THEME.radiusMd,
+                  border: `1px solid ${border}`,
+                  background: cardBg,
+                  color: textPrimary,
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  outline: 'none',
+                  fontFamily: THEME.font,
+                  cursor: 'pointer',
+                  boxSizing: 'border-box',
+                }}
+              >
+                <option value="all">👥 All Employees</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name} ({emp.employee_id})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={handleDownloadReport}
+              disabled={downloading}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: THEME.radiusMd,
+                border: 'none',
+                background: downloading
+                  ? textMuted
+                  : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+                color: '#FFFFFF',
+                fontWeight: 800,
+                fontSize: '14px',
+                cursor: downloading ? 'wait' : 'pointer',
+                boxShadow: downloading ? 'none' : THEME.shadowGreen,
+                fontFamily: THEME.font,
+                letterSpacing: '0.3px',
+              }}
+            >
+              {downloading ? '⏳ Generating...' : '⬇ Download CSV'}
+            </button>
+
+            <div
+              style={{
+                fontSize: '10px',
+                color: textMuted,
+                textAlign: 'center',
+                marginTop: '10px',
+                fontWeight: 500,
+              }}
+            >
+              Opens directly in Google Sheets, Excel, or Numbers
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomNavigation theme={theme} />
     </div>

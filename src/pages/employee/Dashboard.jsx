@@ -1,12 +1,13 @@
 // src/pages/employee/Dashboard.jsx
 //
 // Vision Earth HRMS — Premium Dashboard
-// Attractive stat cards with colored accent bars and glow dots.
-// Cool & clean quick action icons.
 //
-// ✅ NEW: Detects approved leave for today on mount.
-//         If on leave → HIDES the Check-In button and shows a
-//         "You're on Approved Leave" status card instead.
+// ✅ LIVE fetch — no pre-fetch, no cache
+// ✅ Shows GPS accuracy in the modal
+// ✅ Check-In BLOCKED until proper address + accuracy ≤ 500m
+// ✅ Modal closes INSTANTLY after DB write
+// ✅ Any-language address (no filtering)
+// ✅ Location logic in ../../utils/locationService
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -22,6 +23,11 @@ import ForgotCheckoutBanner from '../../components/ForgotCheckoutBanner';
 import useCheckInOut from '../../hooks/useCheckInOut';
 import { getTopQuote, getBottomQuote } from '../../utils/quotes';
 import { THEME, isDark } from '../../utils/designTokens';
+
+import {
+  getCurrentLocationDetailed,
+  isValidAddress,
+} from '../../utils/locationService';
 
 export const Dashboard = () => {
   const navigate = useNavigate();
@@ -43,7 +49,6 @@ export const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ NEW: Approved leave for today
   const [todayLeave, setTodayLeave] = useState(null);
   const [leaveLoading, setLeaveLoading] = useState(true);
 
@@ -54,6 +59,7 @@ export const Dashboard = () => {
 
   const [location, setLocation] = useState(null);
   const [address, setAddress] = useState('');
+  const [accuracy, setAccuracy] = useState(null);         // ✅ meters
   const [fetchingLocation, setFetchingLocation] = useState(false);
   const [locationError, setLocationError] = useState('');
   const [locationFetched, setLocationFetched] = useState(false);
@@ -62,7 +68,6 @@ export const Dashboard = () => {
   const topQuote = getTopQuote();
   const bottomQuote = getBottomQuote();
 
-  // Theme helpers
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
   const cardBg = dark ? THEME.dark.card : THEME.cardBg;
   const textPrimary = dark ? THEME.dark.text : THEME.text;
@@ -72,7 +77,7 @@ export const Dashboard = () => {
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
   // ============================================
-  // ✅ NEW: FETCH TODAY'S APPROVED LEAVE
+  // FETCH TODAY'S APPROVED LEAVE
   // ============================================
   const fetchTodayLeave = async () => {
     if (!user?.id) {
@@ -86,9 +91,7 @@ export const Dashboard = () => {
 
       const { data, error } = await supabase
         .from('leave_requests')
-        .select(
-          'id, leave_type, leave_start_date, leave_end_date, reason'
-        )
+        .select('id, leave_type, leave_start_date, leave_end_date, reason')
         .eq('employee_id', user.id)
         .eq('status', 'Approved')
         .lte('leave_start_date', today)
@@ -96,7 +99,6 @@ export const Dashboard = () => {
         .maybeSingle();
 
       if (error) {
-        // PGRST116 = 0 rows from maybeSingle — not a real error
         if (error.code !== 'PGRST116') {
           console.error('Error fetching today leave:', error);
         }
@@ -172,14 +174,22 @@ export const Dashboard = () => {
     }
   };
 
-  // ✅ Initial load — stats + leave
+  // ============================================
+  // Guards when user changes
+  // ============================================
   const hasInitialFetchedRef = useRef(false);
+  const lastUserIdRef = useRef(null);
 
   useEffect(() => {
-    if (user?.id) {
-      fetchDashboardStats();
-      fetchTodayLeave();
+    if (!user?.id) return;
+
+    if (lastUserIdRef.current !== user.id) {
+      lastUserIdRef.current = user.id;
+      hasInitialFetchedRef.current = false;
     }
+
+    fetchDashboardStats();
+    fetchTodayLeave();
   }, [user]);
 
   useEffect(() => {
@@ -192,105 +202,93 @@ export const Dashboard = () => {
   }, [isCheckedIn, isCheckedOut]);
 
   // ============================================
+  // LIVE LOCATION FETCH
+  // ============================================
+  const getCurrentLocation = () => {
+    return new Promise(async (resolve) => {
+      setFetchingLocation(true);
+      setLocationError('');
+      setAddress('');
+      setLocation(null);
+      setAccuracy(null);
+      setLocationFetched(false);
+
+      const result = await getCurrentLocationDetailed();
+
+      if (result.error && !result.lat) {
+        setLocationError(result.error);
+        setFetchingLocation(false);
+        resolve({ error: result.error });
+        return;
+      }
+
+      if (result.lat && result.lng) {
+        const loc = { lat: result.lat, lng: result.lng };
+        setLocation(loc);
+        if (typeof result.accuracy === 'number') {
+          setAccuracy(result.accuracy);
+        }
+
+        if (isValidAddress(result.address)) {
+          setAddress(result.address);
+          setLocationFetched(true);
+          setFetchingLocation(false);
+          setLocationError('');
+          resolve({ loc, addr: result.address });
+        } else {
+          setAddress('');
+          setLocationFetched(false);
+          setFetchingLocation(false);
+          setLocationError(
+            result.error || 'Address unavailable — tap refresh to retry'
+          );
+          resolve({ loc, addr: '' });
+        }
+        return;
+      }
+
+      setFetchingLocation(false);
+      setLocationError('Could not fetch location');
+      resolve({ error: 'Could not fetch location' });
+    });
+  };
+
+  // ============================================
   // LOCATION FUNCTIONS
   // ============================================
   const openCheckInModal = () => {
     setShowCheckInModal(true);
-    setLocationFetched(false);
-    setLocation(null);
-    setAddress('');
-    setLocationError('');
     getCurrentLocation();
   };
 
-  const openAttendanceForm = (record, mode) => {
+  const openAttendanceForm = async (record, mode) => {
     setFormRecord(record);
     setFormMode(mode);
     setShowAttendanceForm(true);
-    getCurrentLocation();
-  };
-
-  const getCurrentLocation = () => {
-    return new Promise((resolve) => {
-      if (locationFetched && location && !locationError) {
-        resolve(location);
-        return;
-      }
-      setFetchingLocation(true);
-      setLocationError('');
-
-      if (!navigator.geolocation) {
-        setLocationError('Geolocation is not supported');
-        setFetchingLocation(false);
-        resolve(null);
-        return;
-      }
-
-      const timeoutId = setTimeout(() => {
-        setFetchingLocation(false);
-        setLocationError('Location request timed out');
-        resolve(null);
-      }, 15000);
-
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          clearTimeout(timeoutId);
-          const { latitude, longitude } = position.coords;
-          const loc = { lat: latitude, lng: longitude };
-          setLocation(loc);
-          setLocationFetched(true);
-          setFetchingLocation(false);
-
-          try {
-            const res = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
-              { headers: { 'User-Agent': 'VisionEarthHRMS/1.0' } }
-            );
-            const data = await res.json();
-            setAddress(
-              data?.display_name ||
-                `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-            );
-          } catch {
-            setAddress(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
-          }
-          resolve(loc);
-        },
-        (error) => {
-          clearTimeout(timeoutId);
-          let msg = 'Unable to get location';
-          if (error.code === error.PERMISSION_DENIED)
-            msg = 'Location permission denied';
-          else if (error.code === error.POSITION_UNAVAILABLE)
-            msg = 'Location unavailable';
-          else if (error.code === error.TIMEOUT) msg = 'Location timed out';
-          setLocationError(msg);
-          setFetchingLocation(false);
-          resolve(null);
-        },
-        { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-      );
-    });
+    await getCurrentLocation();
   };
 
   const refreshLocation = async () => {
-    setLocationFetched(false);
-    setLocation(null);
-    setAddress('');
-    setLocationError('');
     await getCurrentLocation();
   };
 
   // ============================================
-  // CHECK-IN — still guarded as a safety net
+  // FAST CHECK-IN
   // ============================================
   const handleCheckIn = async () => {
     if (!locationFetched || !location) {
-      toast.error('Please wait for location');
+      toast.error('Please wait — location is still being fetched');
       return;
     }
+
+    if (!isValidAddress(address)) {
+      toast.error('Address not ready yet — tap refresh to retry');
+      return;
+    }
+
     try {
       setSubmitting(true);
+
       const { checkIn } = await import('../../services/checkInOutService');
       const result = await checkIn(user?.id, location, address);
 
@@ -298,8 +296,10 @@ export const Dashboard = () => {
         setShowCheckInModal(false);
         setLocationFetched(false);
         setLocation(null);
+        setAddress('');
+        setAccuracy(null);
+        setSubmitting(false);
 
-        // Safety: if the service detects leave, refresh the leave state
         if (result.onLeave) {
           toast.error(
             result.message ||
@@ -310,22 +310,24 @@ export const Dashboard = () => {
         }
 
         toast.error(result.message || 'Check-in blocked');
-        if (result.pendingRecord) {
-          refetchCheckIn();
-        }
+        if (result.pendingRecord) refetchCheckIn();
         return;
       }
 
       toast.success(`✅ Checked in at ${formatTime(new Date().toISOString())}`);
+
       setShowCheckInModal(false);
       setLocationFetched(false);
       setLocation(null);
-      await refetchCheckIn();
-      await fetchDashboardStats();
+      setAddress('');
+      setAccuracy(null);
+      setSubmitting(false);
+
+      Promise.allSettled([refetchCheckIn(), fetchDashboardStats()]);
     } catch (err) {
       console.error('Check-in error:', err);
       toast.error(err.message || 'Failed to check in');
-    } finally {
+      setShowCheckInModal(true);
       setSubmitting(false);
     }
   };
@@ -342,10 +344,11 @@ export const Dashboard = () => {
 
   const handleAttendanceSuccess = async () => {
     await refetchCheckIn();
-    await fetchDashboardStats();
+    fetchDashboardStats();
     setLocationFetched(false);
     setLocation(null);
     setAddress('');
+    setAccuracy(null);
   };
 
   // ============================================
@@ -391,7 +394,7 @@ export const Dashboard = () => {
   }
 
   // ============================================
-  // ✅ STATUS DISPLAY — includes ON-LEAVE state
+  // STATUS DISPLAY
   // ============================================
   const isOnLeave = !!todayLeave;
 
@@ -436,6 +439,23 @@ export const Dashboard = () => {
 
   const firstName = (user?.name || 'User').split(' ')[0] || user?.name;
 
+  const hasValidAddress = isValidAddress(address);
+  const canSubmitCheckIn =
+    locationFetched &&
+    !!location &&
+    hasValidAddress &&
+    !fetchingLocation &&
+    !submitting;
+
+  // Accuracy badge color
+  const accColor = (() => {
+    if (typeof accuracy !== 'number') return textMuted;
+    if (accuracy <= 50) return THEME.primary;
+    if (accuracy <= 150) return THEME.blue;
+    if (accuracy <= 500) return THEME.amber;
+    return THEME.red;
+  })();
+
   // ============================================
   // RENDER
   // ============================================
@@ -450,7 +470,7 @@ export const Dashboard = () => {
         fontFamily: THEME.font,
       }}
     >
-      {/* PREMIUM HEADER CARD */}
+      {/* HEADER CARD */}
       <div style={{ padding: '16px 16px 8px' }}>
         <div
           style={{
@@ -661,7 +681,7 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* FORGOT BANNER — hidden when on leave */}
+      {/* FORGOT BANNER */}
       {hasPendingCheckout && !isOnLeave && (
         <div style={{ padding: '0 16px' }}>
           <ForgotCheckoutBanner
@@ -671,7 +691,7 @@ export const Dashboard = () => {
         </div>
       )}
 
-      {/* PREMIUM STATUS CARD */}
+      {/* STATUS CARD */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -772,7 +792,6 @@ export const Dashboard = () => {
             </div>
           </div>
 
-          {/* ✅ CHECK-IN BUTTON — ONLY when NOT on leave */}
           {!isOnLeave &&
             !hasPendingCheckout &&
             !isCheckedIn &&
@@ -799,7 +818,6 @@ export const Dashboard = () => {
               </button>
             )}
 
-          {/* CHECK-OUT BUTTON */}
           {!isOnLeave && isCheckedIn && (
             <button
               onClick={handleNormalCheckOut}
@@ -823,7 +841,6 @@ export const Dashboard = () => {
             </button>
           )}
 
-          {/* ✅ ON-LEAVE PILL — replaces the button */}
           {isOnLeave && (
             <button
               onClick={() => navigate('/leave')}
@@ -845,7 +862,6 @@ export const Dashboard = () => {
             </button>
           )}
 
-          {/* DONE PILL */}
           {!isOnLeave && isCheckedOut && (
             <div
               style={{
@@ -864,7 +880,7 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* ✅ ON-LEAVE INFO BANNER */}
+      {/* ON-LEAVE INFO BANNER */}
       {isOnLeave && (
         <div style={{ padding: '0 16px 16px' }}>
           <div
@@ -971,16 +987,7 @@ export const Dashboard = () => {
               tint: 'rgba(16, 185, 129, 0.25)',
               accent: '#10B981',
               icon: (
-                <svg
-                  width="22"
-                  height="22"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#FFFFFF"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="4" y="4.5" width="16" height="16" rx="3.5" />
                   <path d="M8.5 2.5v4M15.5 2.5v4M4 10h16" />
                   <path d="M9 15l2 2 4-4" strokeWidth="2.4" />
@@ -994,16 +1001,7 @@ export const Dashboard = () => {
               tint: 'rgba(59, 130, 246, 0.25)',
               accent: '#3B82F6',
               icon: (
-                <svg
-                  width="22"
-                  height="22"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#FFFFFF"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M4 20V11" />
                   <path d="M10 20V5" />
                   <path d="M16 20v-6" />
@@ -1018,16 +1016,7 @@ export const Dashboard = () => {
               tint: 'rgba(245, 158, 11, 0.25)',
               accent: '#F59E0B',
               icon: (
-                <svg
-                  width="22"
-                  height="22"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#FFFFFF"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="5" width="18" height="16" rx="3" />
                   <path d="M3 10h18M8 2.5v4M16 2.5v4" />
                   <circle cx="12" cy="15.5" r="2" fill="#FFFFFF" stroke="none" />
@@ -1041,16 +1030,7 @@ export const Dashboard = () => {
               tint: 'rgba(139, 92, 246, 0.25)',
               accent: '#8B5CF6',
               icon: (
-                <svg
-                  width="22"
-                  height="22"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#FFFFFF"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="8" r="4.2" />
                   <path d="M4 21c0-4.4 3.6-7.5 8-7.5s8 3.1 8 7.5" />
                 </svg>
@@ -1168,42 +1148,12 @@ export const Dashboard = () => {
           }}
         >
           {[
-            {
-              value: dashboardData?.present || 0,
-              label: 'Present',
-              color: THEME.primary,
-              accent: THEME.primary,
-            },
-            {
-              value: dashboardData?.delayed || 0,
-              label: 'Delayed',
-              color: THEME.amber,
-              accent: THEME.amber,
-            },
-            {
-              value: dashboardData?.beyondDelay || 0,
-              label: 'Beyond',
-              color: THEME.red,
-              accent: THEME.red,
-            },
-            {
-              value: dashboardData?.leave || 0,
-              label: 'Leave',
-              color: THEME.blue,
-              accent: THEME.blue,
-            },
-            {
-              value: dashboardData?.absent || 0,
-              label: 'Absent',
-              color: THEME.red,
-              accent: THEME.red,
-            },
-            {
-              value: forgottenCount || 0,
-              label: 'Forgot',
-              color: THEME.orange,
-              accent: THEME.orange,
-            },
+            { value: dashboardData?.present || 0, label: 'Present', color: THEME.primary, accent: THEME.primary },
+            { value: dashboardData?.delayed || 0, label: 'Delayed', color: THEME.amber, accent: THEME.amber },
+            { value: dashboardData?.beyondDelay || 0, label: 'Beyond', color: THEME.red, accent: THEME.red },
+            { value: dashboardData?.leave || 0, label: 'Leave', color: THEME.blue, accent: THEME.blue },
+            { value: dashboardData?.absent || 0, label: 'Absent', color: THEME.red, accent: THEME.red },
+            { value: forgottenCount || 0, label: 'Forgot', color: THEME.orange, accent: THEME.orange },
           ].map((stat, idx) => (
             <div
               key={idx}
@@ -1214,15 +1164,12 @@ export const Dashboard = () => {
                 borderRadius: THEME.radiusMd,
                 padding: '18px 10px 16px',
                 textAlign: 'center',
-                border: `1px solid ${
-                  dark ? 'rgba(255,255,255,0.05)' : stat.accent + '25'
-                }`,
+                border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : stat.accent + '25'}`,
                 boxShadow: dark
                   ? '0 4px 12px rgba(0,0,0,0.25)'
                   : `0 4px 12px ${stat.accent}10`,
                 position: 'relative',
                 overflow: 'hidden',
-                transition: 'all 0.2s ease',
               }}
             >
               <div
@@ -1236,7 +1183,6 @@ export const Dashboard = () => {
                   opacity: 0.9,
                 }}
               />
-
               <div
                 style={{
                   position: 'absolute',
@@ -1249,7 +1195,6 @@ export const Dashboard = () => {
                   boxShadow: `0 0 8px ${stat.accent}80`,
                 }}
               />
-
               <div
                 style={{
                   fontSize: '28px',
@@ -1263,7 +1208,6 @@ export const Dashboard = () => {
               >
                 {stat.value}
               </div>
-
               <div
                 style={{
                   fontSize: '10px',
@@ -1271,7 +1215,6 @@ export const Dashboard = () => {
                   color: textMuted,
                   textTransform: 'uppercase',
                   letterSpacing: '0.7px',
-                  lineHeight: 1,
                 }}
               >
                 {stat.label}
@@ -1290,9 +1233,7 @@ export const Dashboard = () => {
               ? 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.05))'
               : 'linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)',
             borderRadius: THEME.radiusLg,
-            border: `1px solid ${
-              dark ? 'rgba(16,185,129,0.2)' : '#A7F3D0'
-            }`,
+            border: `1px solid ${dark ? 'rgba(16,185,129,0.2)' : '#A7F3D0'}`,
             display: 'flex',
             alignItems: 'center',
             gap: '12px',
@@ -1327,7 +1268,7 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* CHECK-IN MODAL — only reachable when not on leave */}
+      {/* CHECK-IN MODAL */}
       {showCheckInModal && (
         <div
           style={{
@@ -1342,9 +1283,12 @@ export const Dashboard = () => {
             zIndex: 1000,
           }}
           onClick={() => {
+            if (submitting) return;
             setShowCheckInModal(false);
             setLocationFetched(false);
             setLocation(null);
+            setAddress('');
+            setAccuracy(null);
           }}
         >
           <div
@@ -1366,27 +1310,25 @@ export const Dashboard = () => {
                 marginBottom: '20px',
               }}
             >
-              <h3
-                style={{
-                  fontSize: '18px',
-                  fontWeight: 800,
-                  color: textPrimary,
-                }}
-              >
+              <h3 style={{ fontSize: '18px', fontWeight: 800, color: textPrimary }}>
                 Check In
               </h3>
               <button
                 onClick={() => {
+                  if (submitting) return;
                   setShowCheckInModal(false);
                   setLocationFetched(false);
                   setLocation(null);
+                  setAddress('');
+                  setAccuracy(null);
                 }}
                 style={{
                   fontSize: '24px',
                   color: textMuted,
-                  cursor: 'pointer',
+                  cursor: submitting ? 'not-allowed' : 'pointer',
                   background: 'none',
                   border: 'none',
+                  opacity: submitting ? 0.4 : 1,
                 }}
               >
                 ✕
@@ -1411,13 +1353,7 @@ export const Dashboard = () => {
                 }}
               >
                 <span style={{ fontSize: '16px' }}>📍</span>
-                <span
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    color: textPrimary,
-                  }}
-                >
+                <span style={{ fontSize: '13px', fontWeight: 700, color: textPrimary }}>
                   Current Location
                 </span>
               </div>
@@ -1433,9 +1369,9 @@ export const Dashboard = () => {
                     fontWeight: 600,
                   }}
                 >
-                  ⏳ Fetching location...
+                  ⏳ Getting your location...
                 </div>
-              ) : locationError ? (
+              ) : locationError && !location ? (
                 <div
                   style={{
                     padding: '10px 12px',
@@ -1450,29 +1386,79 @@ export const Dashboard = () => {
                 </div>
               ) : location ? (
                 <>
+                  {hasValidAddress ? (
+                    <div
+                      style={{
+                        padding: '10px 12px',
+                        background: dark ? 'rgba(16,185,129,0.08)' : '#ECFDF5',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        color: textPrimary,
+                        wordBreak: 'break-word',
+                        border: `1px solid ${THEME.primary}40`,
+                        lineHeight: 1.5,
+                        fontWeight: 500,
+                      }}
+                    >
+                      📍 {address}
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        padding: '10px 12px',
+                        background: dark ? 'rgba(245,158,11,0.12)' : '#FEF3C7',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        color: dark ? '#FDE68A' : '#92400E',
+                        wordBreak: 'break-word',
+                        border: `1px solid ${THEME.amber}40`,
+                        lineHeight: 1.5,
+                        fontWeight: 600,
+                      }}
+                    >
+                      ⚠️ {locationError || 'Getting address, please wait...'}
+                    </div>
+                  )}
+
                   <div
                     style={{
-                      padding: '10px 12px',
-                      background: dark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
-                      borderRadius: '10px',
-                      fontSize: '12px',
-                      color: textPrimary,
-                      wordBreak: 'break-word',
-                      border: `1px solid ${border}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      marginTop: '8px',
+                      flexWrap: 'wrap',
                     }}
                   >
-                    📍 {address || 'Location captured'}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '10px',
-                      color: textMuted,
-                      marginTop: '6px',
-                      fontWeight: 500,
-                    }}
-                  >
-                    Lat: {location.lat.toFixed(6)}, Lng:{' '}
-                    {location.lng.toFixed(6)}
+                    <div
+                      style={{
+                        fontSize: '10px',
+                        color: textMuted,
+                        fontWeight: 500,
+                      }}
+                    >
+                      Lat: {location.lat.toFixed(6)}, Lng: {location.lng.toFixed(6)}
+                    </div>
+
+                    {/* ✅ ACCURACY BADGE */}
+                    {typeof accuracy === 'number' && (
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '3px 8px',
+                          borderRadius: '10px',
+                          background: accColor + '15',
+                          border: `1px solid ${accColor}40`,
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          color: accColor,
+                          letterSpacing: '0.3px',
+                        }}
+                      >
+                        🎯 ±{Math.round(accuracy)}m
+                      </div>
+                    )}
                   </div>
                 </>
               ) : (
@@ -1492,7 +1478,7 @@ export const Dashboard = () => {
 
               <button
                 onClick={refreshLocation}
-                disabled={fetchingLocation}
+                disabled={fetchingLocation || submitting}
                 style={{
                   marginTop: '12px',
                   padding: '9px 16px',
@@ -1502,7 +1488,8 @@ export const Dashboard = () => {
                   color: textPrimary,
                   fontSize: '12px',
                   fontWeight: 700,
-                  cursor: fetchingLocation ? 'not-allowed' : 'pointer',
+                  cursor: fetchingLocation || submitting ? 'not-allowed' : 'pointer',
+                  opacity: fetchingLocation || submitting ? 0.5 : 1,
                   fontFamily: THEME.font,
                 }}
               >
@@ -1513,10 +1500,14 @@ export const Dashboard = () => {
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
                 onClick={() => {
+                  if (submitting) return;
                   setShowCheckInModal(false);
                   setLocationFetched(false);
                   setLocation(null);
+                  setAddress('');
+                  setAccuracy(null);
                 }}
+                disabled={submitting}
                 style={{
                   flex: 1,
                   padding: '12px',
@@ -1526,7 +1517,8 @@ export const Dashboard = () => {
                   color: textSecondary,
                   fontWeight: 700,
                   fontSize: '14px',
-                  cursor: 'pointer',
+                  cursor: submitting ? 'not-allowed' : 'pointer',
+                  opacity: submitting ? 0.5 : 1,
                   fontFamily: THEME.font,
                 }}
               >
@@ -1534,9 +1526,7 @@ export const Dashboard = () => {
               </button>
               <button
                 onClick={handleCheckIn}
-                disabled={
-                  submitting || !locationFetched || !location || fetchingLocation
-                }
+                disabled={!canSubmitCheckIn}
                 style={{
                   flex: 1,
                   padding: '12px',
@@ -1545,43 +1535,25 @@ export const Dashboard = () => {
                   color: '#FFFFFF',
                   fontWeight: 800,
                   fontSize: '14px',
-                  cursor:
-                    submitting ||
-                    !locationFetched ||
-                    !location ||
-                    fetchingLocation
-                      ? 'not-allowed'
-                      : 'pointer',
-                  background:
-                    submitting ||
-                    !locationFetched ||
-                    !location ||
-                    fetchingLocation
-                      ? '#94A3B8'
-                      : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
-                  opacity:
-                    submitting ||
-                    !locationFetched ||
-                    !location ||
-                    fetchingLocation
-                      ? 0.6
-                      : 1,
+                  cursor: canSubmitCheckIn ? 'pointer' : 'not-allowed',
+                  background: canSubmitCheckIn
+                    ? `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`
+                    : '#94A3B8',
+                  opacity: canSubmitCheckIn ? 1 : 0.6,
                   fontFamily: THEME.font,
-                  boxShadow:
-                    submitting ||
-                    !locationFetched ||
-                    !location ||
-                    fetchingLocation
-                      ? 'none'
-                      : '0 4px 14px rgba(16,185,129,0.4)',
+                  boxShadow: canSubmitCheckIn
+                    ? '0 4px 14px rgba(16,185,129,0.4)'
+                    : 'none',
                 }}
               >
                 {fetchingLocation
                   ? 'Fetching…'
                   : submitting
-                  ? 'Processing…'
+                  ? 'Saving…'
                   : !locationFetched || !location
                   ? 'Wait for Location'
+                  : !hasValidAddress
+                  ? 'Waiting for Address…'
                   : 'Confirm Check In'}
               </button>
             </div>
