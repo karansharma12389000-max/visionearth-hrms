@@ -4,10 +4,11 @@
 // Stats + Admin Tools grid + poster header
 // Icons: soft-colored tiles with iOS-style 3D emoji
 //
-// FIXES:
-// ✅ totalCheckins now shown in stats grid (5th stat)
-// ✅ focus refresh — stats reload when user returns to tab
-// ✅ stats grid → 3-column layout for 5 stats + spacer
+// FIXES (v3):
+// ✅ Removed Check-Ins stat — now only 4 stats
+// ✅ Stats grid → 2-column layout for 4 stats
+// ✅ Renamed all admin tools to precise labels
+// ✅ Focus refresh — stats reload when user returns to tab
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -30,7 +31,6 @@ export const AdminDashboard = () => {
     todayPresent: 0,
     todayAbsent: 0,
     pendingLeaves: 0,
-    totalCheckins: 0,
   });
 
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
@@ -47,71 +47,71 @@ export const AdminDashboard = () => {
   const adminTools = [
     {
       icon: '👥',
-      label: 'Employees',
+      label: 'Employee Details',
       desc: 'View and manage employee details',
       path: '/admin/employees',
       color: '#8B5CF6',
     },
     {
       icon: '📋',
-      label: 'Leave Approvals',
+      label: 'Leave Approval',
       desc: 'Approve and manage leave requests',
       path: '/admin/leaves',
       color: '#FB923C',
     },
     {
       icon: '📊',
-      label: 'Attendance',
+      label: 'Attendance Report',
       desc: 'Track and manage attendance records',
       path: '/admin/attendance-report',
       color: '#10B981',
     },
     {
       icon: '📄',
-      label: 'History',
-      desc: 'View past records and activity log',
+      label: 'Attendance History',
+      desc: 'View past attendance records',
       path: '/admin/attendance-history',
       color: '#A855F7',
     },
     {
       icon: '📍',
-      label: 'Check-In/Out',
+      label: 'Check-In/Out History',
       desc: 'Manage check-in and check-out logs',
       path: '/admin/checkin-history',
       color: '#EC4899',
     },
     {
       icon: '🗺️',
-      label: 'Timeline',
+      label: 'Timeline Calendar',
       desc: 'View employee activity timeline',
       path: '/admin/timeline',
       color: '#3B82F6',
     },
     {
       icon: '⚠️',
-      label: 'Forgot',
-      desc: 'Reset password and recover access',
+      label: 'Forgot Tracker',
+      desc: 'Track employees who forgot to check out',
       path: '/admin/forgot-tracker',
       color: '#F59E0B',
     },
     {
       icon: '💰',
-      label: 'Salary',
-      desc: 'Manage salary details and payrolls',
+      label: 'Salary Calculator',
+      desc: 'Manage salary details and payroll',
       path: '/admin/salary-calculator',
       color: '#10B981',
     },
     {
       icon: '🎉',
-      label: 'Holidays',
+      label: 'Holiday',
       desc: 'View and manage holiday calendar',
       path: '/admin/holidays',
       color: '#A855F7',
     },
     {
       icon: '📁',
-      label: 'Projects',
-      desc: 'Manage projects and assignments',
+      label: 'Project Code Editor',
+      desc: 'Manage projects and code',
       path: '/admin/projects',
       color: '#3B82F6',
     },
@@ -127,12 +127,8 @@ export const AdminDashboard = () => {
       const today = new Date().toLocaleDateString('en-CA', {
         timeZone: 'Asia/Kolkata',
       });
-      const dayStartUTC = new Date(`${today}T00:00:00+05:30`).toISOString();
-      const dayEndUTC = new Date(
-        `${today}T23:59:59.999+05:30`
-      ).toISOString();
 
-      const [empRes, attRes, leaveRes, checkinRes] = await Promise.all([
+      const [empRes, attRes, leaveRes] = await Promise.all([
         supabase
           .from('employees')
           .select('*', { count: 'exact', head: true }),
@@ -146,19 +142,11 @@ export const AdminDashboard = () => {
           .from('leave_requests')
           .select('*', { count: 'exact', head: true })
           .eq('status', 'Pending'),
-
-        supabase
-          .from('check_in_out')
-          .select('id', { count: 'exact', head: true })
-          .gte('check_in_time', dayStartUTC)
-          .lte('check_in_time', dayEndUTC),
       ]);
 
       if (empRes.error) console.warn('emp fetch:', empRes.error.message);
       if (attRes.error) console.warn('att fetch:', attRes.error.message);
       if (leaveRes.error) console.warn('leave fetch:', leaveRes.error.message);
-      if (checkinRes.error)
-        console.warn('checkin fetch:', checkinRes.error.message);
 
       const totalEmployees = empRes.count || 0;
       const todayAttendance = attRes.data || [];
@@ -169,14 +157,12 @@ export const AdminDashboard = () => {
         (a) => a.status === 'A' || a.status === 'Absent'
       ).length;
       const pendingLeaves = leaveRes.count || 0;
-      const totalCheckins = checkinRes.count || 0;
 
       setStats({
         totalEmployees,
         todayPresent,
         todayAbsent,
         pendingLeaves,
-        totalCheckins,
       });
     } catch (error) {
       console.error('Error fetching admin dashboard:', error);
@@ -190,7 +176,7 @@ export const AdminDashboard = () => {
     fetchDashboardData();
   }, []);
 
-  // ✅ FIX: refresh stats when tab regains focus
+  // Refresh stats when tab regains focus
   useEffect(() => {
     const onFocus = () => fetchDashboardData();
     window.addEventListener('focus', onFocus);
@@ -349,7 +335,9 @@ export const AdminDashboard = () => {
               </div>
 
               <button
+                type="button"
                 onClick={toggleDark}
+                aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
                 style={{
                   width: '40px',
                   height: '40px',
@@ -412,12 +400,12 @@ export const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* STATS GRID — now 5 stats + 1 spacer = 6 cells → 3 cols × 2 rows */}
+        {/* STATS GRID — 4 stats, 2×2 layout */}
         <div style={{ padding: '0 16px 16px' }}>
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateColumns: 'repeat(2, 1fr)',
               gap: '10px',
             }}
           >
@@ -446,12 +434,6 @@ export const AdminDashboard = () => {
                 color: THEME.amber,
                 accent: THEME.amber,
               },
-              {
-                value: stats.totalCheckins,
-                label: 'Check-Ins',
-                color: THEME.purple,
-                accent: THEME.purple,
-              },
             ].map((stat, idx) => (
               <div
                 key={idx}
@@ -460,7 +442,7 @@ export const AdminDashboard = () => {
                     ? `linear-gradient(145deg, ${stat.accent}15 0%, #1E293B 60%)`
                     : `linear-gradient(145deg, ${stat.accent}10 0%, #FFFFFF 60%)`,
                   borderRadius: THEME.radiusMd,
-                  padding: '14px 10px 12px',
+                  padding: '14px 12px 12px',
                   textAlign: 'left',
                   border: `1px solid ${
                     dark ? 'rgba(255,255,255,0.05)' : stat.accent + '25'
@@ -497,7 +479,7 @@ export const AdminDashboard = () => {
                 />
                 <div
                   style={{
-                    fontSize: '24px',
+                    fontSize: '26px',
                     fontWeight: 900,
                     color: stat.color,
                     lineHeight: 1,
@@ -510,7 +492,7 @@ export const AdminDashboard = () => {
                 </div>
                 <div
                   style={{
-                    fontSize: '9px',
+                    fontSize: '10px',
                     fontWeight: 800,
                     color: textMuted,
                     textTransform: 'uppercase',
@@ -783,8 +765,10 @@ export const AdminDashboard = () => {
             {adminTools.map((tool) => (
               <button
                 key={tool.path}
+                type="button"
                 onClick={() => navigate(tool.path)}
                 title={tool.label}
+                aria-label={tool.label}
                 style={{
                   background: dark ? '#1E293B' : '#FFFFFF',
                   border: `1px solid ${

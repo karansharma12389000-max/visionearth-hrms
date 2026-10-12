@@ -44,31 +44,31 @@ export const api = {
 }
 
 // Keep DEMO_EMPLOYEES for fallback
-export const DEMO_EMPLOYEES = [
-  { 
-    id: 'demo-admin-001', 
-    employee_id: 'EMP001', 
-    email: 'admin@visionearth.com', 
-    name: 'Admin User', 
-    department: 'IT', 
-    designation: 'System Administrator', 
-    reporting_location: 'Head Office', 
-    role: 'Admin', 
-    phone: '9000000001', 
-    is_active: true, 
-    password: 'admin123' 
-  },
-  { 
-    id: 'demo-emp-002', 
-    employee_id: 'EMP002', 
-    email: 'john.doe@visionearth.com', 
-    name: 'John Doe', 
-    department: 'Engineering', 
-    designation: 'Software Engineer', 
-    reporting_location: 'Head Office', 
-    role: 'Employee', 
-    phone: '9000000002', 
-    is_active: true, 
-    password: 'emp123' 
-  }
-]
+// src/services/api.js
+
+// Demo employees — only available in demo mode (VITE_DEMO_MODE=true)
+export const DEMO_EMPLOYEES =
+  import.meta.env.VITE_DEMO_MODE === 'true'
+    ? [
+        // ⬇️ PASTE YOUR DEMO USER OBJECTS HERE
+        {
+          id: 'demo-1',
+          email: 'admin@visionearth.com',
+          password: 'admin123',
+          name: 'Demo Admin',
+          employee_id: 'EMP001',
+          role: 'Admin',
+          department: 'Management',
+        },
+        {
+          id: 'demo-2',
+          email: 'employee@visionearth.com',
+          password: 'emp123',
+          name: 'Demo Employee',
+          employee_id: 'EMP002',
+          role: 'Employee',
+          department: 'Operations',
+        },
+        // Add more demo users as needed
+      ]
+    : [];

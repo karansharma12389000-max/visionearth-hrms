@@ -2,14 +2,70 @@
 //
 // Vision Earth HRMS — Premium Login
 // Green gradient, decorative circles, Remember Me, WhatsApp contact admin.
+//
+// 🔧 FIXES (v3 — production ready):
+//  1. Static import of DEMO_EMPLOYEES (no top-level await — safe for Vite build)
+//  2. Demo creds gated behind VITE_DEMO_MODE env (empty array in prod)
+//  3. is_active checked from DB (deactivated users blocked)
+//  4. Single source of truth for navigation (useEffect only)
+//  5. Rate limiting: 3 failed attempts → 15s lockout with LIVE countdown
+//  6. required + aria-invalid + aria-describedby on inputs
+//  7. id/htmlFor on labels + inputs
+//  8. Remember-me is a real accessible checkbox (role + tabIndex + keyboard)
+//  9. WhatsApp template prefills typed email (trimmed)
+// 10. WhatsApp number via VITE_ADMIN_WHATSAPP env
+// 11. Double-submit guard via useRef
+// 12. Mounted-ref guard prevents setState-after-unmount warning
+// 13. Password toggle disabled style (opacity + cursor)
+// 14. Error banner has role="alert"
+// 15. Email trimmed on blur
+// 16. console.error only in DEV
+// 17. Forgot password link is a <button> (no URL hash pollution)
+// 18. Live lockout countdown via separate `now` state (ticks every 500ms)
 
-import React, { useState, useEffect } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { login, DEMO_EMPLOYEES } from '../../services/api';
+import {
+  login,
+  DEMO_EMPLOYEES as DEMO_EMPLOYEES_IMPORT,
+} from '../../services/api';
 import { THEME, isDark } from '../../utils/designTokens';
+
+// ============================================
+// 🔧 FIX #1 + #2 — Demo mode gate (no top-level await)
+// ============================================
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
+const DEMO_EMPLOYEES = DEMO_MODE ? DEMO_EMPLOYEES_IMPORT || [] : [];
+
+// 🔧 FIX #10 — WhatsApp number via env
+const ADMIN_WHATSAPP =
+  import.meta.env.VITE_ADMIN_WHATSAPP || '918424958959';
+
+const WHATSAPP_TEMPLATE = `Hello Vision Earth HRMS Team,
+
+I need help with my HRMS account access.
+
+My details:
+- Name: 
+- Employee ID: 
+- Registered Email: {EMAIL}
+- Issue: {ISSUE}
+
+Please assist me at your earliest convenience.
+
+Thank you.`;
+
+// 🔧 FIX #5 — Rate limiting constants
+const MAX_FAILED_ATTEMPTS = 3;
+const LOCKOUT_DURATION_MS = 15000; // 15s
 
 export const Login = () => {
   const navigate = useNavigate();
@@ -24,34 +80,56 @@ export const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
-  // ============================================
-  // ✅ WHATSAPP CONFIG — UPDATE THESE
-  // ============================================
-  // Country code + number, no + or spaces.
-  // India example: 91 + 10-digit number = 918424958959
-  const ADMIN_WHATSAPP = '918424958959'; // ← UPDATE THIS
+  // 🔧 FIX #5 — rate limiting
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockUntil, setLockUntil] = useState(0);
 
-  const WHATSAPP_TEMPLATE = `Hello Vision Earth HRMS Team,
+  // 🔧 FIX #18 — live clock for countdown
+  const [now, setNow] = useState(Date.now());
 
-I need help with my HRMS account access.
+  // 🔧 FIX #11 — double-submit guard
+  const submittingRef = useRef(false);
 
-My details:
-- Name: 
-- Employee ID: 
-- Registered Email: 
-- Issue: 
-
-Please assist me at your earliest convenience.
-
-Thank you.`;
+  // 🔧 FIX #12 — mounted guard
+  const mountedRef = useRef(true);
 
   // ============================================
-  // OPEN WHATSAPP WITH PRE-FILLED MESSAGE
+  // MOUNT / UNMOUNT
   // ============================================
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // ============================================
+  // 🔧 FIX #17 — dynamic WhatsApp URL builder
+  // ============================================
+  const buildWhatsAppUrl = useCallback(
+    (issueHint = '') => {
+      const body = WHATSAPP_TEMPLATE
+        .replace('{EMAIL}', (email || '').trim() || '(not typed yet)')
+        .replace('{ISSUE}', issueHint || '(describe your issue)');
+      return `https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(body)}`;
+    },
+    [email]
+  );
+
   const handleContactAdmin = () => {
-    const encoded = encodeURIComponent(WHATSAPP_TEMPLATE);
-    const url = `https://wa.me/${ADMIN_WHATSAPP}?text=${encoded}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+    window.open(
+      buildWhatsAppUrl('Unable to login'),
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
+  const handleForgotPassword = () => {
+    window.open(
+      buildWhatsAppUrl('Forgot password — please reset my account'),
+      '_blank',
+      'noopener,noreferrer'
+    );
   };
 
   // ============================================
@@ -64,23 +142,50 @@ Thank you.`;
         setEmail(saved);
         setRememberMe(true);
       }
-    } catch {}
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   // ============================================
-  // AUTH REDIRECT
+  // 🔧 FIX #4 — AUTH REDIRECT (single source of truth)
   // ============================================
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/dashboard');
+      navigate('/dashboard', { replace: true });
     }
   }, [isAuthenticated, navigate]);
+
+  // ============================================
+  // 🔧 FIX #5 / #18 — LOCKOUT COUNTDOWN (live ticking)
+  // ============================================
+  const isLockedOut = lockUntil > now;
+  const secondsRemaining = isLockedOut
+    ? Math.max(1, Math.ceil((lockUntil - now) / 1000))
+    : 0;
+
+  useEffect(() => {
+    if (!isLockedOut) return;
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [isLockedOut]);
 
   // ============================================
   // LOGIN HANDLER
   // ============================================
   const handleLogin = async (e) => {
     e.preventDefault();
+
+    // 🔧 FIX #11 — block double-submit
+    if (submittingRef.current) return;
+
+    // Block while locked out
+    if (isLockedOut) {
+      setError(
+        `Too many failed attempts. Try again in ${secondsRemaining}s.`
+      );
+      return;
+    }
 
     const trimmedEmail = email.trim();
     const rawPassword = password;
@@ -90,38 +195,54 @@ Thank you.`;
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
     setError('');
 
     try {
+      // Persist / clear remembered email
       try {
         if (rememberMe) {
           localStorage.setItem('ve_login_email', trimmedEmail);
         } else {
           localStorage.removeItem('ve_login_email');
         }
-      } catch {}
-
-      const found = DEMO_EMPLOYEES.find(
-        (emp) =>
-          emp.email.toLowerCase() === trimmedEmail.toLowerCase() &&
-          emp.password === rawPassword
-      );
-
-      if (found) {
-        const { password: _, ...userData } = found;
-        authLogin(userData);
-        toast.success('Welcome back, ' + userData.name + '!');
-        navigate('/dashboard');
-        setLoading(false);
-        return;
+      } catch {
+        /* ignore */
       }
 
+      // 🔧 FIX #2 — demo path (only when DEMO_MODE is true)
+      if (DEMO_MODE && DEMO_EMPLOYEES.length > 0) {
+        const found = DEMO_EMPLOYEES.find(
+          (emp) =>
+            emp.email.toLowerCase() === trimmedEmail.toLowerCase() &&
+            emp.password === rawPassword
+        );
+
+        if (found) {
+          const { password: _pw, ...userData } = found;
+          authLogin({ ...userData, is_active: true });
+          toast.success('Welcome back, ' + userData.name + '!');
+          return; // 🔧 FIX #4 — useEffect handles redirect
+        }
+      }
+
+      // Real API login
       const result = await login(trimmedEmail, rawPassword);
 
-      if (result.ok && result.employee) {
+      if (result?.ok && result?.employee) {
+        // 🔧 FIX #3 — respect is_active from DB
+        if (result.employee.is_active === false) {
+          setError(
+            'Your account has been deactivated. Please contact your admin.'
+          );
+          return;
+        }
+
         const userData = {
-          id: result.employee.id || 'EMP' + Date.now().toString().slice(-6),
+          id:
+            result.employee.id ||
+            'EMP' + Date.now().toString().slice(-6),
           employee_id:
             result.employee.employee_id ||
             'EMP' + Date.now().toString().slice(-6),
@@ -131,7 +252,8 @@ Thank you.`;
           company: result.employee.company || 'N/A',
           department: result.employee.department || 'N/A',
           designation: result.employee.designation || 'N/A',
-          reporting_location: result.employee.reporting_location || 'N/A',
+          reporting_location:
+            result.employee.reporting_location || 'N/A',
           phone: result.employee.phone || 'N/A',
           address: result.employee.address || '',
           city: result.employee.city || '',
@@ -139,19 +261,48 @@ Thank you.`;
           pincode: result.employee.pincode || '',
           emergency_contact: result.employee.emergency_contact || '',
           date_of_joining: result.employee.date_of_joining || null,
-          is_active: true,
+          is_active: result.employee.is_active ?? true,
         };
         authLogin(userData);
         toast.success('Welcome back, ' + userData.name + '!');
-        navigate('/dashboard');
+        // 🔧 FIX #4 — useEffect handles navigation
       } else {
-        setError(result.message || 'Invalid email or password.');
+        // 🔧 FIX #5 — track failed attempts + lockout
+        const next = failedAttempts + 1;
+        setFailedAttempts(next);
+
+        if (next >= MAX_FAILED_ATTEMPTS) {
+          setLockUntil(Date.now() + LOCKOUT_DURATION_MS);
+          setNow(Date.now());
+          setFailedAttempts(0);
+          setError(
+            `Too many failed attempts. Locked for ${
+              LOCKOUT_DURATION_MS / 1000
+            }s.`
+          );
+        } else {
+          setError(
+            result?.message ||
+              `Invalid email or password. ${
+                MAX_FAILED_ATTEMPTS - next
+              } attempt(s) left.`
+          );
+        }
       }
     } catch (err) {
-      setError('Login failed. Please try again.');
-      console.error('Login error:', err);
+      // 🔧 FIX #16 — quiet in production
+      if (import.meta.env.DEV) {
+        console.error('Login error:', err);
+      }
+      if (mountedRef.current) {
+        setError('Login failed. Please try again.');
+      }
     } finally {
-      setLoading(false);
+      // 🔧 FIX #12 — prevent setState-after-unmount
+      if (mountedRef.current) {
+        setLoading(false);
+      }
+      submittingRef.current = false;
     }
   };
 
@@ -168,6 +319,8 @@ Thank you.`;
   const textMuted = dark ? '#64748B' : THEME.textMuted;
   const border = dark ? 'rgba(255,255,255,0.08)' : THEME.border;
   const inputBg = dark ? '#0F172A' : '#F8FAFC';
+
+  const isFormDisabled = loading || isLockedOut;
 
   return (
     <div
@@ -238,7 +391,9 @@ Thank you.`;
                 : 'linear-gradient(135deg, #FFFFFF, #ECFDF5)',
               boxShadow:
                 '0 12px 32px rgba(16,185,129,0.25), 0 2px 8px rgba(0,0,0,0.06)',
-              border: `1px solid ${dark ? 'rgba(16,185,129,0.2)' : '#D1FAE5'}`,
+              border: `1px solid ${
+                dark ? 'rgba(16,185,129,0.2)' : '#D1FAE5'
+              }`,
               overflow: 'hidden',
               padding: '10px',
             }}
@@ -246,6 +401,8 @@ Thank you.`;
             <img
               src="/vision-earth-logo.png"
               alt="Vision Earth"
+              width="88"
+              height="88"
               style={{
                 width: '100%',
                 height: '100%',
@@ -327,8 +484,11 @@ Thank you.`;
             </p>
           </div>
 
+          {/* 🔧 FIX #14 — role="alert" */}
           {error && (
             <div
+              id="login-error"
+              role="alert"
               style={{
                 background: dark ? 'rgba(239,68,68,0.1)' : '#FEF2F2',
                 padding: '11px 14px',
@@ -343,7 +503,12 @@ Thank you.`;
                 animation: 'shake 0.4s ease-out',
               }}
             >
-              <span style={{ fontSize: '16px', flexShrink: 0 }}>⚠️</span>
+              <span
+                style={{ fontSize: '16px', flexShrink: 0 }}
+                aria-hidden="true"
+              >
+                ⚠️
+              </span>
               <p
                 style={{
                   color: dark ? '#FCA5A5' : '#DC2626',
@@ -358,10 +523,11 @@ Thank you.`;
             </div>
           )}
 
-          <form onSubmit={handleLogin}>
+          <form onSubmit={handleLogin} noValidate>
             {/* EMAIL */}
             <div style={{ marginBottom: '16px' }}>
               <label
+                htmlFor="login-email"
                 style={{
                   display: 'block',
                   fontSize: '11px',
@@ -389,20 +555,27 @@ Thank you.`;
               >
                 <span
                   style={{
-                    padding: '0 0 0 14px',
+                    paddingLeft: 14,
+                    paddingRight: 4,
                     fontSize: '15px',
                     color: textMuted,
                     flexShrink: 0,
                   }}
+                  aria-hidden="true"
                 >
                   ✉️
                 </span>
                 <input
+                  id="login-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  onBlur={(e) => setEmail(e.target.value.trim())}
                   placeholder="you@visionearth.com"
                   autoComplete="email"
+                  required
+                  aria-invalid={!!error}
+                  aria-describedby={error ? 'login-error' : undefined}
                   style={{
                     flex: 1,
                     padding: '13px 12px',
@@ -415,7 +588,7 @@ Thank you.`;
                     fontFamily: THEME.font,
                     fontWeight: 500,
                   }}
-                  disabled={loading}
+                  disabled={isFormDisabled}
                 />
               </div>
             </div>
@@ -423,6 +596,7 @@ Thank you.`;
             {/* PASSWORD */}
             <div style={{ marginBottom: '14px' }}>
               <label
+                htmlFor="login-password"
                 style={{
                   display: 'block',
                   fontSize: '11px',
@@ -450,20 +624,27 @@ Thank you.`;
               >
                 <span
                   style={{
-                    padding: '0 0 0 14px',
+                    paddingLeft: 14,
+                    paddingRight: 4,
                     fontSize: '15px',
                     color: textMuted,
                     flexShrink: 0,
                   }}
+                  aria-hidden="true"
                 >
                   🔒
                 </span>
                 <input
+                  id="login-password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   autoComplete="current-password"
+                  required
+                  minLength={6}
+                  aria-invalid={!!error}
+                  aria-describedby={error ? 'login-error' : undefined}
                   style={{
                     flex: 1,
                     padding: '13px 12px',
@@ -476,7 +657,7 @@ Thank you.`;
                     fontFamily: THEME.font,
                     fontWeight: 500,
                   }}
-                  disabled={loading}
+                  disabled={isFormDisabled}
                 />
                 <button
                   type="button"
@@ -485,7 +666,7 @@ Thank you.`;
                     padding: '0 14px',
                     background: 'transparent',
                     border: 'none',
-                    cursor: 'pointer',
+                    cursor: isFormDisabled ? 'not-allowed' : 'pointer',
                     fontSize: '15px',
                     color: textMuted,
                     minWidth: '44px',
@@ -493,26 +674,66 @@ Thank you.`;
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    opacity: isFormDisabled ? 0.5 : 1,
                   }}
-                  disabled={loading}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  disabled={isFormDisabled}
+                  aria-label={
+                    showPassword ? 'Hide password' : 'Show password'
+                  }
                 >
                   {showPassword ? '🙈' : '👁️'}
                 </button>
               </div>
+
+              {/* 🔧 FIX #17 — Forgot password as button */}
+              <div
+                style={{
+                  textAlign: 'right',
+                  marginTop: '6px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    color: THEME.primary,
+                    cursor: 'pointer',
+                    fontFamily: THEME.font,
+                  }}
+                >
+                  Forgot password?
+                </button>
+              </div>
             </div>
 
-            {/* REMEMBER ME */}
+            {/* 🔧 FIX #8 — REMEMBER ME (accessible) */}
             <div
+              role="checkbox"
+              aria-checked={rememberMe}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  if (!isFormDisabled) setRememberMe(!rememberMe);
+                }
+              }}
+              onClick={() =>
+                !isFormDisabled && setRememberMe(!rememberMe)
+              }
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
                 marginBottom: '20px',
-                cursor: 'pointer',
+                cursor: isFormDisabled ? 'not-allowed' : 'pointer',
                 userSelect: 'none',
+                outline: 'none',
               }}
-              onClick={() => !loading && setRememberMe(!rememberMe)}
             >
               <div
                 style={{
@@ -522,7 +743,9 @@ Thank you.`;
                   border: `2px solid ${
                     rememberMe ? THEME.primary : border
                   }`,
-                  background: rememberMe ? THEME.primary : 'transparent',
+                  background: rememberMe
+                    ? THEME.primary
+                    : 'transparent',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -543,6 +766,7 @@ Thank you.`;
                     strokeWidth="3.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
+                    aria-hidden="true"
                   >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
@@ -562,24 +786,24 @@ Thank you.`;
             {/* SUBMIT */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={isFormDisabled}
               style={{
                 width: '100%',
                 padding: '15px',
                 border: 'none',
                 borderRadius: '14px',
-                background: loading
+                background: isFormDisabled
                   ? '#94A3B8'
                   : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
                 color: '#FFFFFF',
                 fontSize: '15px',
                 fontWeight: 800,
-                cursor: loading ? 'not-allowed' : 'pointer',
+                cursor: isFormDisabled ? 'not-allowed' : 'pointer',
                 transition: 'all 0.2s ease',
-                boxShadow: loading
+                boxShadow: isFormDisabled
                   ? 'none'
                   : `0 8px 20px ${THEME.primary}50`,
-                opacity: loading ? 0.7 : 1,
+                opacity: isFormDisabled ? 0.7 : 1,
                 fontFamily: THEME.font,
                 letterSpacing: '0.4px',
                 display: 'flex',
@@ -588,13 +812,13 @@ Thank you.`;
                 gap: '8px',
               }}
               onMouseEnter={(e) => {
-                if (!loading) {
+                if (!isFormDisabled) {
                   e.currentTarget.style.transform = 'translateY(-2px)';
                   e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.primary}60`;
                 }
               }}
               onMouseLeave={(e) => {
-                if (!loading) {
+                if (!isFormDisabled) {
                   e.currentTarget.style.transform = 'translateY(0)';
                   e.currentTarget.style.boxShadow = `0 8px 20px ${THEME.primary}50`;
                 }
@@ -615,16 +839,21 @@ Thank you.`;
                   />
                   Signing in...
                 </>
+              ) : isLockedOut ? (
+                <>
+                  <span aria-hidden="true">🔒</span>
+                  Locked — wait {secondsRemaining}s
+                </>
               ) : (
                 <>
-                  <span>🔓</span>
+                  <span aria-hidden="true">🔓</span>
                   Sign In
                 </>
               )}
             </button>
           </form>
 
-          {/* ✅ CONTACT ADMIN — WhatsApp */}
+          {/* CONTACT ADMIN — WhatsApp */}
           <div
             style={{
               marginTop: '20px',
@@ -668,13 +897,13 @@ Thank you.`;
                 e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              {/* WhatsApp icon */}
               <svg
                 width="16"
                 height="16"
                 viewBox="0 0 24 24"
                 fill="#25D366"
                 xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
               >
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
               </svg>
@@ -718,7 +947,13 @@ Thank you.`;
           <p style={{ margin: 0 }}>
             © {new Date().getFullYear()} Vision Earth HRMS
           </p>
-          <p style={{ margin: '4px 0 0', fontSize: '10px', opacity: 0.7 }}>
+          <p
+            style={{
+              margin: '4px 0 0',
+              fontSize: '10px',
+              opacity: 0.7,
+            }}
+          >
             Smart Attendance for a Better Tomorrow
           </p>
         </div>
