@@ -2,6 +2,9 @@
 //
 // Vision Earth HRMS — Premium Employee Management
 // Now with click-to-view employee details + inline edit.
+//
+// ➕ ADDED: Realtime subscription — when an employee edits their own
+//           profile from /profile, this page updates instantly.
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -99,6 +102,57 @@ export const Employees = () => {
 
   useEffect(() => {
     if (isAdmin) fetchEmployees();
+  }, [isAdmin]);
+
+  // ============================================
+  // ➕ ADDED: REALTIME — sync employee self-edits
+  // ============================================
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const channel = supabase
+      .channel('employees-live-admin')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'employees' },
+        (payload) => {
+          try {
+            if (payload.eventType === 'UPDATE' && payload.new) {
+              setEmployees((prev) =>
+                prev.map((e) => (e.id === payload.new.id ? payload.new : e))
+              );
+              setSelectedEmployee((prev) =>
+                prev?.id === payload.new.id ? payload.new : prev
+              );
+            } else if (payload.eventType === 'INSERT' && payload.new) {
+              setEmployees((prev) => {
+                if (prev.some((e) => e.id === payload.new.id)) return prev;
+                return [...prev, payload.new].sort((a, b) =>
+                  (a.name || '').localeCompare(b.name || '')
+                );
+              });
+            } else if (payload.eventType === 'DELETE' && payload.old) {
+              setEmployees((prev) =>
+                prev.filter((e) => e.id !== payload.old.id)
+              );
+              setSelectedEmployee((prev) =>
+                prev?.id === payload.old.id ? null : prev
+              );
+            }
+          } catch (err) {
+            console.warn('Realtime handler error:', err);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {
+        /* ignore */
+      }
+    };
   }, [isAdmin]);
 
   // ============================================
@@ -503,6 +557,7 @@ export const Employees = () => {
             </div>
 
             <button
+              type="button"
               onClick={() => setShowAddModal(true)}
               style={{
                 padding: '10px 16px',
@@ -540,7 +595,7 @@ export const Employees = () => {
         </div>
       </div>
 
-      {/* STATS GRID — Attractive */}
+      {/* STATS GRID */}
       <div style={{ padding: '0 16px 12px' }}>
         <div
           style={{
@@ -724,7 +779,6 @@ export const Employees = () => {
                   e.currentTarget.style.borderColor = border;
                 }}
               >
-                {/* Avatar */}
                 <div
                   style={{
                     width: '46px',
@@ -748,7 +802,6 @@ export const Employees = () => {
                   {emp.name?.charAt(0).toUpperCase() || '?'}
                 </div>
 
-                {/* Info */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
@@ -810,7 +863,6 @@ export const Employees = () => {
                   </div>
                 </div>
 
-                {/* Right side */}
                 <div
                   style={{
                     display: 'flex',
@@ -855,9 +907,7 @@ export const Employees = () => {
         )}
       </div>
 
-      {/* ============================================ */}
-      {/* ✅ EMPLOYEE DETAIL MODAL */}
-      {/* ============================================ */}
+      {/* EMPLOYEE DETAIL MODAL */}
       {showDetailModal && selectedEmployee && (
         <div
           style={{
@@ -890,7 +940,6 @@ export const Employees = () => {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header with Avatar */}
             <div
               style={{
                 background: dark
@@ -902,6 +951,7 @@ export const Employees = () => {
               }}
             >
               <button
+                type="button"
                 onClick={() => {
                   setShowDetailModal(false);
                   setSelectedEmployee(null);
@@ -1020,11 +1070,9 @@ export const Employees = () => {
               </div>
             </div>
 
-            {/* Modal Body */}
             <div style={{ padding: '20px' }}>
               {!isEditing ? (
                 <>
-                  {/* Basic Info Section */}
                   <SectionLabel text="Basic Info" dark={dark} border={border} />
                   <DetailRow
                     label="Employee ID"
@@ -1085,12 +1133,7 @@ export const Employees = () => {
                     border={border}
                   />
 
-                  {/* Location Section */}
-                  <SectionLabel
-                    text="Location"
-                    dark={dark}
-                    border={border}
-                  />
+                  <SectionLabel text="Location" dark={dark} border={border} />
                   <DetailRow
                     label="Reporting Location"
                     value={selectedEmployee.reporting_location || '—'}
@@ -1132,7 +1175,6 @@ export const Employees = () => {
                     border={border}
                   />
 
-                  {/* Other Section */}
                   <SectionLabel text="Other" dark={dark} border={border} />
                   <DetailRow
                     label="Date of Joining"
@@ -1163,7 +1205,6 @@ export const Employees = () => {
                     isLast
                   />
 
-                  {/* Action Buttons */}
                   <div
                     style={{
                       display: 'flex',
@@ -1172,6 +1213,7 @@ export const Employees = () => {
                     }}
                   >
                     <button
+                      type="button"
                       onClick={() => setIsEditing(true)}
                       style={{
                         flex: 1,
@@ -1195,8 +1237,8 @@ export const Employees = () => {
                       ✏️ Edit
                     </button>
                     {selectedEmployee.id !== user?.id && (
-                      // ✅ FIX: set bool + object
                       <button
+                        type="button"
                         onClick={() => {
                           setEmployeeToDelete(selectedEmployee);
                           setShowDeleteModal(true);
@@ -1227,7 +1269,6 @@ export const Employees = () => {
                 </>
               ) : (
                 <>
-                  {/* EDIT MODE */}
                   <div
                     style={{
                       fontSize: '11px',
@@ -1408,7 +1449,6 @@ export const Employees = () => {
                     border={border}
                   />
 
-                  {/* Save/Cancel */}
                   <div
                     style={{
                       display: 'flex',
@@ -1417,6 +1457,7 @@ export const Employees = () => {
                     }}
                   >
                     <button
+                      type="button"
                       onClick={() => {
                         setIsEditing(false);
                         setEditData({
@@ -1455,6 +1496,7 @@ export const Employees = () => {
                       Cancel
                     </button>
                     <button
+                      type="button"
                       onClick={handleSaveEdit}
                       disabled={saving}
                       style={{
@@ -1484,9 +1526,7 @@ export const Employees = () => {
         </div>
       )}
 
-      {/* ============================================ */}
-      {/* ADD EMPLOYEE MODAL (unchanged) */}
-      {/* ============================================ */}
+      {/* ADD EMPLOYEE MODAL */}
       {showAddModal && (
         <div
           style={{
@@ -1535,6 +1575,7 @@ export const Employees = () => {
                 Add Employee
               </h3>
               <button
+                type="button"
                 onClick={() => setShowAddModal(false)}
                 style={{
                   fontSize: '22px',
@@ -1857,6 +1898,7 @@ export const Employees = () => {
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
+                type="button"
                 onClick={() => {
                   setShowDeleteModal(false);
                   setEmployeeToDelete(null);
@@ -1877,6 +1919,7 @@ export const Employees = () => {
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={() => handleDeleteEmployee(employeeToDelete)}
                 disabled={submitting}
                 style={{

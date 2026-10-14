@@ -8,6 +8,7 @@
 // ✅ Modal closes INSTANTLY after DB write
 // ✅ Any-language address (no filtering)
 // ✅ Location logic in ../../utils/locationService
+// ✅ ⏻ End Session button — full session wipe (no DB data lost)
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -15,7 +16,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../services/supabase';
-import { formatTime, formatDate } from '../../utils/helpers';
+import { formatTime, formatDate, confirmMsg } from '../../utils/helpers';
 import { getTodayIST } from '../../utils/timeUtils';
 import BottomNavigation from '../../components/BottomNavigation';
 import AttendanceFormModal from '../../components/AttendanceFormModal';
@@ -32,7 +33,7 @@ import {
 export const Dashboard = () => {
   const navigate = useNavigate();
   const { theme, toggleDark } = useTheme();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const dark = isDark(theme);
 
   const {
@@ -59,7 +60,7 @@ export const Dashboard = () => {
 
   const [location, setLocation] = useState(null);
   const [address, setAddress] = useState('');
-  const [accuracy, setAccuracy] = useState(null);         // ✅ meters
+  const [accuracy, setAccuracy] = useState(null);
   const [fetchingLocation, setFetchingLocation] = useState(false);
   const [locationError, setLocationError] = useState('');
   const [locationFetched, setLocationFetched] = useState(false);
@@ -352,6 +353,56 @@ export const Dashboard = () => {
   };
 
   // ============================================
+  // ✅ END SESSION — clears everything in the background
+  //    Signs out, wipes session storage, forces fresh login.
+  //    Does NOT delete any database rows.
+  // ============================================
+  const handleEndSession = () => {
+    confirmMsg(
+      'End Session',
+      'This will sign you out completely and return to the login screen. Your attendance, check-ins, and leave records are safe. Re-login will prompt for location again if permission is reset in your browser (tap the 🔒 icon in the address bar).',
+      async () => {
+        try {
+          // 1. Wipe session-scoped browser storage
+          try {
+            sessionStorage.clear();
+          } catch {
+            /* ignore */
+          }
+
+          // 2. Remove login persistence keys (email, etc.) but keep local caches
+          try {
+            localStorage.removeItem('ve_login_email');
+          } catch {
+            /* ignore */
+          }
+
+          // 3. Clear any pending app state from memory
+          setLocation(null);
+          setAddress('');
+          setAccuracy(null);
+          setLocationFetched(false);
+          setLocationError('');
+          setShowCheckInModal(false);
+          setShowAttendanceForm(false);
+          setFormRecord(null);
+          setFormMode('normal');
+
+          // 4. Call AuthContext logout (clears user + ve_session)
+          if (typeof logout === 'function') {
+            await Promise.resolve(logout());
+          }
+        } catch (err) {
+          console.warn('End session error:', err);
+        } finally {
+          // 5. Hard navigate to login (fresh mount, no back-stack)
+          navigate('/login', { replace: true });
+        }
+      }
+    );
+  };
+
+  // ============================================
   // LOADING
   // ============================================
   if (loading || checkInLoading || leaveLoading) {
@@ -556,26 +607,58 @@ export const Dashboard = () => {
               </div>
             </div>
 
-            <button
-              onClick={toggleDark}
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                border: 'none',
-                background: dark
-                  ? 'rgba(255,255,255,0.08)'
-                  : 'linear-gradient(135deg, #FEF3C7, #FDE68A)',
-                fontSize: '16px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 4px 12px rgba(245,158,11,0.2)',
-              }}
-            >
-              {dark ? '☀️' : '🌙'}
-            </button>
+            {/* ✅ FIXED: ⏻ End Session + Theme toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={handleEndSession}
+                title="End session (sign out completely)"
+                aria-label="End session and sign out"
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: dark
+                    ? 'rgba(239,68,68,0.15)'
+                    : 'linear-gradient(135deg, #FEE2E2, #FECACA)',
+                  fontSize: '18px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(239,68,68,0.25)',
+                  color: THEME.red,
+                  fontWeight: 900,
+                  lineHeight: 1,
+                }}
+              >
+                ⏻
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleDark}
+                aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: dark
+                    ? 'rgba(255,255,255,0.08)'
+                    : 'linear-gradient(135deg, #FEF3C7, #FDE68A)',
+                  fontSize: '16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(245,158,11,0.2)',
+                }}
+              >
+                {dark ? '☀️' : '🌙'}
+              </button>
+            </div>
           </div>
 
           <div
@@ -1439,7 +1522,6 @@ export const Dashboard = () => {
                       Lat: {location.lat.toFixed(6)}, Lng: {location.lng.toFixed(6)}
                     </div>
 
-                    {/* ✅ ACCURACY BADGE */}
                     {typeof accuracy === 'number' && (
                       <div
                         style={{

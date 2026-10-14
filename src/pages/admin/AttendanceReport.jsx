@@ -9,6 +9,7 @@
 // ✅ IST-anchored initial month/year
 // ✅ Division-by-zero guard on Avg hours
 // ✅ Clean JSX indentation
+// ✅ FIXED: Department + Employee filter row now equal width
 
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
@@ -153,7 +154,6 @@ export const AdminAttendanceReport = () => {
       setCompanies(uniqueCompanies);
     } catch (error) {
       console.error('Error fetching employees:', error);
-      // ✅ FIX: show toast on failure
       toast.error('Failed to load employees list');
     }
   };
@@ -907,7 +907,6 @@ export const AdminAttendanceReport = () => {
                       <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#EF4444', fontSize: '12px' }}>
                         {emp.absent}
                       </td>
-                      {/* ✅ FIX: guard against divide-by-zero */}
                       <td style={{ padding: '10px 6px', textAlign: 'center', fontWeight: 800, color: '#F59E0B', fontSize: '12px' }}>
                         {emp.present > 0 && emp.totalHours > 0
                           ? `${(emp.totalHours / emp.present).toFixed(1)}h`
@@ -994,7 +993,6 @@ export const AdminAttendanceReport = () => {
               </span>
             </div>
           ))}
-          {/* ✅ FIX: clean JSX indentation */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span
               style={{
@@ -1279,7 +1277,14 @@ export const AdminAttendanceReport = () => {
           </select>
         )}
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        {/* ✅ FIXED: Department + Employee now equal width via grid */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '8px',
+          }}
+        >
           <select
             value={selectedDepartment}
             onChange={(e) => {
@@ -1287,7 +1292,8 @@ export const AdminAttendanceReport = () => {
               setSelectedEmployee('all');
             }}
             style={{
-              flex: 1,
+              width: '100%',
+              minWidth: 0,
               padding: '12px 14px',
               borderRadius: THEME.radiusMd,
               border: `1px solid ${border}`,
@@ -1305,6 +1311,9 @@ export const AdminAttendanceReport = () => {
               backgroundSize: '16px',
               paddingRight: '38px',
               boxSizing: 'border-box',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
             }}
           >
             <option value="all">🏢 All Depts</option>
@@ -1319,7 +1328,8 @@ export const AdminAttendanceReport = () => {
             value={selectedEmployee}
             onChange={(e) => setSelectedEmployee(e.target.value)}
             style={{
-              flex: 1,
+              width: '100%',
+              minWidth: 0,
               padding: '12px 14px',
               borderRadius: THEME.radiusMd,
               border: `1px solid ${border}`,
@@ -1337,6 +1347,9 @@ export const AdminAttendanceReport = () => {
               backgroundSize: '16px',
               paddingRight: '38px',
               boxSizing: 'border-box',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
             }}
           >
             <option value="all">👥 All Employees</option>

@@ -20,8 +20,9 @@ import { AdminLeaves } from '../pages/admin/Leaves';
 import { ForgotTracker } from '../pages/admin/ForgotTracker';
 import { SalaryCalculator } from '../pages/admin/SalaryCalculator';
 import { AdminHolidays } from '../pages/admin/Holidays';
-import { AdminProjects } from '../pages/admin/Projects';   // ✅ NEW
-import { AdminEmployeeTimeline } from '../pages/admin/EmployeeTimeline'; // ✅ NEW
+import { AdminProjects } from '../pages/admin/Projects';   // ✅
+import { AdminEmployeeTimeline } from '../pages/admin/EmployeeTimeline'; // ✅
+import { AdminAttendanceEditor } from '../pages/admin/AttendanceEditor'; // ➕ NEW
 
 // Auth Pages
 import { Login } from '../pages/auth/Login';
@@ -169,12 +170,21 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-      {/* ✅ NEW: Employee Timeline (Google Maps style) */}
+      {/* ✅ Employee Timeline (Google Maps style) */}
       <Route
         path="/admin/timeline"
         element={
           <ProtectedRoute adminOnly={true}>
             <AdminEmployeeTimeline />
+          </ProtectedRoute>
+        }
+      />
+      {/* ➕ NEW: Attendance Editor (edit/delete attendance records) */}
+      <Route
+        path="/admin/attendance-editor"
+        element={
+          <ProtectedRoute adminOnly={true}>
+            <AdminAttendanceEditor />
           </ProtectedRoute>
         }
       />

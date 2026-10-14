@@ -9,6 +9,7 @@
 // ✅ Stats grid → 2-column layout for 4 stats
 // ✅ Renamed all admin tools to precise labels
 // ✅ Focus refresh — stats reload when user returns to tab
+// ➕ ADDED: Attendance Editor tool card
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -45,6 +46,14 @@ export const AdminDashboard = () => {
   // ADMIN TOOLS — iOS-style 3D emoji icons
   // ============================================
   const adminTools = [
+    // ➕ ADDED — Attendance Editor
+    {
+      icon: '✏️',
+      label: 'Attendance Editor',
+      desc: 'Edit or delete employee attendance records',
+      path: '/admin/attendance-editor',
+      color: '#0EA5E9',
+    },
     {
       icon: '👥',
       label: 'Employee Details',
@@ -808,7 +817,6 @@ export const AdminDashboard = () => {
                     : 'rgba(0,0,0,0.05)';
                 }}
               >
-                {/* Small arrow top-right */}
                 <div
                   style={{
                     position: 'absolute',
@@ -824,7 +832,6 @@ export const AdminDashboard = () => {
                   ›
                 </div>
 
-                {/* iOS-style icon tile */}
                 <div
                   style={{
                     width: '46px',
@@ -873,7 +880,6 @@ export const AdminDashboard = () => {
                   </span>
                 </div>
 
-                {/* Text */}
                 <div
                   style={{
                     display: 'flex',

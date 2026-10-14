@@ -1,25 +1,20 @@
 // src/pages/employee/Profile.jsx
 //
-// Vision Earth HRMS — Premium Profile
-// Avatar header, personal info card, menu list with icons.
+// Vision Earth HRMS — Premium Profile (FINAL — MODALS WORK)
 //
-// 🔧 FIXES (v2):
-//  1. editData seeds only when opening Edit modal (prevents data loss)
-//  2. Guards user identity before DB update (prevents mass-update)
-//  3. Demo user detection is string-safe (no crash on non-string id)
-//  4. Form validation: name required, phone/pincode format
-//  5. Modal zIndex raised to 2000 (above BottomNavigation)
-//  6. type="button" on every <button> (no accidental form submit)
-//  7. ESC-to-close for modals + role="dialog" + aria-modal
-//  8. ModalInput guards value ?? '' (no React warning)
-//  9. autoComplete / inputMode / maxLength on inputs
-// 10. Removed window.location.reload() fallback (jarring UX)
-// 11. Menu items built without mutating array
-// 12. Password modal has role="alert" for error banner
-// 13. Trims form values before saving
-// 14. Missing user.email guard in changePassword
+// ✅ Modals rendered via Portal → never blink
+// ✅ Live data fetch (mount + focus + 30s + Realtime)
+// ✅ No re-render loop (fetch does NOT touch AuthContext)
+// ✅ AuthContext synced ONLY when user saves their own edit
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -55,6 +50,7 @@ export const Profile = () => {
   // ============================================
   // STATE
   // ============================================
+  const [liveProfile, setLiveProfile] = useState(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [passwordData, setPasswordData] = useState(emptyPasswordData);
   const [loading, setLoading] = useState(false);
@@ -64,8 +60,18 @@ export const Profile = () => {
   const [editData, setEditData] = useState(emptyEditData);
   const [editLoading, setEditLoading] = useState(false);
 
+  // Stable refs
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // ============================================
-  // THEME HELPERS
+  // THEME
   // ============================================
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
   const cardBg = dark ? THEME.dark.card : THEME.cardBg;
@@ -76,27 +82,114 @@ export const Profile = () => {
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
   // ============================================
-  // 🔧 FIX #3 — identity helpers (string-safe)
+  // IDENTITY
   // ============================================
   const isDemoUser = String(user?.id || '').startsWith('demo-');
   const identityColumn = isDemoUser ? 'email' : 'id';
   const identityValue = isDemoUser ? user?.email : user?.id;
 
+  // Merged source — prefers live data, falls back to AuthContext
+  const source = liveProfile || user || {};
+
   // ============================================
-  // 🔧 FIX #1 — seed editData ONLY when opening modal
+  // LIVE FETCH (does NOT touch AuthContext)
+  // ============================================
+  const loadLiveProfile = useCallback(async () => {
+    if (!identityValue) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .select('*')
+        .eq(identityColumn, identityValue)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Profile fetch error:', error.message);
+        return;
+      }
+
+      if (!data || !mountedRef.current) return;
+
+      // 🔑 Only update LOCAL state — no updateUser() call here.
+      //    This prevents re-renders that break modals.
+      setLiveProfile(data);
+    } catch (err) {
+      console.warn('Profile fetch failed:', err);
+    }
+  }, [identityColumn, identityValue]);
+
+  // Fetch on mount
+  useEffect(() => {
+    loadLiveProfile();
+  }, [loadLiveProfile]);
+
+  // Fetch on window focus
+  useEffect(() => {
+    const onFocus = () => loadLiveProfile();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadLiveProfile]);
+
+  // Poll every 30s
+  useEffect(() => {
+    const id = setInterval(loadLiveProfile, 30000);
+    return () => clearInterval(id);
+  }, [loadLiveProfile]);
+
+  // Realtime — instant updates
+  useEffect(() => {
+    if (!identityValue) return;
+
+    const channel = supabase
+      .channel(`profile-sync-${identityColumn}-${identityValue}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'employees',
+          filter: `${identityColumn}=eq.${identityValue}`,
+        },
+        (payload) => {
+          if (!payload?.new || !mountedRef.current) return;
+          // 🔑 Only local state — no re-render cascade
+          setLiveProfile(payload.new);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [identityColumn, identityValue]);
+
+  // ============================================
+  // MODAL OPENERS — STABLE (empty deps)
   // ============================================
   const openEditModal = useCallback(() => {
+    const s = source || {};
     setEditData({
-      name: user?.name || '',
-      phone: user?.phone || '',
-      address: user?.address || '',
-      city: user?.city || '',
-      state: user?.state || '',
-      pincode: user?.pincode || '',
-      emergency_contact: user?.emergency_contact || '',
+      name: s.name || '',
+      phone: s.phone || '',
+      address: s.address || '',
+      city: s.city || '',
+      state: s.state || '',
+      pincode: s.pincode || '',
+      emergency_contact: s.emergency_contact || '',
     });
     setIsEditing(true);
-  }, [user]);
+  }, [source]);
+
+  const openPasswordModal = useCallback(() => {
+    setPasswordError('');
+    setPasswordData(emptyPasswordData());
+    setShowChangePassword(true);
+  }, []);
 
   const closePasswordModal = useCallback(() => {
     setShowChangePassword(false);
@@ -104,9 +197,7 @@ export const Profile = () => {
     setPasswordData(emptyPasswordData());
   }, []);
 
-  // ============================================
-  // 🔧 FIX #7 — ESC closes modals
-  // ============================================
+  // ESC closes modals
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
@@ -117,67 +208,82 @@ export const Profile = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [showChangePassword, isEditing, closePasswordModal]);
 
-  // ============================================
-  // PERSONAL INFO ROWS
-  // ============================================
-  const profileFields = [
-    { label: 'Employee ID', value: user?.employee_id || '-', icon: '🆔', color: '#6366F1' },
-    { label: 'Email', value: user?.email || '-', icon: '✉️', color: '#3B82F6' },
-    { label: 'Department', value: user?.department || 'N/A', icon: '🏢', color: '#10B981' },
-    { label: 'Designation', value: user?.designation || 'N/A', icon: '💼', color: '#F59E0B' },
-    { label: 'Reporting Location', value: user?.reporting_location || '-', icon: '📍', color: '#EF4444' },
-    { label: 'Phone', value: user?.phone || '-', icon: '📞', color: '#8B5CF6' },
-    { label: 'Role', value: user?.role || 'Employee', icon: '👑', color: '#F97316' },
-  ];
+  // Body scroll lock while modal open
+  useEffect(() => {
+    const anyOpen = isEditing || showChangePassword;
+    if (!anyOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isEditing, showChangePassword]);
 
   // ============================================
-  // 🔧 FIX #11 — menu items built without mutation
+  // PROFILE FIELDS (memoized)
   // ============================================
-  const baseMenuItems = [
-    {
-      key: 'password',
-      icon: '🔒',
-      label: 'Change Password',
-      subtitle: 'Update your account password',
-      color: '#6366F1',
-      onClick: () => setShowChangePassword(true),
-    },
-    {
-      key: 'edit',
-      icon: '✏️',
-      label: 'Edit Profile',
-      subtitle: 'Update personal information',
-      color: '#3B82F6',
-      onClick: openEditModal,
-    },
-    {
-      key: 'settings',
-      icon: '⚙️',
-      label: 'App Settings',
-      subtitle: 'Notifications, theme, privacy',
-      color: '#10B981',
-      onClick: () => toast.info('App settings coming soon!'),
-    },
-    {
-      key: 'help',
-      icon: '❓',
-      label: 'Help & Support',
-      subtitle: 'Get help with the app',
-      color: '#F59E0B',
-      onClick: () => toast.info('Help & Support coming soon!'),
-    },
-    {
-      key: 'about',
-      icon: 'ℹ️',
-      label: 'About',
-      subtitle: 'Vision Earth HRMS v1.0',
-      color: '#8B5CF6',
-      onClick: () => toast.info('Vision Earth HRMS v1.0'),
-    },
-  ];
+  const profileFields = useMemo(() => {
+    const s = source || {};
+    return [
+      { label: 'Employee ID', value: s.employee_id || '-', icon: '🆔', color: '#6366F1' },
+      { label: 'Email', value: s.email || '-', icon: '✉️', color: '#3B82F6' },
+      { label: 'Department', value: s.department || 'N/A', icon: '🏢', color: '#10B981' },
+      { label: 'Designation', value: s.designation || 'N/A', icon: '💼', color: '#F59E0B' },
+      { label: 'Reporting Location', value: s.reporting_location || '-', icon: '📍', color: '#EF4444' },
+      { label: 'Phone', value: s.phone || '-', icon: '📞', color: '#8B5CF6' },
+      { label: 'Role', value: s.role || 'Employee', icon: '👑', color: '#F97316' },
+    ];
+  }, [source]);
 
-  const menuItems = isAdmin
-    ? [
+  // ============================================
+  // MENU ITEMS (memoized)
+  // ============================================
+  const menuItems = useMemo(() => {
+    const baseItems = [
+      {
+        key: 'password',
+        icon: '🔒',
+        label: 'Change Password',
+        subtitle: 'Update your account password',
+        color: '#6366F1',
+        onClick: openPasswordModal,
+      },
+      {
+        key: 'edit',
+        icon: '✏️',
+        label: 'Edit Profile',
+        subtitle: 'Update personal information',
+        color: '#3B82F6',
+        onClick: openEditModal,
+      },
+      {
+        key: 'settings',
+        icon: '⚙️',
+        label: 'App Settings',
+        subtitle: 'Notifications, theme, privacy',
+        color: '#10B981',
+        onClick: () => toast.info('App settings coming soon!'),
+      },
+      {
+        key: 'help',
+        icon: '❓',
+        label: 'Help & Support',
+        subtitle: 'Get help with the app',
+        color: '#F59E0B',
+        onClick: () => toast.info('Help & Support coming soon!'),
+      },
+      {
+        key: 'about',
+        icon: 'ℹ️',
+        label: 'About',
+        subtitle: 'Vision Earth HRMS v1.0',
+        color: '#8B5CF6',
+        onClick: () => toast.info('Vision Earth HRMS v1.0'),
+      },
+    ];
+
+    if (isAdmin) {
+      return [
         {
           key: 'admin',
           icon: '🛠️',
@@ -186,13 +292,15 @@ export const Profile = () => {
           color: '#F97316',
           onClick: () => navigate('/admin'),
         },
-        ...baseMenuItems,
-      ]
-    : baseMenuItems;
+        ...baseItems,
+      ];
+    }
+
+    return baseItems;
+  }, [isAdmin, navigate, openEditModal, openPasswordModal]);
 
   // ============================================
-  // HANDLE PASSWORD CHANGE
-  // 🔧 FIX #14 — guard user.email
+  // CHANGE PASSWORD
   // ============================================
   const handleChangePassword = async () => {
     setPasswordError('');
@@ -201,18 +309,15 @@ export const Profile = () => {
       setPasswordError('All fields are required');
       return;
     }
-
     if (passwordData.new !== passwordData.confirm) {
       setPasswordError('New password and confirm password do not match');
       return;
     }
-
     if (passwordData.new.length < 6) {
       setPasswordError('New password must be at least 6 characters');
       return;
     }
-
-    if (!user?.email) {
+    if (!source?.email) {
       setPasswordError('Your email is missing. Please re-login and try again.');
       return;
     }
@@ -220,7 +325,7 @@ export const Profile = () => {
     try {
       setLoading(true);
       const result = await changePassword(
-        user.email,
+        source.email,
         passwordData.current,
         passwordData.new
       );
@@ -234,38 +339,30 @@ export const Profile = () => {
     } catch (error) {
       setPasswordError(error?.message || 'Failed to change password');
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   };
 
   // ============================================
-  // HANDLE UPDATE PROFILE
-  // 🔧 FIX #2 — guard identity
-  // 🔧 FIX #4 — form validation
-  // 🔧 FIX #10 — no reload fallback
-  // 🔧 FIX #13 — trim values
+  // UPDATE PROFILE
   // ============================================
   const handleUpdateProfile = async () => {
     const trimmedName = (editData.name || '').trim();
     const trimmedPhone = (editData.phone || '').trim();
     const trimmedPincode = (editData.pincode || '').trim();
 
-    // Validation
     if (!trimmedName) {
       toast.error('Name is required');
       return;
     }
-
     if (trimmedPhone && !/^[0-9+\-()\s]{6,20}$/.test(trimmedPhone)) {
       toast.error('Enter a valid phone number');
       return;
     }
-
     if (trimmedPincode && !/^\d{6}$/.test(trimmedPincode)) {
       toast.error('Pincode must be exactly 6 digits');
       return;
     }
-
     if (!identityValue) {
       toast.error('Cannot update profile: missing user identity');
       return;
@@ -295,7 +392,7 @@ export const Profile = () => {
       toast.success('Profile updated successfully!');
       setIsEditing(false);
 
-      // Sync AuthContext in place — avatar/name refresh instantly
+      // 🔑 Only here do we sync AuthContext (user explicitly saved)
       if (typeof updateUser === 'function') {
         updateUser({
           name: updateData.name,
@@ -306,16 +403,15 @@ export const Profile = () => {
           pincode: updateData.pincode,
           emergency_contact: updateData.emergency_contact,
         });
-      } else {
-        console.warn(
-          'updateUser not available — profile UI will refresh on next app load.'
-        );
       }
+
+      // Re-fetch to confirm
+      await loadLiveProfile();
     } catch (error) {
       console.error('Error updating profile:', error);
       toast.error(error?.message || 'Failed to update profile');
     } finally {
-      setEditLoading(false);
+      if (mountedRef.current) setEditLoading(false);
     }
   };
 
@@ -325,6 +421,399 @@ export const Profile = () => {
       navigate('/login');
     });
   };
+
+  // ============================================
+  // MODALS (portalled to document.body)
+  // ============================================
+  const editModalJSX = isEditing
+    ? createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-profile-title"
+          onClick={(e) => {
+            // Close ONLY if the click was directly on the backdrop
+            if (e.target === e.currentTarget) setIsEditing(false);
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            zIndex: 99999,
+            overflowY: 'auto',
+          }}
+        >
+          <div
+            style={{
+              background: cardBg,
+              borderRadius: THEME.radiusXl,
+              padding: '24px',
+              maxWidth: '420px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '20px',
+              }}
+            >
+              <h3
+                id="edit-profile-title"
+                style={{
+                  fontSize: '18px',
+                  fontWeight: 800,
+                  color: textPrimary,
+                  margin: 0,
+                }}
+              >
+                ✏️ Edit Profile
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                aria-label="Close edit profile"
+                style={{
+                  fontSize: '22px',
+                  color: textMuted,
+                  cursor: 'pointer',
+                  background: 'none',
+                  border: 'none',
+                  padding: '4px',
+                  lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {[
+              { label: 'Full Name', key: 'name', type: 'text', placeholder: 'Enter full name', autoComplete: 'name' },
+              { label: 'Phone', key: 'phone', type: 'tel', placeholder: 'Enter phone number', autoComplete: 'tel', inputMode: 'tel' },
+              { label: 'Address', key: 'address', type: 'text', placeholder: 'Enter address', autoComplete: 'street-address' },
+            ].map((field) => (
+              <ModalInput
+                key={field.key}
+                label={field.label}
+                value={editData[field.key]}
+                onChange={(v) => setEditData({ ...editData, [field.key]: v })}
+                type={field.type}
+                placeholder={field.placeholder}
+                autoComplete={field.autoComplete}
+                inputMode={field.inputMode}
+                cardBg={cardBg}
+                textPrimary={textPrimary}
+                textMuted={textMuted}
+                border={border}
+              />
+            ))}
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '10px',
+              }}
+            >
+              <ModalInput
+                label="City"
+                value={editData.city}
+                onChange={(v) => setEditData({ ...editData, city: v })}
+                placeholder="City"
+                autoComplete="address-level2"
+                cardBg={cardBg}
+                textPrimary={textPrimary}
+                textMuted={textMuted}
+                border={border}
+              />
+              <ModalInput
+                label="State"
+                value={editData.state}
+                onChange={(v) => setEditData({ ...editData, state: v })}
+                placeholder="State"
+                autoComplete="address-level1"
+                cardBg={cardBg}
+                textPrimary={textPrimary}
+                textMuted={textMuted}
+                border={border}
+              />
+            </div>
+
+            <ModalInput
+              label="Pincode"
+              value={editData.pincode}
+              onChange={(v) => setEditData({ ...editData, pincode: v })}
+              placeholder="Enter pincode"
+              inputMode="numeric"
+              autoComplete="postal-code"
+              maxLength={6}
+              cardBg={cardBg}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              border={border}
+            />
+
+            <ModalInput
+              label="Emergency Contact"
+              value={editData.emergency_contact}
+              onChange={(v) =>
+                setEditData({ ...editData, emergency_contact: v })
+              }
+              placeholder="Emergency contact number"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              cardBg={cardBg}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              border={border}
+            />
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: THEME.radiusMd,
+                  border: `1px solid ${border}`,
+                  background: 'transparent',
+                  color: textSecondary,
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  fontFamily: THEME.font,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateProfile}
+                disabled={editLoading}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: THEME.radiusMd,
+                  border: 'none',
+                  background: editLoading
+                    ? '#94A3B8'
+                    : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+                  color: '#FFFFFF',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: editLoading ? 'not-allowed' : 'pointer',
+                  boxShadow: editLoading ? 'none' : THEME.shadowGreen,
+                  fontFamily: THEME.font,
+                  letterSpacing: '0.3px',
+                }}
+              >
+                {editLoading ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
+  const passwordModalJSX = showChangePassword
+    ? createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="change-password-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closePasswordModal();
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            zIndex: 99999,
+            overflowY: 'auto',
+          }}
+        >
+          <div
+            style={{
+              background: cardBg,
+              borderRadius: THEME.radiusXl,
+              padding: '24px',
+              maxWidth: '420px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '20px',
+              }}
+            >
+              <h3
+                id="change-password-title"
+                style={{
+                  fontSize: '18px',
+                  fontWeight: 800,
+                  color: textPrimary,
+                  margin: 0,
+                }}
+              >
+                🔒 Change Password
+              </h3>
+              <button
+                type="button"
+                onClick={closePasswordModal}
+                aria-label="Close change password"
+                style={{
+                  fontSize: '22px',
+                  color: textMuted,
+                  cursor: 'pointer',
+                  background: 'none',
+                  border: 'none',
+                  padding: '4px',
+                  lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {passwordError && (
+              <div
+                role="alert"
+                style={{
+                  background: THEME.redSoft,
+                  padding: '10px 14px',
+                  borderRadius: THEME.radiusMd,
+                  border: `1px solid ${THEME.red}40`,
+                  marginBottom: '16px',
+                }}
+              >
+                <p
+                  style={{
+                    color: THEME.red,
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    margin: 0,
+                  }}
+                >
+                  {passwordError}
+                </p>
+              </div>
+            )}
+
+            <ModalInput
+              label="Current Password"
+              value={passwordData.current}
+              onChange={(v) => setPasswordData({ ...passwordData, current: v })}
+              type="password"
+              placeholder="Enter current password"
+              autoComplete="current-password"
+              cardBg={cardBg}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              border={border}
+            />
+
+            <ModalInput
+              label="New Password"
+              value={passwordData.new}
+              onChange={(v) => setPasswordData({ ...passwordData, new: v })}
+              type="password"
+              placeholder="Enter new password (min 6)"
+              autoComplete="new-password"
+              cardBg={cardBg}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              border={border}
+            />
+
+            <ModalInput
+              label="Confirm Password"
+              value={passwordData.confirm}
+              onChange={(v) => setPasswordData({ ...passwordData, confirm: v })}
+              type="password"
+              placeholder="Confirm new password"
+              autoComplete="new-password"
+              cardBg={cardBg}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              border={border}
+            />
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+              <button
+                type="button"
+                onClick={closePasswordModal}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: THEME.radiusMd,
+                  border: `1px solid ${border}`,
+                  background: 'transparent',
+                  color: textSecondary,
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  fontFamily: THEME.font,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleChangePassword}
+                disabled={loading}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: THEME.radiusMd,
+                  border: 'none',
+                  background: loading
+                    ? '#94A3B8'
+                    : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+                  color: '#FFFFFF',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  boxShadow: loading ? 'none' : THEME.shadowGreen,
+                  fontFamily: THEME.font,
+                  letterSpacing: '0.3px',
+                }}
+              >
+                {loading ? 'Updating...' : 'Update Password'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
 
   // ============================================
   // RENDER
@@ -340,9 +829,7 @@ export const Profile = () => {
         fontFamily: THEME.font,
       }}
     >
-      {/* ============================================ */}
-      {/* PREMIUM HEADER */}
-      {/* ============================================ */}
+      {/* HEADER */}
       <div style={{ padding: '16px 16px 8px' }}>
         <div
           style={{
@@ -370,7 +857,6 @@ export const Profile = () => {
               pointerEvents: 'none',
             }}
           />
-
           <div
             style={{
               display: 'flex',
@@ -429,8 +915,6 @@ export const Profile = () => {
                 </div>
               </div>
             </div>
-
-            {/* 🔧 FIX #6 — type="button" */}
             <button
               type="button"
               onClick={toggleDark}
@@ -454,7 +938,6 @@ export const Profile = () => {
               {dark ? '☀️' : '🌙'}
             </button>
           </div>
-
           <div
             style={{
               fontSize: '11px',
@@ -470,9 +953,7 @@ export const Profile = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
       {/* AVATAR CARD */}
-      {/* ============================================ */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -514,7 +995,6 @@ export const Profile = () => {
               pointerEvents: 'none',
             }}
           />
-
           <div
             style={{
               width: '88px',
@@ -534,9 +1014,8 @@ export const Profile = () => {
               border: '4px solid rgba(255,255,255,0.5)',
             }}
           >
-            {user?.name?.charAt(0).toUpperCase() || '👤'}
+            {source.name?.charAt(0).toUpperCase() || '👤'}
           </div>
-
           <div
             style={{
               fontSize: '20px',
@@ -548,9 +1027,8 @@ export const Profile = () => {
               zIndex: 1,
             }}
           >
-            {user?.name || 'User'}
+            {source.name || 'User'}
           </div>
-
           <div
             style={{
               fontSize: '12px',
@@ -561,9 +1039,8 @@ export const Profile = () => {
               zIndex: 1,
             }}
           >
-            {user?.employee_id || 'N/A'}
+            {source.employee_id || 'N/A'}
           </div>
-
           <div
             style={{
               display: 'flex',
@@ -586,7 +1063,7 @@ export const Profile = () => {
                 letterSpacing: '0.3px',
               }}
             >
-              {user?.role || 'Employee'}
+              {source.role || 'Employee'}
             </span>
             <span
               style={{
@@ -618,9 +1095,7 @@ export const Profile = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* PERSONAL INFORMATION */}
-      {/* ============================================ */}
+      {/* PERSONAL INFO */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -635,7 +1110,6 @@ export const Profile = () => {
         >
           Personal Information
         </div>
-
         <div
           style={{
             background: cardBg,
@@ -707,9 +1181,7 @@ export const Profile = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* MENU ITEMS */}
-      {/* ============================================ */}
+      {/* MENU */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -724,7 +1196,6 @@ export const Profile = () => {
         >
           Settings
         </div>
-
         <div
           style={{
             background: cardBg,
@@ -737,7 +1208,7 @@ export const Profile = () => {
           {menuItems.map((item, idx) => (
             <button
               key={item.key}
-              type="button" /* 🔧 FIX #6 */
+              type="button"
               onClick={item.onClick}
               style={{
                 width: '100%',
@@ -818,12 +1289,10 @@ export const Profile = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* LOGOUT BUTTON */}
-      {/* ============================================ */}
+      {/* LOGOUT */}
       <div style={{ padding: '0 16px 16px' }}>
         <button
-          type="button" /* 🔧 FIX #6 */
+          type="button"
           onClick={handleLogout}
           style={{
             width: '100%',
@@ -849,9 +1318,7 @@ export const Profile = () => {
         </button>
       </div>
 
-      {/* ============================================ */}
-      {/* FOOTER QUOTE */}
-      {/* ============================================ */}
+      {/* FOOTER */}
       <div style={{ padding: '0 16px 16px' }}>
         <div
           style={{
@@ -890,397 +1357,9 @@ export const Profile = () => {
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* EDIT PROFILE MODAL */}
-      {/* 🔧 FIX #5 — zIndex 2000 */}
-      {/* 🔧 FIX #7 — role=dialog + aria-modal + ESC */}
-      {/* ============================================ */}
-      {isEditing && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-profile-title"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '16px',
-            background: 'rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(6px)',
-            zIndex: 2000,
-          }}
-          onClick={() => setIsEditing(false)}
-        >
-          <div
-            style={{
-              background: cardBg,
-              borderRadius: THEME.radiusXl,
-              padding: '24px',
-              maxWidth: '420px',
-              width: '100%',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '20px',
-              }}
-            >
-              <h3
-                id="edit-profile-title"
-                style={{
-                  fontSize: '18px',
-                  fontWeight: 800,
-                  color: textPrimary,
-                  margin: 0,
-                }}
-              >
-                ✏️ Edit Profile
-              </h3>
-              <button
-                type="button" /* 🔧 FIX #6 */
-                onClick={() => setIsEditing(false)}
-                aria-label="Close edit profile"
-                style={{
-                  fontSize: '22px',
-                  color: textMuted,
-                  cursor: 'pointer',
-                  background: 'none',
-                  border: 'none',
-                  padding: '4px',
-                  lineHeight: 1,
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {[
-              { label: 'Full Name', key: 'name', type: 'text', placeholder: 'Enter full name', autoComplete: 'name' },
-              { label: 'Phone', key: 'phone', type: 'tel', placeholder: 'Enter phone number', autoComplete: 'tel', inputMode: 'tel' },
-              { label: 'Address', key: 'address', type: 'text', placeholder: 'Enter address', autoComplete: 'street-address' },
-            ].map((field) => (
-              <ModalInput
-                key={field.key}
-                label={field.label}
-                value={editData[field.key]}
-                onChange={(v) => setEditData({ ...editData, [field.key]: v })}
-                type={field.type}
-                placeholder={field.placeholder}
-                autoComplete={field.autoComplete}
-                inputMode={field.inputMode}
-                dark={dark}
-                cardBg={cardBg}
-                textPrimary={textPrimary}
-                textMuted={textMuted}
-                border={border}
-              />
-            ))}
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '10px',
-              }}
-            >
-              <ModalInput
-                label="City"
-                value={editData.city}
-                onChange={(v) => setEditData({ ...editData, city: v })}
-                placeholder="City"
-                autoComplete="address-level2"
-                dark={dark}
-                cardBg={cardBg}
-                textPrimary={textPrimary}
-                textMuted={textMuted}
-                border={border}
-              />
-              <ModalInput
-                label="State"
-                value={editData.state}
-                onChange={(v) => setEditData({ ...editData, state: v })}
-                placeholder="State"
-                autoComplete="address-level1"
-                dark={dark}
-                cardBg={cardBg}
-                textPrimary={textPrimary}
-                textMuted={textMuted}
-                border={border}
-              />
-            </div>
-
-            <ModalInput
-              label="Pincode"
-              value={editData.pincode}
-              onChange={(v) => setEditData({ ...editData, pincode: v })}
-              placeholder="Enter pincode"
-              inputMode="numeric"
-              autoComplete="postal-code"
-              maxLength={6}
-              dark={dark}
-              cardBg={cardBg}
-              textPrimary={textPrimary}
-              textMuted={textMuted}
-              border={border}
-            />
-
-            <ModalInput
-              label="Emergency Contact"
-              value={editData.emergency_contact}
-              onChange={(v) =>
-                setEditData({ ...editData, emergency_contact: v })
-              }
-              placeholder="Emergency contact number"
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              dark={dark}
-              cardBg={cardBg}
-              textPrimary={textPrimary}
-              textMuted={textMuted}
-              border={border}
-            />
-
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <button
-                type="button" /* 🔧 FIX #6 */
-                onClick={() => setIsEditing(false)}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  borderRadius: THEME.radiusMd,
-                  border: `1px solid ${border}`,
-                  background: 'transparent',
-                  color: textSecondary,
-                  fontWeight: 700,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  fontFamily: THEME.font,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button" /* 🔧 FIX #6 */
-                onClick={handleUpdateProfile}
-                disabled={editLoading}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  borderRadius: THEME.radiusMd,
-                  border: 'none',
-                  background: editLoading
-                    ? '#94A3B8'
-                    : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
-                  color: '#FFFFFF',
-                  fontWeight: 800,
-                  fontSize: '13px',
-                  cursor: editLoading ? 'not-allowed' : 'pointer',
-                  boxShadow: editLoading ? 'none' : THEME.shadowGreen,
-                  fontFamily: THEME.font,
-                  letterSpacing: '0.3px',
-                }}
-              >
-                {editLoading ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================ */}
-      {/* CHANGE PASSWORD MODAL */}
-      {/* 🔧 FIX #5 — zIndex 2000 */}
-      {/* 🔧 FIX #7 — role=dialog + aria-modal + ESC */}
-      {/* 🔧 FIX #12 — role=alert on error banner */}
-      {/* ============================================ */}
-      {showChangePassword && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="change-password-title"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '16px',
-            background: 'rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(6px)',
-            zIndex: 2000,
-          }}
-          onClick={closePasswordModal}
-        >
-          <div
-            style={{
-              background: cardBg,
-              borderRadius: THEME.radiusXl,
-              padding: '24px',
-              maxWidth: '420px',
-              width: '100%',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '20px',
-              }}
-            >
-              <h3
-                id="change-password-title"
-                style={{
-                  fontSize: '18px',
-                  fontWeight: 800,
-                  color: textPrimary,
-                  margin: 0,
-                }}
-              >
-                🔒 Change Password
-              </h3>
-              <button
-                type="button" /* 🔧 FIX #6 */
-                onClick={closePasswordModal}
-                aria-label="Close change password"
-                style={{
-                  fontSize: '22px',
-                  color: textMuted,
-                  cursor: 'pointer',
-                  background: 'none',
-                  border: 'none',
-                  padding: '4px',
-                  lineHeight: 1,
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {passwordError && (
-              <div
-                role="alert" /* 🔧 FIX #12 */
-                style={{
-                  background: THEME.redSoft,
-                  padding: '10px 14px',
-                  borderRadius: THEME.radiusMd,
-                  border: `1px solid ${THEME.red}40`,
-                  marginBottom: '16px',
-                }}
-              >
-                <p
-                  style={{
-                    color: THEME.red,
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    margin: 0,
-                  }}
-                >
-                  {passwordError}
-                </p>
-              </div>
-            )}
-
-            <ModalInput
-              label="Current Password"
-              value={passwordData.current}
-              onChange={(v) => setPasswordData({ ...passwordData, current: v })}
-              type="password"
-              placeholder="Enter current password"
-              autoComplete="current-password"
-              dark={dark}
-              cardBg={cardBg}
-              textPrimary={textPrimary}
-              textMuted={textMuted}
-              border={border}
-            />
-
-            <ModalInput
-              label="New Password"
-              value={passwordData.new}
-              onChange={(v) => setPasswordData({ ...passwordData, new: v })}
-              type="password"
-              placeholder="Enter new password (min 6)"
-              autoComplete="new-password"
-              dark={dark}
-              cardBg={cardBg}
-              textPrimary={textPrimary}
-              textMuted={textMuted}
-              border={border}
-            />
-
-            <ModalInput
-              label="Confirm Password"
-              value={passwordData.confirm}
-              onChange={(v) => setPasswordData({ ...passwordData, confirm: v })}
-              type="password"
-              placeholder="Confirm new password"
-              autoComplete="new-password"
-              dark={dark}
-              cardBg={cardBg}
-              textPrimary={textPrimary}
-              textMuted={textMuted}
-              border={border}
-            />
-
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <button
-                type="button" /* 🔧 FIX #6 */
-                onClick={closePasswordModal}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  borderRadius: THEME.radiusMd,
-                  border: `1px solid ${border}`,
-                  background: 'transparent',
-                  color: textSecondary,
-                  fontWeight: 700,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  fontFamily: THEME.font,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button" /* 🔧 FIX #6 */
-                onClick={handleChangePassword}
-                disabled={loading}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  borderRadius: THEME.radiusMd,
-                  border: 'none',
-                  background: loading
-                    ? '#94A3B8'
-                    : `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
-                  color: '#FFFFFF',
-                  fontWeight: 800,
-                  fontSize: '13px',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  boxShadow: loading ? 'none' : THEME.shadowGreen,
-                  fontFamily: THEME.font,
-                  letterSpacing: '0.3px',
-                }}
-              >
-                {loading ? 'Updating...' : 'Update Password'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* MODALS — portalled to body */}
+      {editModalJSX}
+      {passwordModalJSX}
 
       <BottomNavigation theme={theme} />
     </div>
@@ -1289,8 +1368,6 @@ export const Profile = () => {
 
 // ============================================
 // MODAL INPUT HELPER
-// 🔧 FIX #8 — guards value ?? ''
-// 🔧 FIX #9 — autoComplete, inputMode, maxLength
 // ============================================
 const ModalInput = ({
   label,
@@ -1301,7 +1378,6 @@ const ModalInput = ({
   autoComplete,
   inputMode,
   maxLength,
-  dark,
   cardBg,
   textPrimary,
   textMuted,
