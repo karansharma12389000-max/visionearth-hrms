@@ -8,7 +8,7 @@
 // ✅ Modal closes INSTANTLY after DB write
 // ✅ Any-language address (no filtering)
 // ✅ Location logic in ../../utils/locationService
-// ✅ ⏻ End Session button — full session wipe (no DB data lost)
+// ✅ ⏻ End Session button — full session wipe (SVG icon, works on all phones)
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -353,9 +353,7 @@ export const Dashboard = () => {
   };
 
   // ============================================
-  // ✅ END SESSION — clears everything in the background
-  //    Signs out, wipes session storage, forces fresh login.
-  //    Does NOT delete any database rows.
+  // END SESSION — clears everything, forces fresh login
   // ============================================
   const handleEndSession = () => {
     confirmMsg(
@@ -363,21 +361,18 @@ export const Dashboard = () => {
       'This will sign you out completely and return to the login screen. Your attendance, check-ins, and leave records are safe. Re-login will prompt for location again if permission is reset in your browser (tap the 🔒 icon in the address bar).',
       async () => {
         try {
-          // 1. Wipe session-scoped browser storage
           try {
             sessionStorage.clear();
           } catch {
             /* ignore */
           }
 
-          // 2. Remove login persistence keys (email, etc.) but keep local caches
           try {
             localStorage.removeItem('ve_login_email');
           } catch {
             /* ignore */
           }
 
-          // 3. Clear any pending app state from memory
           setLocation(null);
           setAddress('');
           setAccuracy(null);
@@ -388,14 +383,12 @@ export const Dashboard = () => {
           setFormRecord(null);
           setFormMode('normal');
 
-          // 4. Call AuthContext logout (clears user + ve_session)
           if (typeof logout === 'function') {
             await Promise.resolve(logout());
           }
         } catch (err) {
           console.warn('End session error:', err);
         } finally {
-          // 5. Hard navigate to login (fresh mount, no back-stack)
           navigate('/login', { replace: true });
         }
       }
@@ -498,7 +491,6 @@ export const Dashboard = () => {
     !fetchingLocation &&
     !submitting;
 
-  // Accuracy badge color
   const accColor = (() => {
     if (typeof accuracy !== 'number') return textMuted;
     if (accuracy <= 50) return THEME.primary;
@@ -607,7 +599,7 @@ export const Dashboard = () => {
               </div>
             </div>
 
-            {/* ✅ FIXED: ⏻ End Session + Theme toggle */}
+            {/* ⏻ End Session (SVG) + Theme toggle */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
                 type="button"
@@ -622,18 +614,29 @@ export const Dashboard = () => {
                   background: dark
                     ? 'rgba(239,68,68,0.15)'
                     : 'linear-gradient(135deg, #FEE2E2, #FECACA)',
-                  fontSize: '18px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   boxShadow: '0 4px 12px rgba(239,68,68,0.25)',
-                  color: THEME.red,
-                  fontWeight: 900,
+                  padding: 0,
                   lineHeight: 1,
                 }}
               >
-                ⏻
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke={THEME.red}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 3v9" />
+                  <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+                </svg>
               </button>
 
               <button
