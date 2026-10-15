@@ -17,6 +17,8 @@
     "@supabase/supabase-js": "^2.111.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
     "node-fetch": "^3.3.2",
     "react": "^19.2.8",

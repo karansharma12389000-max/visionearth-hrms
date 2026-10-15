@@ -7,8 +7,12 @@
 // ✅ 📍 "View Route" timeline available for ALL employees
 // ✅ 🕐 Smart time formatter
 // ✅ ⬇ Download Report
+// ➕ Searchable employee filter
+// ➕ Click-anywhere-to-open date picker
+// ✅ iOS Safari date picker fallback (native tap on hidden input)
+// ✅ Keyboard-accessible date picker (Enter/Space)
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../services/supabase';
@@ -25,7 +29,229 @@ import { THEME, isDark } from '../../utils/designTokens';
 import LiveMapPreview, { parseGps } from '../../components/LiveMapPreview';
 
 // ============================================
-// ✅ SMART TIME FORMATTER
+// SEARCHABLE DROPDOWN (shared)
+// ============================================
+const SearchableDropdown = ({
+  value,
+  onChange,
+  options,
+  placeholder,
+  searchPlaceholder = 'Search...',
+  dark,
+  cardBg,
+  textPrimary,
+  textMuted,
+  border,
+  icon,
+}) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const wrapperRef = useRef(null);
+
+  const selectedOption = useMemo(
+    () => options.find((o) => o.value === value) || null,
+    [options, value]
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return options.slice(0, 100);
+    return options
+      .filter((o) => {
+        const label = String(o.label || '').toLowerCase();
+        const sub = String(o.subLabel || '').toLowerCase();
+        return label.includes(q) || sub.includes(q);
+      })
+      .slice(0, 100);
+  }, [options, search]);
+
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setOpen(false);
+        setSearch('');
+      }
+    };
+    window.addEventListener('mousedown', onDocClick);
+    return () => window.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  const handleToggle = () => {
+    setOpen((v) => {
+      if (!v) setSearch('');
+      return !v;
+    });
+  };
+
+  const handleSelect = (opt) => {
+    onChange(opt.value);
+    setOpen(false);
+    setSearch('');
+  };
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative', width: '100%' }}>
+      <div
+        onClick={handleToggle}
+        style={{
+          width: '100%',
+          padding: '11px 12px',
+          borderRadius: THEME.radiusMd,
+          border: `1px solid ${border}`,
+          background: cardBg,
+          color: textPrimary,
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          boxSizing: 'border-box',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+        }}
+      >
+        <span
+          style={{
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}
+        >
+          {icon && <span style={{ flexShrink: 0 }}>{icon}</span>}
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <span style={{ color: textMuted, fontSize: '11px', flexShrink: 0 }}>
+          {open ? '▲' : '▼'}
+        </span>
+      </div>
+
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            left: 0,
+            right: 0,
+            background: cardBg,
+            border: `1px solid ${border}`,
+            borderRadius: THEME.radiusMd,
+            boxShadow: '0 12px 32px rgba(0,0,0,0.25)',
+            zIndex: 50,
+            maxHeight: '320px',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              padding: '8px',
+              borderBottom: `1px solid ${border}`,
+            }}
+          >
+            <input
+              autoFocus
+              type="text"
+              placeholder={searchPlaceholder}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '10px',
+                border: `1px solid ${border}`,
+                background: dark ? '#0F172A' : '#F8FAFC',
+                color: textPrimary,
+                fontSize: '12px',
+                fontWeight: 600,
+                outline: 'none',
+                fontFamily: THEME.font,
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {filtered.length === 0 ? (
+              <div
+                style={{
+                  padding: '20px',
+                  textAlign: 'center',
+                  color: textMuted,
+                  fontSize: '12px',
+                }}
+              >
+                No results found
+              </div>
+            ) : (
+              filtered.map((opt, i) => {
+                const isSel = opt.value === value;
+                return (
+                  <div
+                    key={`${opt.value}-${i}`}
+                    onClick={() => handleSelect(opt)}
+                    style={{
+                      padding: '11px 14px',
+                      cursor: 'pointer',
+                      borderBottom: `1px solid ${border}`,
+                      background: isSel
+                        ? 'rgba(16,185,129,0.12)'
+                        : 'transparent',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSel)
+                        e.currentTarget.style.background = dark
+                          ? 'rgba(255,255,255,0.04)'
+                          : '#F8FAFC';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSel)
+                        e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        color: textPrimary,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {opt.label}
+                    </div>
+                    {opt.subLabel && (
+                      <div
+                        style={{
+                          fontSize: '10px',
+                          color: textMuted,
+                          fontWeight: 500,
+                          marginTop: 2,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {opt.subLabel}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// SMART TIME FORMATTER
 // ============================================
 const formatFlexTime = (value) => {
   if (value === null || value === undefined || value === '') return '—';
@@ -57,7 +283,7 @@ const formatFlexTime = (value) => {
 };
 
 // ============================================
-// ✅ ROBUST TIME PARSER
+// ROBUST TIME PARSER
 // ============================================
 const parseAttendanceTime = (dateStr, timeVal) => {
   if (!timeVal) return null;
@@ -82,7 +308,7 @@ const parseAttendanceTime = (dateStr, timeVal) => {
 };
 
 // ============================================
-// ✅ LOCATION RESOLVER
+// LOCATION RESOLVER
 // ============================================
 const resolveLocationLabel = (address, gps) => {
   const trimmed = (address || '').trim();
@@ -131,7 +357,7 @@ const fetchPingCount = async (employeeId, dateStr) => {
 };
 
 // ============================================
-// ✅ FETCH CHECK-IN/OUT ADDRESSES
+// FETCH CHECK-IN/OUT ADDRESSES
 // ============================================
 const fetchCheckInOutForDay = async (employeeId, dateStr) => {
   if (!employeeId || !dateStr) return null;
@@ -162,10 +388,9 @@ const fetchCheckInOutForDay = async (employeeId, dateStr) => {
 };
 
 // ============================================
-// ✅ Detect if a record has a route available
+// Detect if a record has a route available
 // ============================================
 const hasRouteData = (record, pingCount) => {
-  if (pingCount >= 2) return true;
   if (pingCount >= 1) return true;
   if (record?.check_in_gps || record?.check_out_gps) return true;
   return false;
@@ -187,7 +412,6 @@ export const AdminAttendanceHistory = () => {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [recordPingCount, setRecordPingCount] = useState(0);
 
-  // ✅ NEW: cache ping counts to avoid duplicate fetches
   const pingCountCacheRef = useRef({});
 
   const [viewMode, setViewMode] = useState('today');
@@ -211,6 +435,9 @@ export const AdminAttendanceHistory = () => {
   const [employees, setEmployees] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [designations, setDesignations] = useState([]);
+
+  // Ref to trigger the hidden native date picker
+  const dateInputRef = useRef(null);
 
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -385,6 +612,29 @@ export const AdminAttendanceHistory = () => {
     fetchAttendanceHistory(filterDate, filterDate);
   };
 
+  // ✅ FIX: Open the date picker via ref when user clicks anywhere on the block
+  // Now includes native fallback (hidden input is tappable) for iOS Safari.
+  const handleDateBlockClick = () => {
+    if (!dateInputRef.current) return;
+    try {
+      if (typeof dateInputRef.current.showPicker === 'function') {
+        dateInputRef.current.showPicker();
+      }
+      // No fallback needed — the hidden input itself receives the tap
+      // directly (pointerEvents enabled) and opens the picker natively.
+    } catch {
+      // Native tap on the input handles the fallback
+    }
+  };
+
+  // ✅ FIX: Keyboard activation for the clickable date block (Enter / Space)
+  const handleDateBlockKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleDateBlockClick();
+    }
+  };
+
   const resetFilters = () => {
     setViewMode('today');
     setFilterDate('');
@@ -407,7 +657,6 @@ export const AdminAttendanceHistory = () => {
     setShowDetailModal(true);
 
     if (record.attendance_date && record.employee_id) {
-      // ✅ Check cache first
       const cacheKey = `${record.employee_id}_${record.attendance_date}`;
       const cached = pingCountCacheRef.current[cacheKey];
       if (cached !== undefined) {
@@ -541,6 +790,20 @@ export const AdminAttendanceHistory = () => {
     }
     return projects;
   };
+
+  // ➕ Employee options for searchable dropdown
+  const employeeOptions = useMemo(() => {
+    return [
+      { value: 'all', label: 'All Employees', subLabel: '' },
+      ...employees.map((emp) => ({
+        value: emp.id,
+        label: emp.name,
+        subLabel: `${emp.employee_id}${
+          emp.department ? ` · ${emp.department}` : ''
+        }`,
+      })),
+    ];
+  }, [employees]);
 
   const handleDownloadReport = async () => {
     try {
@@ -833,7 +1096,9 @@ export const AdminAttendanceHistory = () => {
             </div>
 
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {/* ✅ Blue download button style */}
               <button
+                type="button"
                 onClick={() => setShowDownloadModal(true)}
                 title="Download report"
                 style={{
@@ -842,19 +1107,33 @@ export const AdminAttendanceHistory = () => {
                   borderRadius: '50%',
                   border: 'none',
                   background: dark
-                    ? 'rgba(255,255,255,0.08)'
-                    : 'linear-gradient(135deg, #D1FAE5, #A7F3D0)',
-                  fontSize: '16px',
+                    ? 'rgba(59,130,246,0.15)'
+                    : 'linear-gradient(135deg, #DBEAFE, #BFDBFE)',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  boxShadow: '0 4px 12px rgba(16,185,129,0.2)',
+                  boxShadow: '0 4px 12px rgba(59,130,246,0.2)',
+                  color: dark ? '#60A5FA' : '#2563EB',
                 }}
               >
-                ⬇
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
               </button>
               <button
+                type="button"
                 onClick={toggleDark}
                 title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
                 style={{
@@ -915,6 +1194,7 @@ export const AdminAttendanceHistory = () => {
             return (
               <button
                 key={v.key}
+                type="button"
                 onClick={() => handleViewModeChange(v.key)}
                 style={{
                   flex: 1,
@@ -940,7 +1220,9 @@ export const AdminAttendanceHistory = () => {
             );
           })}
           <button
+            type="button"
             onClick={resetFilters}
+            title="Reset filters"
             style={{
               padding: '9px 12px',
               borderRadius: THEME.radiusPill,
@@ -1028,26 +1310,79 @@ export const AdminAttendanceHistory = () => {
           </select>
         </div>
 
+        {/* ✅ Click-anywhere-to-open date picker (keyboard accessible + iOS safe) */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-          <input
-            type="date"
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Select date"
+            onClick={handleDateBlockClick}
+            onKeyDown={handleDateBlockKeyDown}
             style={{
               flex: 1,
+              position: 'relative',
               padding: '11px 12px',
               borderRadius: THEME.radiusMd,
               border: `1px solid ${border}`,
               background: cardBg,
-              color: textPrimary,
+              color: filterDate ? textPrimary : textMuted,
               fontSize: '12px',
               fontWeight: 600,
-              outline: 'none',
               fontFamily: THEME.font,
+              cursor: 'pointer',
               boxSizing: 'border-box',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              userSelect: 'none',
+              outline: 'none',
             }}
-          />
+          >
+            <span
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flex: 1,
+                pointerEvents: 'none',
+              }}
+            >
+              {filterDate ? formatDate(filterDate) : 'dd-mm-yyyy'}
+            </span>
+            <span
+              style={{ fontSize: '14px', flexShrink: 0, pointerEvents: 'none' }}
+            >
+              📅
+            </span>
+
+            {/* Hidden native date input — receives tap on iOS Safari,
+                transparent and overlaid so it stays the click target */}
+            <input
+              ref={dateInputRef}
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              aria-label="Date"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                opacity: 0,
+                border: 'none',
+                padding: 0,
+                margin: 0,
+                cursor: 'pointer',
+                background: 'transparent',
+                color: 'transparent',
+              }}
+            />
+          </div>
+
           <button
+            type="button"
             onClick={handleDateSearch}
             style={{
               padding: '11px 18px',
@@ -1070,37 +1405,20 @@ export const AdminAttendanceHistory = () => {
           </button>
         </div>
 
-        <select
+        {/* ➕ Searchable Employee */}
+        <SearchableDropdown
           value={selectedEmployee}
-          onChange={(e) => setSelectedEmployee(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '11px 12px',
-            borderRadius: THEME.radiusMd,
-            border: `1px solid ${border}`,
-            background: cardBg,
-            color: textPrimary,
-            fontSize: '12px',
-            fontWeight: 600,
-            outline: 'none',
-            fontFamily: THEME.font,
-            cursor: 'pointer',
-            appearance: 'none',
-            backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-            backgroundRepeat: 'no-repeat',
-            backgroundPosition: 'right 12px center',
-            backgroundSize: '14px',
-            paddingRight: '36px',
-            boxSizing: 'border-box',
-          }}
-        >
-          <option value="all">👥 All Employees</option>
-          {employees.map((emp) => (
-            <option key={emp.id} value={emp.id}>
-              {emp.name} ({emp.employee_id})
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setSelectedEmployee(v)}
+          options={employeeOptions}
+          placeholder="All Employees"
+          searchPlaceholder="Search name, ID, department…"
+          icon="👥"
+          dark={dark}
+          cardBg={cardBg}
+          textPrimary={textPrimary}
+          textMuted={textMuted}
+          border={border}
+        />
       </div>
 
       {/* RESULTS COUNT */}
@@ -1158,7 +1476,6 @@ export const AdminAttendanceHistory = () => {
             const statusLabel = getStatusLabel(item.status);
             const projects = getProjects(item);
 
-            // ✅ FIX: stable key
             const stableKey =
               item.id || `${item.employee_id}_${item.attendance_date}_${idx}`;
 
@@ -1466,7 +1783,9 @@ export const AdminAttendanceHistory = () => {
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setShowDetailModal(false)}
+                aria-label="Close"
                 style={{
                   fontSize: '22px',
                   color: textMuted,
@@ -1787,6 +2106,7 @@ export const AdminAttendanceHistory = () => {
             )}
 
             <button
+              type="button"
               onClick={() => setShowDetailModal(false)}
               style={{
                 width: '100%',
@@ -1872,7 +2192,9 @@ export const AdminAttendanceHistory = () => {
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setShowScreenshotModal(false)}
+                aria-label="Close"
                 style={{
                   fontSize: 22,
                   color: textMuted,
@@ -1916,6 +2238,7 @@ export const AdminAttendanceHistory = () => {
             </a>
 
             <button
+              type="button"
               onClick={() => setShowScreenshotModal(false)}
               style={{
                 width: '100%',
@@ -2002,7 +2325,9 @@ export const AdminAttendanceHistory = () => {
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setShowTimelineModal(false)}
+                aria-label="Close"
                 style={{
                   fontSize: 22,
                   color: textMuted,
@@ -2243,6 +2568,7 @@ export const AdminAttendanceHistory = () => {
             )}
 
             <button
+              type="button"
               onClick={() => setShowTimelineModal(false)}
               style={{
                 width: '100%',
@@ -2327,7 +2653,9 @@ export const AdminAttendanceHistory = () => {
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => !downloading && setShowDownloadModal(false)}
+                aria-label="Close"
                 style={{
                   fontSize: '22px',
                   color: textMuted,
@@ -2555,6 +2883,7 @@ export const AdminAttendanceHistory = () => {
             </div>
 
             <button
+              type="button"
               onClick={handleDownloadReport}
               disabled={downloading}
               style={{

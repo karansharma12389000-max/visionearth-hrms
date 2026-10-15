@@ -8,14 +8,17 @@
 // ✅ 📸 Screenshot button beside Timeline.
 // ✅ ⬇ Download Report — filter by year / month / company / designation / employee
 // ✅ 🌙/☀️ Theme toggle in header
+// ✅ 📅 Click-anywhere-to-open date picker
 //
 // FIXES:
 // ✅ today filter no longer leaves stale date in input
 // ✅ screenshot img has error fallback
 // ✅ CSV date normalization simplified (no double parse)
 // ✅ lean column select on check_in_out + attendance
+// ✅ iOS Safari date picker fallback (native tap on hidden input)
+// ✅ Keyboard-accessible date picker (Enter/Space)
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../services/supabase';
@@ -80,6 +83,9 @@ export const AdminCheckinHistory = () => {
   const [employees, setEmployees] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [designations, setDesignations] = useState([]);
+
+  // ✅ Ref to trigger the hidden native date picker
+  const dateInputRef = useRef(null);
 
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
   const cardBg = dark ? THEME.dark.card : THEME.cardBg;
@@ -252,6 +258,29 @@ export const AdminCheckinHistory = () => {
     setViewMode('all');
     setFilterDate('');
     fetchCheckinHistory(null, null);
+  };
+
+  // ✅ FIX: Open the date picker via ref when user clicks anywhere on the block
+  // Now includes native fallback (hidden input is tappable) for iOS Safari.
+  const handleDateBlockClick = () => {
+    if (!dateInputRef.current) return;
+    try {
+      if (typeof dateInputRef.current.showPicker === 'function') {
+        dateInputRef.current.showPicker();
+      }
+      // No fallback needed — the hidden input itself receives the tap
+      // directly (pointerEvents enabled) and opens the picker natively.
+    } catch {
+      // Native tap on the input handles the fallback
+    }
+  };
+
+  // ✅ FIX: Keyboard activation for the clickable date block (Enter / Space)
+  const handleDateBlockKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleDateBlockClick();
+    }
   };
 
   useEffect(() => {
@@ -1453,6 +1482,7 @@ export const AdminCheckinHistory = () => {
             </div>
 
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {/* ✅ Blue download button style */}
               <button
                 onClick={() => setShowDownloadModal(true)}
                 title="Download report"
@@ -1462,17 +1492,30 @@ export const AdminCheckinHistory = () => {
                   borderRadius: '50%',
                   border: 'none',
                   background: dark
-                    ? 'rgba(255,255,255,0.08)'
-                    : 'linear-gradient(135deg, #D1FAE5, #A7F3D0)',
-                  fontSize: '16px',
+                    ? 'rgba(59,130,246,0.15)'
+                    : 'linear-gradient(135deg, #DBEAFE, #BFDBFE)',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  boxShadow: '0 4px 12px rgba(16,185,129,0.2)',
+                  boxShadow: '0 4px 12px rgba(59,130,246,0.2)',
+                  color: dark ? '#60A5FA' : '#2563EB',
                 }}
               >
-                ⬇
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
               </button>
               <button
                 onClick={toggleDark}
@@ -1631,25 +1674,77 @@ export const AdminCheckinHistory = () => {
           </select>
         </div>
 
+        {/* ✅ Click-anywhere-to-open date picker (keyboard accessible + iOS safe) */}
         <div style={{ display: 'flex', gap: '8px' }}>
-          <input
-            type="date"
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Select date"
+            onClick={handleDateBlockClick}
+            onKeyDown={handleDateBlockKeyDown}
             style={{
               flex: 1,
+              position: 'relative',
               padding: '11px 12px',
               borderRadius: THEME.radiusMd,
               border: `1px solid ${border}`,
               background: cardBg,
-              color: textPrimary,
+              color: filterDate ? textPrimary : textMuted,
               fontSize: '12px',
               fontWeight: 600,
-              outline: 'none',
               fontFamily: THEME.font,
+              cursor: 'pointer',
               boxSizing: 'border-box',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              userSelect: 'none',
+              outline: 'none',
             }}
-          />
+          >
+            <span
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flex: 1,
+                pointerEvents: 'none',
+              }}
+            >
+              {filterDate ? formatDate(filterDate) : 'dd-mm-yyyy'}
+            </span>
+            <span
+              style={{ fontSize: '14px', flexShrink: 0, pointerEvents: 'none' }}
+            >
+              📅
+            </span>
+
+            {/* Hidden native date input — receives tap on iOS Safari,
+                transparent and overlaid so it stays the click target */}
+            <input
+              ref={dateInputRef}
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              aria-label="Date"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                opacity: 0,
+                border: 'none',
+                padding: 0,
+                margin: 0,
+                cursor: 'pointer',
+                background: 'transparent',
+                color: 'transparent',
+              }}
+            />
+          </div>
+
           <button
             onClick={loadCustomDate}
             style={{

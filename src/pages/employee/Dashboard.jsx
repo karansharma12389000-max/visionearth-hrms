@@ -569,7 +569,7 @@ export const Dashboard = () => {
               >
                 <img
                   src="/vision-earth-logo.png"
-                  alt="Vision Earth"
+                  alt="Vision Earth Care"
                   style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                 />
               </div>
@@ -583,7 +583,7 @@ export const Dashboard = () => {
                     lineHeight: 1.1,
                   }}
                 >
-                  VISION EARTH
+                  VISION EARTH CARE
                 </div>
                 <div
                   style={{

@@ -8,10 +8,10 @@
 // ✅ FULLSCREEN: Click ⛶ / double-click header / Esc to exit.
 // ✅ IST-anchored initial month/year
 // ✅ Division-by-zero guard on Avg hours
-// ✅ Clean JSX indentation
-// ✅ FIXED: Department + Employee filter row now equal width
+// ✅ Searchable Company, Department, Employee dropdowns
+// ➕ Click-anywhere date picker
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../services/supabase';
@@ -19,11 +19,228 @@ import { getMonthName } from '../../utils/helpers';
 import BottomNavigation from '../../components/BottomNavigation';
 import { THEME, isDark } from '../../utils/designTokens';
 
+// ============================================
+// SEARCHABLE DROPDOWN
+// ============================================
+const SearchableDropdown = ({
+  value,
+  onChange,
+  options,
+  placeholder,
+  searchPlaceholder = 'Search...',
+  dark,
+  cardBg,
+  textPrimary,
+  textMuted,
+  border,
+  icon,
+}) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const wrapperRef = useRef(null);
+
+  const selectedOption = useMemo(
+    () => options.find((o) => o.value === value) || null,
+    [options, value]
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return options.slice(0, 100);
+    return options
+      .filter((o) => {
+        const label = String(o.label || '').toLowerCase();
+        const sub = String(o.subLabel || '').toLowerCase();
+        return label.includes(q) || sub.includes(q);
+      })
+      .slice(0, 100);
+  }, [options, search]);
+
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setOpen(false);
+        setSearch('');
+      }
+    };
+    window.addEventListener('mousedown', onDocClick);
+    return () => window.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  const handleToggle = () => {
+    setOpen((v) => {
+      if (!v) setSearch('');
+      return !v;
+    });
+  };
+
+  const handleSelect = (opt) => {
+    onChange(opt.value);
+    setOpen(false);
+    setSearch('');
+  };
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative', width: '100%', minWidth: 0 }}>
+      <div
+        onClick={handleToggle}
+        style={{
+          width: '100%',
+          padding: '12px 14px',
+          borderRadius: THEME.radiusMd,
+          border: `1px solid ${border}`,
+          background: cardBg,
+          color: textPrimary,
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          boxSizing: 'border-box',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+        }}
+      >
+        <span
+          style={{
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}
+        >
+          {icon && <span style={{ flexShrink: 0 }}>{icon}</span>}
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <span style={{ color: textMuted, fontSize: '12px', flexShrink: 0 }}>
+          {open ? '▲' : '▼'}
+        </span>
+      </div>
+
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            left: 0,
+            right: 0,
+            background: cardBg,
+            border: `1px solid ${border}`,
+            borderRadius: THEME.radiusMd,
+            boxShadow: '0 12px 32px rgba(0,0,0,0.25)',
+            zIndex: 50,
+            maxHeight: '320px',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ padding: '8px', borderBottom: `1px solid ${border}` }}>
+            <input
+              autoFocus
+              type="text"
+              placeholder={searchPlaceholder}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '10px',
+                border: `1px solid ${border}`,
+                background: dark ? '#0F172A' : '#F8FAFC',
+                color: textPrimary,
+                fontSize: '12px',
+                fontWeight: 600,
+                outline: 'none',
+                fontFamily: THEME.font,
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {filtered.length === 0 ? (
+              <div
+                style={{
+                  padding: '20px',
+                  textAlign: 'center',
+                  color: textMuted,
+                  fontSize: '12px',
+                }}
+              >
+                No results found
+              </div>
+            ) : (
+              filtered.map((opt, i) => {
+                const isSel = opt.value === value;
+                return (
+                  <div
+                    key={`${opt.value}-${i}`}
+                    onClick={() => handleSelect(opt)}
+                    style={{
+                      padding: '11px 14px',
+                      cursor: 'pointer',
+                      borderBottom: `1px solid ${border}`,
+                      background: isSel ? 'rgba(16,185,129,0.12)' : 'transparent',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSel)
+                        e.currentTarget.style.background = dark
+                          ? 'rgba(255,255,255,0.04)'
+                          : '#F8FAFC';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSel) e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        color: textPrimary,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {opt.label}
+                    </div>
+                    {opt.subLabel && (
+                      <div
+                        style={{
+                          fontSize: '10px',
+                          color: textMuted,
+                          fontWeight: 500,
+                          marginTop: 2,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {opt.subLabel}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 export const AdminAttendanceReport = () => {
   const { theme } = useTheme();
   const dark = isDark(theme);
 
-  // ✅ FIX: IST-anchored initial month/year
+  // IST-anchored initial month/year
   const _istNow = new Date();
   const _istMonth = parseInt(
     _istNow.toLocaleDateString('en-GB', {
@@ -41,6 +258,7 @@ export const AdminAttendanceReport = () => {
   const [loading, setLoading] = useState(true);
   const [month, setMonth] = useState(_istMonth);
   const [year, setYear] = useState(_istYear);
+  const [filterDate, setFilterDate] = useState('');
   const [reportData, setReportData] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState('all');
   const [selectedDepartment, setSelectedDepartment] = useState('all');
@@ -52,6 +270,9 @@ export const AdminAttendanceReport = () => {
 
   const [activeTab, setActiveTab] = useState('report');
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Date picker ref
+  const dateInputRef = useRef(null);
 
   const pageBg = dark ? THEME.dark.bg : THEME.greenBg;
   const cardBg = dark ? THEME.dark.card : THEME.cardBg;
@@ -165,11 +386,20 @@ export const AdminAttendanceReport = () => {
     try {
       setLoading(true);
 
-      const mm = String(month).padStart(2, '0');
-      const lastDay = new Date(year, month, 0).getDate();
-      const dd = String(lastDay).padStart(2, '0');
-      const startDate = `${year}-${mm}-01`;
-      const endDate = `${year}-${mm}-${dd}`;
+      let startDate;
+      let endDate;
+
+      // ➕ If a specific date is selected, use ONLY that date
+      if (filterDate) {
+        startDate = filterDate;
+        endDate = filterDate;
+      } else {
+        const mm = String(month).padStart(2, '0');
+        const lastDay = new Date(year, month, 0).getDate();
+        const dd = String(lastDay).padStart(2, '0');
+        startDate = `${year}-${mm}-01`;
+        endDate = `${year}-${mm}-${dd}`;
+      }
 
       let empQuery = supabase
         .from('employees')
@@ -262,10 +492,7 @@ export const AdminAttendanceReport = () => {
           }
         });
 
-        const totalHours = Object.values(dayHours).reduce(
-          (s, h) => s + h,
-          0
-        );
+        const totalHours = Object.values(dayHours).reduce((s, h) => s + h, 0);
 
         return {
           ...emp,
@@ -305,7 +532,7 @@ export const AdminAttendanceReport = () => {
   useEffect(() => {
     fetchReportData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month, year, selectedEmployee, selectedDepartment, selectedCompany]);
+  }, [month, year, filterDate, selectedEmployee, selectedDepartment, selectedCompany]);
 
   // ============================================
   // FETCH HOLIDAYS
@@ -377,7 +604,76 @@ export const AdminAttendanceReport = () => {
   const daysInMonth = new Date(year, month, 0).getDate();
 
   // ============================================
-  // REPORT TAB BADGE (status letter / striped H)
+  // DROPDOWN OPTIONS
+  // ============================================
+  const companyOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All Companies' },
+      ...companies.map((c) => ({ value: c, label: c })),
+    ],
+    [companies]
+  );
+
+  const departmentOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All Depts' },
+      ...departments.map((d) => ({ value: d, label: d })),
+    ],
+    [departments]
+  );
+
+  const employeeOptions = useMemo(() => {
+    const filtered = employees.filter(
+      (emp) =>
+        (selectedDepartment === 'all' || emp.department === selectedDepartment) &&
+        (selectedCompany === 'all' || emp.company === selectedCompany)
+    );
+    return [
+      { value: 'all', label: 'All Employees' },
+      ...filtered.map((emp) => ({
+        value: emp.id,
+        label: emp.name,
+        subLabel: `${emp.employee_id}${
+          emp.department ? ` · ${emp.department}` : ''
+        }`,
+      })),
+    ];
+  }, [employees, selectedDepartment, selectedCompany]);
+
+  // ============================================
+  // DATE PICKER HANDLER
+  // ============================================
+  const handleDateBlockClick = () => {
+    if (!dateInputRef.current) return;
+    try {
+      if (typeof dateInputRef.current.showPicker === 'function') {
+        dateInputRef.current.showPicker();
+      } else {
+        dateInputRef.current.focus();
+        dateInputRef.current.click();
+      }
+    } catch {
+      dateInputRef.current.focus();
+    }
+  };
+
+  const handleClearDate = (e) => {
+    e.stopPropagation();
+    setFilterDate('');
+  };
+
+  const formatDisplayDate = (dateStr) => {
+    if (!dateStr) return 'dd-mm-yyyy';
+    try {
+      const [y, m, d] = dateStr.split('-');
+      return `${d}-${m}-${y}`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // ============================================
+  // REPORT TAB BADGE
   // ============================================
   const getStatusBadge = (status, day) => {
     if (day) {
@@ -429,12 +725,7 @@ export const AdminAttendanceReport = () => {
 
     if (!status || status === '-') {
       return (
-        <span
-          style={{
-            color: dark ? '#475569' : '#CBD5E1',
-            fontSize: '13px',
-          }}
-        >
+        <span style={{ color: dark ? '#475569' : '#CBD5E1', fontSize: '13px' }}>
           •
         </span>
       );
@@ -473,7 +764,6 @@ export const AdminAttendanceReport = () => {
       : null;
     const holidayName = dateStr ? holidaysMap[dateStr] : null;
 
-    // Holiday + no work → plain purple "H"
     if (holidayName && (!hours || hours <= 0)) {
       return (
         <span
@@ -497,7 +787,6 @@ export const AdminAttendanceReport = () => {
       );
     }
 
-    // Holiday + worked → purple badge with hours inside
     if (holidayName && hours > 0) {
       return (
         <span
@@ -522,7 +811,6 @@ export const AdminAttendanceReport = () => {
       );
     }
 
-    // Regular day, no hours
     if (!hours || hours <= 0) {
       return (
         <span style={{ color: dark ? '#475569' : '#CBD5E1', fontSize: '13px' }}>
@@ -531,13 +819,7 @@ export const AdminAttendanceReport = () => {
       );
     }
 
-    // Regular day with hours → color by amount
-    const color =
-      hours >= 8
-        ? '#10B981'
-        : hours >= 4
-        ? '#F59E0B'
-        : '#EF4444';
+    const color = hours >= 8 ? '#10B981' : hours >= 4 ? '#F59E0B' : '#EF4444';
 
     return (
       <span
@@ -589,13 +871,7 @@ export const AdminAttendanceReport = () => {
               margin: '0 auto',
             }}
           />
-          <p
-            style={{
-              marginTop: '16px',
-              color: textSecondary,
-              fontSize: '14px',
-            }}
-          >
+          <p style={{ marginTop: '16px', color: textSecondary, fontSize: '14px' }}>
             Loading...
           </p>
         </div>
@@ -615,12 +891,7 @@ export const AdminAttendanceReport = () => {
         overflow: 'hidden',
         boxShadow: cardShadow,
         ...(isFullscreen
-          ? {
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-            }
+          ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }
           : {}),
       }}
     >
@@ -761,27 +1032,25 @@ export const AdminAttendanceReport = () => {
                 </th>
               ))}
 
-              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(
-                (day) => (
-                  <th
-                    key={day}
-                    style={{
-                      padding: '12px 4px',
-                      textAlign: 'center',
-                      fontWeight: 700,
-                      color: textMuted,
-                      fontSize: '9px',
-                      minWidth: '28px',
-                      background: dark ? '#0F172A' : '#F8FAFC',
-                      position: isFullscreen ? 'sticky' : 'static',
-                      top: isFullscreen ? 0 : 'auto',
-                      zIndex: isFullscreen ? 2 : 'auto',
-                    }}
-                  >
-                    {day}
-                  </th>
-                )
-              )}
+              {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => (
+                <th
+                  key={day}
+                  style={{
+                    padding: '12px 4px',
+                    textAlign: 'center',
+                    fontWeight: 700,
+                    color: textMuted,
+                    fontSize: '9px',
+                    minWidth: '28px',
+                    background: dark ? '#0F172A' : '#F8FAFC',
+                    position: isFullscreen ? 'sticky' : 'static',
+                    top: isFullscreen ? 0 : 'auto',
+                    zIndex: isFullscreen ? 2 : 'auto',
+                  }}
+                >
+                  {day}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -789,15 +1058,9 @@ export const AdminAttendanceReport = () => {
               <tr>
                 <td
                   colSpan={(activeTab === 'report' ? 8 : 5) + daysInMonth}
-                  style={{
-                    padding: '40px',
-                    textAlign: 'center',
-                    color: textSecondary,
-                  }}
+                  style={{ padding: '40px', textAlign: 'center', color: textSecondary }}
                 >
-                  <div style={{ fontSize: '40px', marginBottom: '8px' }}>
-                    📊
-                  </div>
+                  <div style={{ fontSize: '40px', marginBottom: '8px' }}>📊</div>
                   <p style={{ fontWeight: 700 }}>No data available</p>
                 </td>
               </tr>
@@ -807,9 +1070,7 @@ export const AdminAttendanceReport = () => {
                   key={emp.id || idx}
                   style={{
                     borderBottom:
-                      idx < reportData.length - 1
-                        ? `1px solid ${border}`
-                        : 'none',
+                      idx < reportData.length - 1 ? `1px solid ${border}` : 'none',
                     background:
                       idx % 2 === 0
                         ? dark
@@ -834,22 +1095,10 @@ export const AdminAttendanceReport = () => {
                       borderRight: `1px solid ${border}`,
                     }}
                   >
-                    <div
-                      style={{
-                        fontWeight: 800,
-                        color: textPrimary,
-                        fontSize: '12px',
-                      }}
-                    >
+                    <div style={{ fontWeight: 800, color: textPrimary, fontSize: '12px' }}>
                       {emp.name}
                     </div>
-                    <div
-                      style={{
-                        fontSize: '9px',
-                        color: textMuted,
-                        fontWeight: 500,
-                      }}
-                    >
+                    <div style={{ fontSize: '9px', color: textMuted, fontWeight: 500 }}>
                       {emp.employee_id}
                     </div>
                     {emp.company && (
@@ -915,22 +1164,16 @@ export const AdminAttendanceReport = () => {
                     </>
                   )}
 
-                  {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(
-                    (day) => (
-                      <td
-                        key={day}
-                        style={{
-                          padding: '6px 2px',
-                          textAlign: 'center',
-                          fontSize: '11px',
-                        }}
-                      >
-                        {activeTab === 'report'
-                          ? getStatusBadge(emp.days?.[day], day)
-                          : getHoursCell(emp.dayHours?.[day], day)}
-                      </td>
-                    )
-                  )}
+                  {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => (
+                    <td
+                      key={day}
+                      style={{ padding: '6px 2px', textAlign: 'center', fontSize: '11px' }}
+                    >
+                      {activeTab === 'report'
+                        ? getStatusBadge(emp.days?.[day], day)
+                        : getHoursCell(emp.dayHours?.[day], day)}
+                    </td>
+                  ))}
                 </tr>
               ))
             )}
@@ -969,10 +1212,7 @@ export const AdminAttendanceReport = () => {
             { color: '#3B82F6', label: 'L - Leave' },
             { color: '#8B5CF6', label: 'H - Holiday' },
           ].map((item, i) => (
-            <div
-              key={i}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span
                 style={{
                   display: 'inline-block',
@@ -982,13 +1222,7 @@ export const AdminAttendanceReport = () => {
                   background: item.color,
                 }}
               />
-              <span
-                style={{
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  color: textSecondary,
-                }}
-              >
+              <span style={{ fontSize: '10px', fontWeight: 700, color: textSecondary }}>
                 {item.label}
               </span>
             </div>
@@ -1010,13 +1244,7 @@ export const AdminAttendanceReport = () => {
                 border: '1px solid #10B98180',
               }}
             />
-            <span
-              style={{
-                fontSize: '10px',
-                fontWeight: 700,
-                color: textSecondary,
-              }}
-            >
+            <span style={{ fontSize: '10px', fontWeight: 700, color: textSecondary }}>
               H (striped) - Worked on holiday
             </span>
           </div>
@@ -1030,10 +1258,7 @@ export const AdminAttendanceReport = () => {
             { color: '#8B5CF6', label: 'H — Holiday (no work)' },
             { color: '#8B5CF680', label: 'Purple number — Worked on holiday' },
           ].map((item, i) => (
-            <div
-              key={i}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span
                 style={{
                   display: 'inline-block',
@@ -1043,13 +1268,7 @@ export const AdminAttendanceReport = () => {
                   background: item.color,
                 }}
               />
-              <span
-                style={{
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  color: textSecondary,
-                }}
-              >
+              <span style={{ fontSize: '10px', fontWeight: 700, color: textSecondary }}>
                 {item.label}
               </span>
             </div>
@@ -1169,13 +1388,14 @@ export const AdminAttendanceReport = () => {
               zIndex: 1,
             }}
           >
-            📊 {getMonthName(month)} {year} · {stats.employees} employees
+            📊 {filterDate ? formatDisplayDate(filterDate) : `${getMonthName(month)} ${year}`} · {stats.employees} employees
           </div>
         </div>
       </div>
 
       {/* FILTERS */}
       <div style={{ padding: '0 16px 12px' }}>
+        {/* Month + Year */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
           <select
             value={month}
@@ -1239,45 +1459,110 @@ export const AdminAttendanceReport = () => {
           </select>
         </div>
 
-        {companies.length > 0 && (
-          <select
-            value={selectedCompany}
-            onChange={(e) => {
-              setSelectedCompany(e.target.value);
-              setSelectedEmployee('all');
-            }}
+        {/* ➕ Click-anywhere date picker */}
+        <div
+          onClick={handleDateBlockClick}
+          style={{
+            width: '100%',
+            position: 'relative',
+            padding: '12px 14px',
+            borderRadius: THEME.radiusMd,
+            border: `1px solid ${filterDate ? THEME.primary : border}`,
+            background: cardBg,
+            color: filterDate ? textPrimary : textMuted,
+            fontSize: '13px',
+            fontWeight: 600,
+            fontFamily: THEME.font,
+            cursor: 'pointer',
+            boxSizing: 'border-box',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            userSelect: 'none',
+            marginBottom: '8px',
+            transition: 'border-color 0.2s',
+          }}
+        >
+          <span
             style={{
-              width: '100%',
-              padding: '12px 14px',
-              borderRadius: THEME.radiusMd,
-              border: `1px solid ${border}`,
-              background: cardBg,
-              color: textPrimary,
-              fontSize: '13px',
-              fontWeight: 600,
-              outline: 'none',
-              fontFamily: THEME.font,
-              cursor: 'pointer',
-              appearance: 'none',
-              backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 12px center',
-              backgroundSize: '16px',
-              paddingRight: '38px',
-              boxSizing: 'border-box',
-              marginBottom: '8px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
             }}
           >
-            <option value="all">🏛️ All Companies</option>
-            {companies.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+            {formatDisplayDate(filterDate)}
+          </span>
+          {filterDate ? (
+            <button
+              type="button"
+              onClick={handleClearDate}
+              aria-label="Clear date"
+              title="Clear date"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: textMuted,
+                fontSize: '14px',
+                cursor: 'pointer',
+                padding: '2px 6px',
+                borderRadius: '6px',
+                lineHeight: 1,
+                flexShrink: 0,
+              }}
+            >
+              ✕
+            </button>
+          ) : (
+            <span style={{ fontSize: '16px', flexShrink: 0 }}>📅</span>
+          )}
+
+          {/* Hidden native input — receives showPicker() call */}
+          <input
+            ref={dateInputRef}
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            style={{
+              position: 'absolute',
+              opacity: 0,
+              width: '100%',
+              height: '100%',
+              top: 0,
+              left: 0,
+              border: 'none',
+              cursor: 'pointer',
+              pointerEvents: 'none',
+            }}
+            tabIndex={-1}
+            aria-hidden="true"
+          />
+        </div>
+
+        {/* ➕ Searchable Company */}
+        {companies.length > 0 && (
+          <div style={{ marginBottom: '8px' }}>
+            <SearchableDropdown
+              value={selectedCompany}
+              onChange={(v) => {
+                setSelectedCompany(v);
+                setSelectedEmployee('all');
+              }}
+              options={companyOptions}
+              placeholder="All Companies"
+              searchPlaceholder="Search companies..."
+              icon="🏛️"
+              dark={dark}
+              cardBg={cardBg}
+              textPrimary={textPrimary}
+              textMuted={textMuted}
+              border={border}
+            />
+          </div>
         )}
 
-        {/* ✅ FIXED: Department + Employee now equal width via grid */}
+        {/* ➕ Searchable Department + Employee */}
         <div
           style={{
             display: 'grid',
@@ -1285,87 +1570,36 @@ export const AdminAttendanceReport = () => {
             gap: '8px',
           }}
         >
-          <select
+          <SearchableDropdown
             value={selectedDepartment}
-            onChange={(e) => {
-              setSelectedDepartment(e.target.value);
+            onChange={(v) => {
+              setSelectedDepartment(v);
               setSelectedEmployee('all');
             }}
-            style={{
-              width: '100%',
-              minWidth: 0,
-              padding: '12px 14px',
-              borderRadius: THEME.radiusMd,
-              border: `1px solid ${border}`,
-              background: cardBg,
-              color: textPrimary,
-              fontSize: '12px',
-              fontWeight: 600,
-              outline: 'none',
-              fontFamily: THEME.font,
-              cursor: 'pointer',
-              appearance: 'none',
-              backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 12px center',
-              backgroundSize: '16px',
-              paddingRight: '38px',
-              boxSizing: 'border-box',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-            }}
-          >
-            <option value="all">🏢 All Depts</option>
-            {departments.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
+            options={departmentOptions}
+            placeholder="All Depts"
+            searchPlaceholder="Search departments..."
+            icon="🏢"
+            dark={dark}
+            cardBg={cardBg}
+            textPrimary={textPrimary}
+            textMuted={textMuted}
+            border={border}
+          />
 
-          <select
+          <SearchableDropdown
             value={selectedEmployee}
-            onChange={(e) => setSelectedEmployee(e.target.value)}
-            style={{
-              width: '100%',
-              minWidth: 0,
-              padding: '12px 14px',
-              borderRadius: THEME.radiusMd,
-              border: `1px solid ${border}`,
-              background: cardBg,
-              color: textPrimary,
-              fontSize: '12px',
-              fontWeight: 600,
-              outline: 'none',
-              fontFamily: THEME.font,
-              cursor: 'pointer',
-              appearance: 'none',
-              backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
-              backgroundRepeat: 'no-repeat',
-              backgroundPosition: 'right 12px center',
-              backgroundSize: '16px',
-              paddingRight: '38px',
-              boxSizing: 'border-box',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-            }}
-          >
-            <option value="all">👥 All Employees</option>
-            {employees
-              .filter(
-                (emp) =>
-                  (selectedDepartment === 'all' ||
-                    emp.department === selectedDepartment) &&
-                  (selectedCompany === 'all' || emp.company === selectedCompany)
-              )
-              .map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name} ({emp.employee_id})
-                </option>
-              ))}
-          </select>
+            onChange={(v) => setSelectedEmployee(v)}
+            options={employeeOptions}
+            placeholder="All Employees"
+            searchPlaceholder="Search name, ID..."
+            icon="👥"
+            dark={dark}
+            cardBg={cardBg}
+            textPrimary={textPrimary}
+            textMuted={textMuted}
+            border={border}
+          />
         </div>
       </div>
 
@@ -1378,9 +1612,7 @@ export const AdminAttendanceReport = () => {
             padding: '4px',
             background: dark ? 'rgba(255,255,255,0.03)' : '#F1F5F9',
             borderRadius: THEME.radiusPill,
-            border: `1px solid ${
-              dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'
-            }`,
+            border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'}`,
           }}
         >
           {[
@@ -1391,17 +1623,14 @@ export const AdminAttendanceReport = () => {
             return (
               <button
                 key={t.key}
+                type="button"
                 onClick={() => setActiveTab(t.key)}
                 style={{
                   flex: 1,
                   padding: '10px 6px',
                   borderRadius: THEME.radiusPill,
                   border: 'none',
-                  background: active
-                    ? dark
-                      ? '#1E293B'
-                      : '#FFFFFF'
-                    : 'transparent',
+                  background: active ? (dark ? '#1E293B' : '#FFFFFF') : 'transparent',
                   color: active ? THEME.primary : textSecondary,
                   fontWeight: active ? 800 : 600,
                   fontSize: '12px',
@@ -1449,13 +1678,7 @@ export const AdminAttendanceReport = () => {
                   overflow: 'hidden',
                 }}
               >
-                <div
-                  style={{
-                    fontSize: '12px',
-                    marginBottom: '3px',
-                    opacity: 0.9,
-                  }}
-                >
+                <div style={{ fontSize: '12px', marginBottom: '3px', opacity: 0.9 }}>
                   {stat.icon}
                 </div>
                 <div
@@ -1512,17 +1735,12 @@ export const AdminAttendanceReport = () => {
               flexShrink: 0,
             }}
           >
-            <div
-              style={{
-                fontSize: '13px',
-                fontWeight: 800,
-                color: textPrimary,
-              }}
-            >
+            <div style={{ fontSize: '13px', fontWeight: 800, color: textPrimary }}>
               📊 {getMonthName(month)} {year} ·{' '}
               {activeTab === 'report' ? 'Report' : 'Working Hours'}
             </div>
             <button
+              type="button"
               onClick={() => setIsFullscreen(false)}
               style={{
                 padding: '8px 14px',

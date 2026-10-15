@@ -2,14 +2,16 @@
 //
 // Vision Earth HRMS — Employee Timeline (Google Maps style)
 //
-// ✅ Month picker + Employee picker
+// ✅ Month picker + Searchable employee picker (NEW)
 // ✅ Swipe left → next day, swipe right → previous day
 // ✅ Tap day cell in calendar → jump to that day
 // ✅ Map (LiveMapPreview) + event list: Check In / Pings / Check Out
 // ✅ Any-language addresses preserved
 // ✅ Day nav arrows and labels now unambiguous
+// ✅ Monthly PDF download button in header
+// ➕ Searchable employee dropdown
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../services/supabase';
@@ -17,6 +19,7 @@ import { getTodayIST, formatDate, getMonthName } from '../../utils/helpers';
 import BottomNavigation from '../../components/BottomNavigation';
 import { THEME, isDark } from '../../utils/designTokens';
 import LiveMapPreview, { parseGps } from '../../components/LiveMapPreview';
+import TimelinePDFExporter from '../../components/TimelinePDFExporter';
 
 // ============================================
 // HELPERS
@@ -141,7 +144,7 @@ const fetchDayEvents = async (employeeId, dateStr) => {
     supabase
       .from('attendance')
       .select(
-        'id, attendance_date, status, check_in_time, check_out_time, check_in_address, check_out_address, check_in_gps, check_out_gps, working_hours, remarks'
+        'id, attendance_date, status, check_in_time, check_out_time, check_in_location, check_out_location, check_in_gps, check_out_gps, working_hours, remarks'
       )
       .eq('employee_id', employeeId)
       .eq('attendance_date', dateStr)
@@ -153,9 +156,13 @@ const fetchDayEvents = async (employeeId, dateStr) => {
   const att = (attRes.data && attRes.data[0]) || null;
 
   const checkInAddress =
-    (cio && cio.check_in_address) || (att && att.check_in_address) || null;
+    (cio && cio.check_in_address) ||
+    (att && att.check_in_location) ||
+    null;
   const checkOutAddress =
-    (cio && cio.check_out_address) || (att && att.check_out_address) || null;
+    (cio && cio.check_out_address) ||
+    (att && att.check_out_location) ||
+    null;
   const checkInGps =
     (cio && cio.check_in_gps) || (att && att.check_in_gps) || null;
   const checkOutGps =
@@ -321,6 +328,11 @@ export const AdminEmployeeTimeline = () => {
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [selectedDate, setSelectedDate] = useState(todayIST);
 
+  // ➕ Searchable dropdown state
+  const [showEmpDropdown, setShowEmpDropdown] = useState(false);
+  const [empSearch, setEmpSearch] = useState('');
+  const empDropdownRef = useRef(null);
+
   const [calMonth, setCalMonth] = useState(_istMonth);
   const [calYear, setCalYear] = useState(_istYear);
   const [monthActivity, setMonthActivity] = useState(new Set());
@@ -330,7 +342,6 @@ export const AdminEmployeeTimeline = () => {
 
   const [showCalendar, setShowCalendar] = useState(true);
 
-  // Swipe handling
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
   const swiping = useRef(false);
@@ -343,7 +354,26 @@ export const AdminEmployeeTimeline = () => {
   const border = dark ? THEME.dark.border : THEME.border;
   const cardShadow = dark ? THEME.shadowDarkSm : THEME.shadowSm;
 
-  // Load employees
+  // ➕ Filtered employee list for search
+  const filteredEmployees = useMemo(() => {
+    const q = empSearch.trim().toLowerCase();
+    if (!q) return employees.slice(0, 50);
+    return employees
+      .filter((e) => {
+        const name = (e.name || '').toLowerCase();
+        const empId = (e.employee_id || '').toLowerCase();
+        const dept = (e.department || '').toLowerCase();
+        return name.includes(q) || empId.includes(q) || dept.includes(q);
+      })
+      .slice(0, 50);
+  }, [employees, empSearch]);
+
+  // ➕ Selected employee object
+  const selectedEmployeeObj = useMemo(
+    () => employees.find((e) => e.id === selectedEmployee) || null,
+    [employees, selectedEmployee]
+  );
+
   useEffect(() => {
     (async () => {
       try {
@@ -359,7 +389,6 @@ export const AdminEmployeeTimeline = () => {
     })();
   }, []);
 
-  // Load month activity
   useEffect(() => {
     if (!selectedEmployee) return;
     (async () => {
@@ -372,7 +401,6 @@ export const AdminEmployeeTimeline = () => {
     })();
   }, [selectedEmployee, calYear, calMonth]);
 
-  // Load day events
   const loadDay = useCallback(
     async (dateStr) => {
       if (!selectedEmployee || !dateStr) return;
@@ -394,7 +422,20 @@ export const AdminEmployeeTimeline = () => {
     loadDay(selectedDate);
   }, [selectedDate, loadDay]);
 
-  // Swipe logic
+  // ➕ Close dropdown on outside click
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (
+        empDropdownRef.current &&
+        !empDropdownRef.current.contains(e.target)
+      ) {
+        setShowEmpDropdown(false);
+      }
+    };
+    window.addEventListener('mousedown', onDocClick);
+    return () => window.removeEventListener('mousedown', onDocClick);
+  }, []);
+
   const onTouchStart = (e) => {
     const t = e.touches[0];
     touchStartX.current = t.clientX;
@@ -421,7 +462,6 @@ export const AdminEmployeeTimeline = () => {
     const t = e.changedTouches[0];
     const dx = t.clientX - (touchStartX.current || 0);
     if (dx < -60) {
-      // swipe left → next day
       const next = addDays(selectedDate, 1);
       if (next <= todayIST) {
         setSelectedDate(next);
@@ -429,7 +469,6 @@ export const AdminEmployeeTimeline = () => {
         toast('Already at today', { icon: '📅' });
       }
     } else if (dx > 60) {
-      // swipe right → previous day
       setSelectedDate(addDays(selectedDate, -1));
     }
     touchStartX.current = null;
@@ -437,7 +476,6 @@ export const AdminEmployeeTimeline = () => {
     swiping.current = false;
   };
 
-  // Calendar cell click
   const onCellClick = (day) => {
     if (!day) return;
     const ds = dateStrFrom(calYear, calMonth, day);
@@ -450,6 +488,23 @@ export const AdminEmployeeTimeline = () => {
   const prevDay = addDays(selectedDate, -1);
   const nextDay = addDays(selectedDate, 1);
   const canGoNext = nextDay <= todayIST;
+
+  const selectedEmployeeName = selectedEmployeeObj?.name || '';
+
+  // ➕ Handle employee selection
+  const handleSelectEmployee = (emp) => {
+    setSelectedEmployee(emp.id);
+    setShowEmpDropdown(false);
+    setEmpSearch('');
+  };
+
+  // ➕ Handle dropdown toggle
+  const toggleEmpDropdown = () => {
+    setShowEmpDropdown((v) => {
+      if (!v) setEmpSearch('');
+      return !v;
+    });
+  };
 
   return (
     <div
@@ -474,7 +529,7 @@ export const AdminEmployeeTimeline = () => {
             boxShadow: dark ? THEME.shadowDark : THEME.shadowLg,
             border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : '#E6F5EE'}`,
             position: 'relative',
-            overflow: 'hidden',
+            overflow: 'visible',
           }}
         >
           <div
@@ -488,6 +543,7 @@ export const AdminEmployeeTimeline = () => {
               background:
                 'radial-gradient(circle, rgba(139,92,246,0.18) 0%, transparent 70%)',
               pointerEvents: 'none',
+              zIndex: 0,
             }}
           />
 
@@ -545,56 +601,216 @@ export const AdminEmployeeTimeline = () => {
               </div>
             </div>
 
-            <button
-              onClick={toggleDark}
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                border: 'none',
-                background: dark
-                  ? 'rgba(255,255,255,0.08)'
-                  : 'linear-gradient(135deg, #FEF3C7, #FDE68A)',
-                fontSize: '16px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 4px 12px rgba(245,158,11,0.2)',
-              }}
-            >
-              {dark ? '☀️' : '🌙'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <TimelinePDFExporter
+                employeeId={selectedEmployee}
+                employeeName={selectedEmployeeName}
+              />
+
+              <button
+                type="button"
+                onClick={toggleDark}
+                aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  border: 'none',
+                  background: dark
+                    ? 'rgba(255,255,255,0.08)'
+                    : 'linear-gradient(135deg, #FEF3C7, #FDE68A)',
+                  fontSize: '16px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(245,158,11,0.2)',
+                }}
+              >
+                {dark ? '☀️' : '🌙'}
+              </button>
+            </div>
           </div>
 
-          {/* Employee picker */}
-          <select
-            value={selectedEmployee}
-            onChange={(e) => setSelectedEmployee(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '11px 12px',
-              borderRadius: THEME.radiusMd,
-              border: `1px solid ${border}`,
-              background: cardBg,
-              color: textPrimary,
-              fontSize: '13px',
-              fontWeight: 700,
-              outline: 'none',
-              fontFamily: THEME.font,
-              cursor: 'pointer',
-              boxSizing: 'border-box',
-              position: 'relative',
-              zIndex: 1,
-            }}
+          {/* ➕ Searchable employee dropdown */}
+          <div
+            ref={empDropdownRef}
+            style={{ position: 'relative', zIndex: 20 }}
           >
-            <option value="">👤 Select employee…</option>
-            {employees.map((emp) => (
-              <option key={emp.id} value={emp.id}>
-                {emp.name} ({emp.employee_id})
-              </option>
-            ))}
-          </select>
+            <div
+              onClick={toggleEmpDropdown}
+              style={{
+                width: '100%',
+                padding: '11px 12px',
+                borderRadius: THEME.radiusMd,
+                border: `1px solid ${border}`,
+                background: cardBg,
+                color: textPrimary,
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxSizing: 'border-box',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+              }}
+            >
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  flex: 1,
+                }}
+              >
+                {selectedEmployeeObj
+                  ? `${selectedEmployeeObj.name} (${selectedEmployeeObj.employee_id})`
+                  : '👤 Select employee…'}
+              </span>
+              <span style={{ color: textMuted, fontSize: '12px' }}>
+                {showEmpDropdown ? '▲' : '▼'}
+              </span>
+            </div>
+
+            {showEmpDropdown && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  right: 0,
+                  background: cardBg,
+                  border: `1px solid ${border}`,
+                  borderRadius: THEME.radiusMd,
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.25)',
+                  zIndex: 50,
+                  maxHeight: '340px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    padding: '8px',
+                    borderBottom: `1px solid ${border}`,
+                  }}
+                >
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="🔍 Search name, ID, department…"
+                    value={empSearch}
+                    onChange={(e) => setEmpSearch(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: `1px solid ${border}`,
+                      background: dark ? '#0F172A' : '#F8FAFC',
+                      color: textPrimary,
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      outline: 'none',
+                      fontFamily: THEME.font,
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                <div style={{ overflowY: 'auto', flex: 1 }}>
+                  {filteredEmployees.length === 0 ? (
+                    <div
+                      style={{
+                        padding: '20px',
+                        textAlign: 'center',
+                        color: textMuted,
+                        fontSize: '12px',
+                      }}
+                    >
+                      No employees found
+                    </div>
+                  ) : (
+                    filteredEmployees.map((emp) => {
+                      const isSel = selectedEmployee === emp.id;
+                      return (
+                        <div
+                          key={emp.id}
+                          onClick={() => handleSelectEmployee(emp)}
+                          style={{
+                            padding: '11px 14px',
+                            cursor: 'pointer',
+                            borderBottom: `1px solid ${border}`,
+                            background: isSel
+                              ? 'rgba(16,185,129,0.12)'
+                              : 'transparent',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isSel)
+                              e.currentTarget.style.background = dark
+                                ? 'rgba(255,255,255,0.04)'
+                                : '#F8FAFC';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isSel)
+                              e.currentTarget.style.background = 'transparent';
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '34px',
+                              height: '34px',
+                              borderRadius: '50%',
+                              background: `linear-gradient(135deg, ${THEME.primary}, ${THEME.primaryDark})`,
+                              color: '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 800,
+                              fontSize: '13px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {emp.name?.charAt(0).toUpperCase() || '?'}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                color: textPrimary,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {emp.name}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: '10px',
+                                color: textMuted,
+                                fontWeight: 500,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {emp.employee_id}
+                              {emp.department ? ` · ${emp.department}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -610,7 +826,6 @@ export const AdminEmployeeTimeline = () => {
               overflow: 'hidden',
             }}
           >
-            {/* Month nav */}
             <div
               style={{
                 display: 'flex',
@@ -690,10 +905,8 @@ export const AdminEmployeeTimeline = () => {
               </button>
             </div>
 
-            {/* Calendar grid */}
             {showCalendar && (
               <div style={{ padding: '10px 12px 14px' }}>
-                {/* Weekday labels */}
                 <div
                   style={{
                     display: 'grid',
@@ -718,7 +931,6 @@ export const AdminEmployeeTimeline = () => {
                   ))}
                 </div>
 
-                {/* Cells */}
                 <div
                   style={{
                     display: 'grid',
@@ -808,7 +1020,6 @@ export const AdminEmployeeTimeline = () => {
             userSelect: 'none',
           }}
         >
-          {/* ✅ FIXED Day nav — unambiguous labels */}
           <div
             style={{
               display: 'flex',
@@ -854,7 +1065,6 @@ export const AdminEmployeeTimeline = () => {
                 {isToday ? '📅 Today' : fmtDateLong(selectedDate)}
               </div>
 
-              {/* ✅ FIXED: arrows match button placement */}
               <div
                 style={{
                   fontSize: '10px',
@@ -899,7 +1109,6 @@ export const AdminEmployeeTimeline = () => {
             </button>
           </div>
 
-          {/* Map */}
           <div
             style={{
               background: cardBg,
@@ -922,12 +1131,7 @@ export const AdminEmployeeTimeline = () => {
                 ⏳ Loading map…
               </div>
             ) : events.length === 0 ? (
-              <div
-                style={{
-                  padding: '60px 20px',
-                  textAlign: 'center',
-                }}
-              >
+              <div style={{ padding: '60px 20px', textAlign: 'center' }}>
                 <div style={{ fontSize: '42px', marginBottom: '10px' }}>🗺️</div>
                 <div
                   style={{
@@ -938,13 +1142,7 @@ export const AdminEmployeeTimeline = () => {
                 >
                   No location data on this day
                 </div>
-                <div
-                  style={{
-                    fontSize: '11px',
-                    color: textMuted,
-                    marginTop: 4,
-                  }}
-                >
+                <div style={{ fontSize: '11px', color: textMuted, marginTop: 4 }}>
                   Use the arrows or swipe to explore other days
                 </div>
               </div>
