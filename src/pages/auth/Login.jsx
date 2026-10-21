@@ -2,6 +2,7 @@
 //
 // Vision Earth HRMS — Premium Login
 // Green gradient, decorative circles, Remember Me, WhatsApp contact admin.
+// ➕ Universal PWA Install Button (Always Visible)
 //
 // 🔧 FIXES (v3 — production ready):
 //  1. Static import of DEMO_EMPLOYEES (no top-level await — safe for Vite build)
@@ -22,6 +23,7 @@
 // 16. console.error only in DEV
 // 17. Forgot password link is a <button> (no URL hash pollution)
 // 18. Live lockout countdown via separate `now` state (ticks every 500ms)
+// ➕ 19. Universal PWA Install App button (handles iOS, already installed, and unsupported browsers)
 
 import React, {
   useState,
@@ -93,6 +95,11 @@ export const Login = () => {
   // 🔧 FIX #12 — mounted guard
   const mountedRef = useRef(true);
 
+  // ➕ PWA Install State
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+
   // ============================================
   // MOUNT / UNMOUNT
   // ============================================
@@ -102,6 +109,78 @@ export const Login = () => {
       mountedRef.current = false;
     };
   }, []);
+
+  // ============================================
+  // ➕ PWA INSTALL LOGIC & DETECTION
+  // ============================================
+  useEffect(() => {
+    // Detect iOS
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const isIOSDevice = /iphone|ipad|ipod/.test(userAgent);
+    setIsIOS(isIOSDevice);
+
+    // Detect if already installed (standalone mode)
+    const isAppInstalled = 
+      window.matchMedia('(display-mode: standalone)').matches || 
+      window.navigator.standalone === true;
+    setIsStandalone(isAppInstalled);
+
+    const handleBeforeInstallPrompt = (e) => {
+      // Prevent the mini-infobar from appearing on mobile
+      e.preventDefault();
+      // Stash the event so it can be triggered later.
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // If the app is already installed, we don't need the prompt
+    window.addEventListener('appinstalled', () => {
+      setDeferredPrompt(null);
+      setIsStandalone(true);
+    });
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    // 1. Check if already installed
+    if (isStandalone) {
+      toast('App is already installed on your device!', { icon: '✅', duration: 4000 });
+      return;
+    }
+
+    // 2. Handle iOS (no native prompt)
+    if (isIOS) {
+      toast(
+        'Tap the Share icon (⎋) at the bottom of Safari, then tap "Add to Home Screen".',
+        { duration: 6000, icon: '📱' }
+      );
+      return;
+    }
+
+    // 3. Handle standard browsers (Chrome, Edge, Android)
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      
+      if (outcome === 'accepted') {
+        toast.success('App installed successfully!');
+      } else {
+        toast('Installation cancelled', { icon: 'ℹ️' });
+      }
+      setDeferredPrompt(null);
+      return;
+    }
+
+    // 4. Fallback for unsupported browsers
+    toast(
+      'Your browser does not support automatic installation. Please use the browser menu (⋮) and select "Install App" or "Add to Home Screen".',
+      { duration: 6000, icon: 'ℹ️' }
+    );
+  };
 
   // ============================================
   // 🔧 FIX #17 — dynamic WhatsApp URL builder
@@ -321,6 +400,11 @@ export const Login = () => {
   const inputBg = dark ? '#0F172A' : '#F8FAFC';
 
   const isFormDisabled = loading || isLockedOut;
+
+  // Determine button text based on device state
+  let installBtnText = 'Install App';
+  if (isStandalone) installBtnText = 'App Installed';
+  else if (isIOS && !deferredPrompt) installBtnText = 'How to Install on iOS';
 
   return (
     <div
@@ -852,6 +936,65 @@ export const Login = () => {
               )}
             </button>
           </form>
+
+          {/* ➕ UNIVERSAL PWA INSTALL APP BUTTON */}
+          <div
+            style={{
+              marginTop: '16px',
+              paddingTop: '16px',
+              borderTop: `1px solid ${border}`,
+            }}
+          >
+            <button
+              type="button"
+              onClick={handleInstallClick}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '14px',
+                border: `1.5px solid ${dark ? 'rgba(59,130,246,0.4)' : '#BFDBFE'}`,
+                background: dark ? 'rgba(59,130,246,0.1)' : '#EFF6FF',
+                color: dark ? '#60A5FA' : '#1D4ED8',
+                fontSize: '14px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                fontFamily: THEME.font,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = dark
+                  ? 'rgba(59,130,246,0.2)'
+                  : '#DBEAFE';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = dark
+                  ? 'rgba(59,130,246,0.1)'
+                  : '#EFF6FF';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              {installBtnText}
+            </button>
+          </div>
 
           {/* CONTACT ADMIN — WhatsApp */}
           <div

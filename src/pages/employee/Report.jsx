@@ -7,8 +7,8 @@
 // ✅ Holiday pattern badge:
 //    - Plain purple H          → holiday, employee did NOT work
 //    - H with colored stripes  → holiday AND employee has a status
-//      (green = Present, amber = Delayed, red = Beyond Delay,
-//       blue = Leave, orange = Forgot Out)
+//    - Plain amber WO          → weekly off, employee did NOT work
+//    - WO with colored stripes → weekly off AND employee has a status
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -46,6 +46,8 @@ export const Report = () => {
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
   const [view, setView] = useState('table');
+  
+  // ✅ UPDATED: Store type in map
   const [holidaysMap, setHolidaysMap] = useState({});
 
   const [sliceModal, setSliceModal] = useState({
@@ -279,15 +281,17 @@ export const Report = () => {
   // ============================================
   useEffect(() => {
     const load = async () => {
+      // ✅ UPDATED: Fetch type column
       const { data } = await supabase
         .from('holidays')
-        .select('holiday_date, name')
+        .select('holiday_date, name, type')
         .gte('holiday_date', `${year}-01-01`)
         .lte('holiday_date', `${year}-12-31`);
 
       const map = {};
       (data || []).forEach((h) => {
-        map[h.holiday_date] = h.name;
+        // ✅ UPDATED: Save type to map
+        map[h.holiday_date] = { name: h.name, type: h.type || 'Holiday' };
       });
       setHolidaysMap(map);
     };
@@ -397,12 +401,20 @@ export const Report = () => {
   // BADGE HELPER (holiday + striped-on-worked)
   // ============================================
   const getStatusBadge = (status, day) => {
-    // ---- Holiday cell ----
+    // ---- Holiday / Weekly Off Cell ----
     if (day) {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const holidayName = holidaysMap[dateStr];
+      const holidayData = holidaysMap[dateStr];
 
-      if (holidayName) {
+      if (holidayData) {
+        const isWeeklyOff = holidayData.type === 'Weekly Off';
+        const holidayName = holidayData.name;
+
+        // Determine base colors based on type
+        const baseColor = isWeeklyOff ? '#F59E0B' : '#8B5CF6';
+        const baseBg = isWeeklyOff ? '#F59E0B18' : '#8B5CF618';
+        const label = isWeeklyOff ? 'WO' : 'H';
+
         // Determine stripe color from the status (if any)
         const stripeColor = status ? holidayStripeColors[status] || null : null;
         const hasPattern = !!stripeColor;
@@ -414,15 +426,15 @@ export const Report = () => {
               ${stripeColor}55 3px,
               transparent 3px,
               transparent 6px
-            ), #8B5CF618`
-          : '#8B5CF618';
+            ), ${baseBg}`
+          : baseBg;
 
         return (
           <span
             title={
               hasPattern
                 ? `${holidayName} — worked (${statusFullNames[status] || status})`
-                : `${holidayName} — holiday`
+                : `${holidayName} — ${isWeeklyOff ? 'weekly off' : 'holiday'}`
             }
             style={{
               display: 'inline-flex',
@@ -432,15 +444,15 @@ export const Report = () => {
               height: '26px',
               borderRadius: '7px',
               background,
-              color: '#8B5CF6',
+              color: baseColor,
               fontWeight: 800,
-              fontSize: '10px',
+              fontSize: isWeeklyOff ? '9px' : '10px', // slightly smaller font for WO
               border: hasPattern
                 ? `1px solid ${stripeColor}80`
-                : '1px solid #8B5CF630',
+                : `1px solid ${baseColor}30`,
             }}
           >
-            H
+            {label}
           </span>
         );
       }
@@ -1072,6 +1084,7 @@ export const Report = () => {
                 { color: '#DC2626', label: 'B - Beyond' },
                 { color: '#3B82F6', label: 'L - Leave' },
                 { color: '#8B5CF6', label: 'H - Holiday' },
+                { color: '#F59E0B', label: 'WO - Weekly Off' },
               ].map((item, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span
@@ -1109,6 +1122,29 @@ export const Report = () => {
                 />
                 <span style={{ fontSize: '10px', fontWeight: 700, color: textSecondary }}>
                   H (striped) - Worked on holiday
+                </span>
+              </div>
+
+              {/* ✅ Striped WO legend entry */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '4px',
+                    background: `repeating-linear-gradient(
+                      45deg,
+                      #10B98155 0px,
+                      #10B98155 3px,
+                      transparent 3px,
+                      transparent 6px
+                    ), #F59E0B18`,
+                    border: '1px solid #10B98180',
+                  }}
+                />
+                <span style={{ fontSize: '10px', fontWeight: 700, color: textSecondary }}>
+                  WO (striped) - Worked on weekly off
                 </span>
               </div>
             </div>

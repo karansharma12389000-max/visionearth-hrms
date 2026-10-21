@@ -39,11 +39,13 @@ export const AdminHolidays = () => {
   // Add form state
   const [holidayDate, setHolidayDate] = useState('');
   const [holidayName, setHolidayName] = useState('');
+  const [holidayType, setHolidayType] = useState('Holiday'); // ✅ NEW: Type state
 
   // Edit modal state
   const [editing, setEditing] = useState(null);
   const [editDate, setEditDate] = useState('');
   const [editName, setEditName] = useState('');
+  const [editType, setEditType] = useState('Holiday'); // ✅ NEW: Edit type state
 
   // Delete confirm state
   const [deleting, setDeleting] = useState(null);
@@ -105,6 +107,7 @@ export const AdminHolidays = () => {
       const { error } = await supabase.from('holidays').insert({
         holiday_date: holidayDate,
         name: holidayName.trim(),
+        type: holidayType, // ✅ NEW: Save type
       });
 
       if (error) {
@@ -119,6 +122,7 @@ export const AdminHolidays = () => {
       toast.success(`✅ ${holidayName} added`);
       setHolidayDate('');
       setHolidayName('');
+      setHolidayType('Holiday'); // Reset type
       fetchHolidays();
     } catch (err) {
       console.error(err);
@@ -135,6 +139,7 @@ export const AdminHolidays = () => {
     setEditing(holiday);
     setEditDate(holiday.holiday_date);
     setEditName(holiday.name);
+    setEditType(holiday.type || 'Holiday'); // ✅ NEW: Load type
   };
 
   const handleSaveEdit = async () => {
@@ -155,6 +160,7 @@ export const AdminHolidays = () => {
         .update({
           holiday_date: editDate,
           name: editName.trim(),
+          type: editType, // ✅ NEW: Update type
         })
         .eq('id', editing.id);
 
@@ -233,7 +239,7 @@ export const AdminHolidays = () => {
               letterSpacing: '0.5px',
             }}
           >
-            🎉 HOLIDAYS
+            🎉 HOLIDAYS & WEEKLY OFFS
           </div>
           <div
             style={{
@@ -243,7 +249,7 @@ export const AdminHolidays = () => {
               marginTop: '4px',
             }}
           >
-            Shows as <b>H</b> in report tables
+            Shows as <b>H</b> or <b>WO</b> in report tables
           </div>
         </div>
       </div>
@@ -309,7 +315,7 @@ export const AdminHolidays = () => {
             type="text"
             value={holidayName}
             onChange={(e) => setHolidayName(e.target.value)}
-            placeholder="e.g. Independence Day"
+            placeholder="e.g. Independence Day / Sunday"
             style={{
               width: '100%',
               padding: '12px 14px',
@@ -322,9 +328,52 @@ export const AdminHolidays = () => {
               outline: 'none',
               fontFamily: THEME.font,
               boxSizing: 'border-box',
-              marginBottom: '14px',
+              marginBottom: '12px',
             }}
           />
+
+          {/* ✅ NEW: TYPE DROPDOWN */}
+          <label
+            style={{
+              display: 'block',
+              fontSize: '10px',
+              fontWeight: 700,
+              color: textMuted,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              marginBottom: '6px',
+            }}
+          >
+            Type
+          </label>
+          <select
+            value={holidayType}
+            onChange={(e) => setHolidayType(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '12px 14px',
+              borderRadius: THEME.radiusMd,
+              border: `1px solid ${border}`,
+              background: pageBg,
+              color: textPrimary,
+              fontSize: '13px',
+              fontWeight: 600,
+              outline: 'none',
+              fontFamily: THEME.font,
+              cursor: 'pointer',
+              appearance: 'none',
+              backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 12px center',
+              backgroundSize: '16px',
+              paddingRight: '38px',
+              boxSizing: 'border-box',
+              marginBottom: '14px',
+            }}
+          >
+            <option value="Holiday">Holiday (H)</option>
+            <option value="Weekly Off">Weekly Off (WO)</option>
+          </select>
 
           <button
             onClick={handleAdd}
@@ -488,7 +537,7 @@ export const AdminHolidays = () => {
         >
           {showAll
             ? `All Holidays (${holidays.length})`
-            : `${getMonthName(filterMonth)} ${filterYear} · ${filteredHolidays.length} holiday${filteredHolidays.length === 1 ? '' : 's'}`}
+            : `${getMonthName(filterMonth)} ${filterYear} · ${filteredHolidays.length} record${filteredHolidays.length === 1 ? '' : 's'}`}
         </div>
 
         {loading ? (
@@ -538,9 +587,26 @@ export const AdminHolidays = () => {
                     fontSize: '13px',
                     fontWeight: 800,
                     color: textPrimary,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
                   }}
                 >
                   {formatDate(h.holiday_date)}
+                  {/* ✅ NEW: Type Badge */}
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      fontWeight: 800,
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      background: h.type === 'Weekly Off' ? THEME.amber + '20' : THEME.primary + '20',
+                      color: h.type === 'Weekly Off' ? '#B45309' : THEME.primaryDark,
+                      border: `1px solid ${h.type === 'Weekly Off' ? THEME.amber + '40' : THEME.primary + '40'}`,
+                    }}
+                  >
+                    {h.type === 'Weekly Off' ? 'WO' : 'H'}
+                  </span>
                 </div>
                 <div
                   style={{
@@ -703,7 +769,7 @@ export const AdminHolidays = () => {
               type="text"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
-              placeholder="e.g. Independence Day"
+              placeholder="e.g. Independence Day / Sunday"
               style={{
                 width: '100%',
                 padding: '12px 14px',
@@ -716,9 +782,52 @@ export const AdminHolidays = () => {
                 outline: 'none',
                 fontFamily: THEME.font,
                 boxSizing: 'border-box',
-                marginBottom: '16px',
+                marginBottom: '12px',
               }}
             />
+
+            {/* ✅ NEW: TYPE DROPDOWN IN EDIT */}
+            <label
+              style={{
+                display: 'block',
+                fontSize: '10px',
+                fontWeight: 700,
+                color: textMuted,
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                marginBottom: '6px',
+              }}
+            >
+              Type
+            </label>
+            <select
+              value={editType}
+              onChange={(e) => setEditType(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '12px 14px',
+                borderRadius: THEME.radiusMd,
+                border: `1px solid ${border}`,
+                background: pageBg,
+                color: textPrimary,
+                fontSize: '13px',
+                fontWeight: 600,
+                outline: 'none',
+                fontFamily: THEME.font,
+                cursor: 'pointer',
+                appearance: 'none',
+                backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 12px center',
+                backgroundSize: '16px',
+                paddingRight: '38px',
+                boxSizing: 'border-box',
+                marginBottom: '16px',
+              }}
+            >
+              <option value="Holiday">Holiday (H)</option>
+              <option value="Weekly Off">Weekly Off (WO)</option>
+            </select>
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
@@ -809,7 +918,7 @@ export const AdminHolidays = () => {
                 marginBottom: '8px',
               }}
             >
-              Delete Holiday?
+              Delete {deleting.type === 'Weekly Off' ? 'Weekly Off' : 'Holiday'}?
             </h3>
             <p
               style={{

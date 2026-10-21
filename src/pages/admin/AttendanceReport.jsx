@@ -4,6 +4,7 @@
 // Company-wide monthly attendance, filterable by department/employee.
 //
 // ✅ Holiday pattern badge on Report tab (striped H when worked).
+// ✅ Weekly Off pattern badge (striped WO when worked).
 // ✅ Report / Working Hours tabs — same calendar layout.
 // ✅ FULLSCREEN: Click ⛶ / double-click header / Esc to exit.
 // ✅ IST-anchored initial month/year
@@ -266,6 +267,8 @@ export const AdminAttendanceReport = () => {
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [companies, setCompanies] = useState([]);
+  
+  // Store type in map
   const [holidaysMap, setHolidaysMap] = useState({});
 
   const [activeTab, setActiveTab] = useState('report');
@@ -539,15 +542,17 @@ export const AdminAttendanceReport = () => {
   // ============================================
   useEffect(() => {
     const load = async () => {
+      // Fetch type column
       const { data } = await supabase
         .from('holidays')
-        .select('holiday_date, name')
+        .select('holiday_date, name, type')
         .gte('holiday_date', `${year}-01-01`)
         .lte('holiday_date', `${year}-12-31`);
 
       const map = {};
       (data || []).forEach((h) => {
-        map[h.holiday_date] = h.name;
+        // Save type to map
+        map[h.holiday_date] = { name: h.name, type: h.type || 'Holiday' };
       });
       setHolidaysMap(map);
     };
@@ -678,9 +683,17 @@ export const AdminAttendanceReport = () => {
   const getStatusBadge = (status, day) => {
     if (day) {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const holidayName = holidaysMap[dateStr];
+      const holidayData = holidaysMap[dateStr];
 
-      if (holidayName) {
+      if (holidayData) {
+        const isWeeklyOff = holidayData.type === 'Weekly Off';
+        const holidayName = holidayData.name;
+
+        // Determine base colors based on type
+        const baseColor = isWeeklyOff ? '#F59E0B' : '#8B5CF6';
+        const baseBg = isWeeklyOff ? '#F59E0B18' : '#8B5CF618';
+        const label = isWeeklyOff ? 'WO' : 'H';
+
         const stripeColor = status ? holidayStripeColors[status] || null : null;
         const hasPattern = !!stripeColor;
 
@@ -691,15 +704,15 @@ export const AdminAttendanceReport = () => {
               ${stripeColor}55 3px,
               transparent 3px,
               transparent 6px
-            ), #8B5CF618`
-          : '#8B5CF618';
+            ), ${baseBg}`
+          : baseBg;
 
         return (
           <span
             title={
               hasPattern
                 ? `${holidayName} — worked (${statusFullNames[status] || status})`
-                : `${holidayName} — holiday`
+                : `${holidayName} — ${isWeeklyOff ? 'weekly off' : 'holiday'}`
             }
             style={{
               display: 'inline-flex',
@@ -709,15 +722,15 @@ export const AdminAttendanceReport = () => {
               height: '26px',
               borderRadius: '7px',
               background,
-              color: '#8B5CF6',
+              color: baseColor,
               fontWeight: 800,
-              fontSize: '10px',
+              fontSize: isWeeklyOff ? '9px' : '10px',
               border: hasPattern
                 ? `1px solid ${stripeColor}80`
-                : '1px solid #8B5CF630',
+                : `1px solid ${baseColor}30`,
             }}
           >
-            H
+            {label}
           </span>
         );
       }
@@ -762,32 +775,47 @@ export const AdminAttendanceReport = () => {
     const dateStr = day
       ? `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
       : null;
-    const holidayName = dateStr ? holidaysMap[dateStr] : null;
+    const holidayData = dateStr ? holidaysMap[dateStr] : null;
 
-    if (holidayName && (!hours || hours <= 0)) {
-      return (
-        <span
-          title={`${holidayName} — holiday`}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '26px',
-            height: '26px',
-            borderRadius: '7px',
-            background: '#8B5CF618',
-            color: '#8B5CF6',
-            fontWeight: 800,
-            fontSize: '10px',
-            border: '1px solid #8B5CF630',
-          }}
-        >
-          H
-        </span>
-      );
-    }
+    if (holidayData) {
+      const isWeeklyOff = holidayData.type === 'Weekly Off';
+      const holidayName = holidayData.name;
+      
+      // Base styling for the holiday type (H or WO)
+      const baseColor = isWeeklyOff ? '#F59E0B' : '#8B5CF6';
+      const baseBg = isWeeklyOff ? '#F59E0B18' : '#8B5CF618';
+      const label = isWeeklyOff ? 'WO' : 'H';
+      const typeText = isWeeklyOff ? 'weekly off' : 'holiday';
 
-    if (holidayName && hours > 0) {
+      if (!hours || hours <= 0) {
+        return (
+          <span
+            title={`${holidayName} — ${typeText}`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '26px',
+              height: '26px',
+              borderRadius: '7px',
+              background: baseBg,
+              color: baseColor,
+              fontWeight: 800,
+              fontSize: isWeeklyOff ? '9px' : '10px',
+              border: `1px solid ${baseColor}30`,
+            }}
+          >
+            {label}
+          </span>
+        );
+      }
+
+      // ✅ UPDATED: If worked on Weekly Off, use Black text. If Holiday, keep Purple.
+      const workedColor = isWeeklyOff ? '#000000' : baseColor;
+      // Slightly stronger background for WO so black text is readable
+      const workedBg = isWeeklyOff ? '#F59E0B30' : baseBg;
+      const workedBorder = isWeeklyOff ? '#F59E0B60' : `${baseColor}80`;
+
       return (
         <span
           title={`${holidayName} — worked ${hours.toFixed(1)}h`}
@@ -799,11 +827,11 @@ export const AdminAttendanceReport = () => {
             height: '26px',
             padding: '0 4px',
             borderRadius: '7px',
-            background: '#8B5CF618',
-            color: '#8B5CF6',
+            background: workedBg,
+            color: workedColor,
             fontWeight: 800,
             fontSize: '9px',
-            border: '1px solid #8B5CF680',
+            border: `1px solid ${workedBorder}`,
           }}
         >
           {hours.toFixed(1)}
@@ -1211,6 +1239,7 @@ export const AdminAttendanceReport = () => {
             { color: '#DC2626', label: 'B - Beyond' },
             { color: '#3B82F6', label: 'L - Leave' },
             { color: '#8B5CF6', label: 'H - Holiday' },
+            { color: '#F59E0B', label: 'WO - Weekly Off' },
           ].map((item, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span
@@ -1248,6 +1277,27 @@ export const AdminAttendanceReport = () => {
               H (striped) - Worked on holiday
             </span>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span
+              style={{
+                display: 'inline-block',
+                width: '12px',
+                height: '12px',
+                borderRadius: '4px',
+                background: `repeating-linear-gradient(
+                  45deg,
+                  #10B98155 0px,
+                  #10B98155 3px,
+                  transparent 3px,
+                  transparent 6px
+                ), #F59E0B18`,
+                border: '1px solid #10B98180',
+              }}
+            />
+            <span style={{ fontSize: '10px', fontWeight: 700, color: textSecondary }}>
+              WO (striped) - Worked on weekly off
+            </span>
+          </div>
         </>
       ) : (
         <>
@@ -1256,7 +1306,9 @@ export const AdminAttendanceReport = () => {
             { color: '#F59E0B', label: '4–8h — Half day' },
             { color: '#EF4444', label: '< 4h — Short' },
             { color: '#8B5CF6', label: 'H — Holiday (no work)' },
+            { color: '#F59E0B', label: 'WO — Weekly Off (no work)' },
             { color: '#8B5CF680', label: 'Purple number — Worked on holiday' },
+            { color: '#000000', label: 'Black number — Worked on weekly off' }, 
           ].map((item, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span
