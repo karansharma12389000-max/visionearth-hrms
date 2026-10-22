@@ -1,13 +1,11 @@
 // src/pages/employee/Leave.jsx
 //
 // Vision Earth HRMS — Premium Leave Management
-// (Balance tab removed)
+// ✅ Monthly Accrual (2.5 days/month) with Carry-Forward
+// ✅ Unpaid (LOP) auto-calculated if balance goes negative
 // ✅ Edit + Revoke + Cancel Revoke with admin-approval flow
-// ✅ Edit & Revoke hidden once the leave's end date has passed (IST)
-// ✅ Info reminder above the Apply form — encourages the employee to
-//    inform the admin personally after submit/edit/revoke.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -84,6 +82,59 @@ export const Leave = () => {
   useEffect(() => {
     if (user?.id) fetchLeaves();
   }, [user]);
+
+  // ============================================
+  // ➕ MONTHLY LEAVE BALANCE CALCULATION (CARRY FORWARD)
+  // ============================================
+  const leaveBalance = useMemo(() => {
+    const now = new Date();
+    const currentMonth = parseInt(
+      now.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', month: '2-digit' })
+    );
+    const currentYear = parseInt(
+      now.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric' })
+    );
+
+    // Calculate how many months have passed in the current year
+    // (Assuming accrual starts from January. If they joined mid-year, adjust this logic based on date_of_joining)
+    let monthsAccrued = currentMonth;
+
+    // Total leaves accrued so far this year (2.5 per month)
+    const totalAccrued = monthsAccrued * 2.5;
+
+    // Calculate how many leaves the employee has already taken in the CURRENT YEAR
+    let usedLeaves = 0;
+    leaves.forEach((leave) => {
+      const leaveYear = leave.leave_start_date 
+        ? leave.leave_start_date.split('-')[0] 
+        : null;
+
+      if (leaveYear === currentYear.toString()) {
+        if (['Approved', 'Pending', 'Revoke Requested'].includes(leave.status)) {
+          if (leave.leave_start_date && leave.leave_end_date) {
+            const from = new Date(leave.leave_start_date + 'T00:00:00+05:30');
+            const to = new Date(leave.leave_end_date + 'T00:00:00+05:30');
+            if (!isNaN(from.getTime()) && !isNaN(to.getTime())) {
+              const diffDays = Math.round((to - from) / (1000 * 60 * 60 * 24));
+              const days = Math.max(0, diffDays + 1);
+              // Only count Paid Leaves (exclude Unpaid Leave 'UL')
+              if (leave.leave_type !== 'Unpaid Leave') {
+                usedLeaves += days;
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const availableBalance = Math.max(0, totalAccrued - usedLeaves);
+
+    return {
+      totalAccrued,
+      usedLeaves,
+      availableBalance,
+    };
+  }, [leaves]);
 
   // ============================================
   // SUBMIT NEW LEAVE
@@ -521,6 +572,85 @@ export const Leave = () => {
         </div>
       </div>
 
+      {/* ➕ LEAVE BALANCE CARD */}
+      <div style={{ padding: '0 16px 12px' }}>
+        <div
+          style={{
+            background: dark
+              ? 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.05))'
+              : 'linear-gradient(135deg, #ECFDF5, #D1FAE5)',
+            borderRadius: THEME.radiusLg,
+            padding: '16px',
+            border: `1px solid ${dark ? 'rgba(16,185,129,0.2)' : '#A7F3D0'}`,
+            boxShadow: cardShadow,
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: -20,
+              right: -20,
+              fontSize: '80px',
+              opacity: 0.05,
+              pointerEvents: 'none',
+            }}
+          >
+            🌴
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '10px',
+                background: THEME.primary + '20',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '16px',
+              }}
+            >
+              ⚖️
+            </div>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: textPrimary }}>
+                Paid Leave Balance
+              </div>
+              <div style={{ fontSize: '10px', color: textSecondary, fontWeight: 600 }}>
+                No salary deduction
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div>
+              <div style={{ fontSize: '11px', color: textMuted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Available
+              </div>
+              <div style={{ fontSize: '28px', fontWeight: 900, color: THEME.primary, lineHeight: 1.1, marginTop: '2px' }}>
+                {leaveBalance.availableBalance.toFixed(1)} <span style={{ fontSize: '14px', fontWeight: 700 }}>days</span>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right', fontSize: '11px', color: textSecondary, fontWeight: 600 }}>
+              <div style={{ marginBottom: '4px' }}>
+                Accrued: <strong style={{ color: textPrimary }}>{leaveBalance.totalAccrued}</strong>
+              </div>
+              <div>
+                Used/Pending: <strong style={{ color: THEME.amber }}>{leaveBalance.usedLeaves}</strong>
+              </div>
+            </div>
+          </div>
+          
+          {/* ✅ UPDATED: Dark text and clear explanation of Carry Forward */}
+          <div style={{ marginTop: '12px', fontSize: '11px', color: textPrimary, fontWeight: 500, lineHeight: 1.4 }}>
+            * 2.5 days accrued per month. Unused days carry forward. Excludes Sundays & Holidays.
+          </div>
+        </div>
+      </div>
+
       {/* TABS */}
       <div style={{ padding: '0 16px 12px' }}>
         <div
@@ -594,7 +724,7 @@ export const Leave = () => {
       {/* TAB: APPLY */}
       {activeTab === 'apply' && (
         <div style={{ padding: '0 16px 16px' }}>
-          {/* ✅ Reminder banner — inform admin personally */}
+          {/* ✅ Reminder banner */}
           <div
             style={{
               padding: '12px 14px',
@@ -633,7 +763,7 @@ export const Leave = () => {
             </div>
           </div>
 
-          {/* Info banner (existing blue banner) */}
+          {/* Info banner */}
           <div
             style={{
               background: editingLeaveId

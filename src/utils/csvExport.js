@@ -86,7 +86,7 @@ export const downloadCSV = (filename, csvText) => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(url);  
 };
 
 export const timestamp = () => {

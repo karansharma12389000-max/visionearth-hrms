@@ -51,7 +51,7 @@ const DEMO_EMPLOYEES = DEMO_MODE ? DEMO_EMPLOYEES_IMPORT || [] : [];
 const ADMIN_WHATSAPP =
   import.meta.env.VITE_ADMIN_WHATSAPP || '918424958959';
 
-const WHATSAPP_TEMPLATE = `Hello Vision Earth HRMS Team,
+const WHATSAPP_TEMPLATE = `Hello Vision EarthCare HRMS Team,
 
 I need help with my HRMS account access.
 
@@ -484,7 +484,7 @@ export const Login = () => {
           >
             <img
               src="/vision-earth-logo.png"
-              alt="Vision Earth"
+              alt="Vision EarthCare"
               width="88"
               height="88"
               style={{
@@ -505,7 +505,7 @@ export const Login = () => {
               lineHeight: 1.1,
             }}
           >
-            VISION EARTH
+            VISION EarthCare
           </h1>
           <div
             style={{
@@ -1088,7 +1088,7 @@ export const Login = () => {
           }}
         >
           <p style={{ margin: 0 }}>
-            © {new Date().getFullYear()} Vision Earth HRMS
+            © {new Date().getFullYear()} Vision EarthCare HRMS
           </p>
           <p
             style={{
