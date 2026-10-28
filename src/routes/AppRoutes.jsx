@@ -9,6 +9,7 @@ import { Attendance } from '../pages/employee/Attendance';
 import { Leave } from '../pages/employee/Leave';
 import { Report } from '../pages/employee/Report';
 import { Profile } from '../pages/employee/Profile';
+import { EmployeeSalarySlip } from '../pages/employee/SalarySlip';
 
 // Admin Pages
 import { AdminDashboard } from '../pages/admin/Dashboard';
@@ -20,9 +21,10 @@ import { AdminLeaves } from '../pages/admin/Leaves';
 import { ForgotTracker } from '../pages/admin/ForgotTracker';
 import { SalaryCalculator } from '../pages/admin/SalaryCalculator';
 import { AdminHolidays } from '../pages/admin/Holidays';
-import { AdminProjects } from '../pages/admin/Projects';   // ✅
-import { AdminEmployeeTimeline } from '../pages/admin/EmployeeTimeline'; // ✅
-import { AdminAttendanceEditor } from '../pages/admin/AttendanceEditor'; // ➕ NEW
+import { AdminProjects } from '../pages/admin/Projects';
+import { AdminEmployeeTimeline } from '../pages/admin/EmployeeTimeline';
+import { AdminAttendanceEditor } from '../pages/admin/AttendanceEditor';
+import { ExcelImport } from '../pages/admin/ExcelImport';
 
 // Auth Pages
 import { Login } from '../pages/auth/Login';
@@ -42,11 +44,11 @@ const AppRoutes = () => {
 
   return (
     <Routes>
-      {/* Auth Routes */}
+      {/* ================= AUTH ROUTES ================= */}
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-      {/* Employee Routes */}
+      {/* ================= EMPLOYEE ROUTES ================= */}
       <Route
         path="/dashboard"
         element={
@@ -87,8 +89,16 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/salary-slip"
+        element={
+          <ProtectedRoute>
+            <EmployeeSalarySlip />
+          </ProtectedRoute>
+        }
+      />
 
-      {/* Admin Routes */}
+      {/* ================= ADMIN ROUTES ================= */}
       <Route
         path="/admin"
         element={
@@ -161,7 +171,6 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-      {/* ✅ Projects Manager */}
       <Route
         path="/admin/projects"
         element={
@@ -170,7 +179,6 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-      {/* ✅ Employee Timeline (Google Maps style) */}
       <Route
         path="/admin/timeline"
         element={
@@ -179,7 +187,6 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-      {/* ➕ NEW: Attendance Editor (edit/delete attendance records) */}
       <Route
         path="/admin/attendance-editor"
         element={
@@ -188,8 +195,16 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin/excel-import"
+        element={
+          <ProtectedRoute adminOnly={true}>
+            <ExcelImport />
+          </ProtectedRoute>
+        }
+      />
 
-      {/* Fallback - redirect to dashboard */}
+      {/* ================= FALLBACK ================= */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );

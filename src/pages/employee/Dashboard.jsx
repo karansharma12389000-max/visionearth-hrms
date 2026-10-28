@@ -9,6 +9,7 @@
 // ✅ Any-language address (no filtering)
 // ✅ Location logic in ../../utils/locationService
 // ✅ ⏻ End Session button — full session wipe (SVG icon, works on all phones)
+// ➕ ADDED: Salary Slip quick action (5-in-a-row layout)
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -1061,8 +1062,8 @@ export const Dashboard = () => {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
-            gap: '10px',
+            gridTemplateColumns: 'repeat(5, 1fr)', // 🔑 Forces all 5 into one line
+            gap: '6px', // Reduced gap
           }}
         >
           {[
@@ -1073,7 +1074,7 @@ export const Dashboard = () => {
               tint: 'rgba(16, 185, 129, 0.25)',
               accent: '#10B981',
               icon: (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="4" y="4.5" width="16" height="16" rx="3.5" />
                   <path d="M8.5 2.5v4M15.5 2.5v4M4 10h16" />
                   <path d="M9 15l2 2 4-4" strokeWidth="2.4" />
@@ -1087,7 +1088,7 @@ export const Dashboard = () => {
               tint: 'rgba(59, 130, 246, 0.25)',
               accent: '#3B82F6',
               icon: (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M4 20V11" />
                   <path d="M10 20V5" />
                   <path d="M16 20v-6" />
@@ -1102,10 +1103,26 @@ export const Dashboard = () => {
               tint: 'rgba(245, 158, 11, 0.25)',
               accent: '#F59E0B',
               icon: (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="5" width="18" height="16" rx="3" />
                   <path d="M3 10h18M8 2.5v4M16 2.5v4" />
                   <circle cx="12" cy="15.5" r="2" fill="#FFFFFF" stroke="none" />
+                </svg>
+              ),
+            },
+            {
+              label: 'Salary Slip',
+              path: '/salary-slip',
+              gradient: 'linear-gradient(135deg, #EAB308 0%, #CA8A04 100%)',
+              tint: 'rgba(234, 179, 8, 0.25)',
+              accent: '#EAB308',
+              icon: (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                  <polyline points="10 9 9 9 8 9" />
                 </svg>
               ),
             },
@@ -1116,7 +1133,7 @@ export const Dashboard = () => {
               tint: 'rgba(139, 92, 246, 0.25)',
               accent: '#8B5CF6',
               icon: (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="8" r="4.2" />
                   <path d="M4 21c0-4.4 3.6-7.5 8-7.5s8 3.1 8 7.5" />
                 </svg>
@@ -1129,8 +1146,8 @@ export const Dashboard = () => {
               style={{
                 background: cardBg,
                 border: `1px solid ${border}`,
-                borderRadius: '16px',
-                padding: '14px 6px 12px',
+                borderRadius: '12px',
+                padding: '10px 2px 8px',
                 textAlign: 'center',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
@@ -1139,7 +1156,8 @@ export const Dashboard = () => {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '10px',
+                gap: '5px',
+                minWidth: 0, 
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = 'translateY(-2px)';
@@ -1156,9 +1174,9 @@ export const Dashboard = () => {
             >
               <div
                 style={{
-                  width: '48px',
-                  height: '48px',
-                  borderRadius: '14px',
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '10px',
                   background: action.gradient,
                   display: 'flex',
                   alignItems: 'center',
@@ -1173,11 +1191,17 @@ export const Dashboard = () => {
 
               <div
                 style={{
-                  fontSize: '10px',
-                  fontWeight: 700,
+                  fontSize: '8px',
+                  fontWeight: 800,
                   color: dark ? '#E2E8F0' : THEME.text,
-                  letterSpacing: '0.3px',
+                  letterSpacing: '0.1px',
                   textTransform: 'uppercase',
+                  lineHeight: 1.2,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  width: '100%',
+                  padding: '0 1px',
                 }}
               >
                 {action.label}

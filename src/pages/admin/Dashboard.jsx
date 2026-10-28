@@ -10,6 +10,7 @@
 // ✅ Renamed all admin tools to precise labels
 // ✅ Focus refresh — stats reload when user returns to tab
 // ➕ ADDED: Attendance Editor tool card
+// ➕ ADDED: Auto Excel Import tool card
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -46,7 +47,6 @@ export const AdminDashboard = () => {
   // ADMIN TOOLS — iOS-style 3D emoji icons
   // ============================================
   const adminTools = [
-    // ➕ ADDED — Attendance Editor
     {
       icon: '✏️',
       label: 'Attendance Editor',
@@ -122,6 +122,13 @@ export const AdminDashboard = () => {
       label: 'Project Code Editor',
       desc: 'Manage projects and code',
       path: '/admin/projects',
+      color: '#3B82F6',
+    },
+    {
+      icon: '📊',
+      label: 'Auto Excel Import',
+      desc: 'Upload CSV/Excel to import data',
+      path: '/admin/excel-import',
       color: '#3B82F6',
     },
   ];
